@@ -1,0 +1,22 @@
+{
+  "id_cliente": "CLI_003",
+  "nombre": "Transportes Compartidos y Logística del Sur",
+  "nit": "891.111.333-5",
+   "sector": "TRASNSPORTE Y LOGÍSTICA",
+  "codigos_unspsc_permitidos": ["781118", "781018", "781016", "781416", "251015"],
+  "sectores_clave": [
+    "transport", "logist", "vehic", "carga", "pasajer", 
+    "camionet", "bus", "microbus", "acarreo", "movilid", 
+    "conductor", "flota", "operacion", "alquiler"
+  ],
+  "rup": { "tiene_rup": true, "estado_rup": "Activo" },
+  "financiero": {
+    "presupuesto_minimo_contrato": 10000000,
+    "presupuesto_maximo_contrato": 900000000,
+    "indice_liquidez": 2.0,
+    "indice_endeudamiento": 0.35,
+    "capital_trabajo": 150000000,
+    "razon_cobertura_interes": 4.0
+  },
+  "documentacion_al_dia": true
+}

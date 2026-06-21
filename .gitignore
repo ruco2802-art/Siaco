@@ -1,0 +1,28 @@
+# Variables de entorno y credenciales
+.env
+config.py
+
+# Embeddings y datos generados
+clientes/*/embeddings/*.pkl
+competidores/
+logs/
+
+# Reportes generados
+reportes/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

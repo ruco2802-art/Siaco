@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SIACO v3.0 — Inteligencia SECOP II</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ════════════ LOGIN ════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">SIACO</div>
+    <div class="login-sub">Inteligencia para Contratación Pública SECOP II · Colombia</div>
+    <div id="login-error"></div>
+    <form id="login-form">
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Usuario</label>
+        <input type="text" id="inp-user" placeholder="ID de cliente" autocomplete="username" required />
+      </div>
+      <div class="form-group" style="margin-bottom:22px">
+        <label>Contraseña</label>
+        <input type="password" id="inp-pass" placeholder="••••••••" autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="btn-login">Ingresar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ════════════ MAIN ════════════ -->
+<div id="main-screen" style="display:none">
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+    <div class="sidebar-logo">SIACO</div>
+    <div class="sidebar-version">v3.0</div>
+    <div id="plan-chip" class="plan-chip basico">Básico</div>
+    <div class="sidebar-user" id="sidebar-user">—</div>
+
+    <nav id="main-nav">
+      <button class="nav-item active" data-page="perfil">
+        <span class="nav-icon">👤</span> Mi Perfil
+      </button>
+      <button class="nav-item" data-page="busqueda">
+        <span class="nav-icon">🔍</span> Búsqueda SECOP II
+      </button>
+      <button class="nav-item" data-page="auditoria">
+        <span class="nav-icon">📂</span> Auditoría de Pliegos
+      </button>
+      <button class="nav-item" data-page="expedientes">
+        <span class="nav-icon">📋</span> Expedientes
+      </button>
+      <button class="nav-item" data-page="competidores" id="nav-competidores">
+        <span class="nav-icon">🏆</span> Competidores
+        <span class="nav-premium-tag">PRO</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <button class="btn-logout" id="btn-logout">🚪 Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <main id="content">
+
+    <!-- ══ PERFIL ══ -->
+    <div class="page active" id="page-perfil">
+      <div class="page-header">
+        <div class="page-title">👤 Mi Perfil</div>
+        <div class="page-sub">Configura los indicadores financieros y de experiencia que usan los agentes IA</div>
+      </div>
+
+      <div id="rup-alert-box"></div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="empresa">🏢 Empresa</button>
+        <button class="tab-btn" data-tab="financiero">💰 Financiero</button>
+        <button class="tab-btn" data-tab="experiencia">🏗 Experiencia</button>
+        <button class="tab-btn" data-tab="documentos">📎 Documentos</button>
+      </div>
+
+      <!-- Tab Empresa -->
+      <div class="tab-panel active" id="tab-empresa">
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Nombre de la empresa</label>
+              <input type="text" id="p-nombre" placeholder="Razón social completa" />
+            </div>
+            <div class="form-group">
+              <label>NIT</label>
+              <input type="text" id="p-nit" placeholder="900.123.456-7" />
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:12px">
+            <div class="form-group">
+              <label>Sector principal</label>
+              <select id="p-sector">
+                <option value="">Seleccionar...</option>
+                <option value="hvac">HVAC y Climatización</option>
+                <option value="obras_civiles">Obras Civiles</option>
+                <option value="transporte">Transporte y Logística</option>
+                <option value="tecnologia">Tecnología</option>
+                <option value="salud">Salud</option>
+                <option value="educacion">Educación</option>
+                <option value="suministros">Suministros</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Notificaciones</label>
+              <select id="p-notificacion">
+                <option value="whatsapp">WhatsApp</option>
+                <option value="gmail">Email</option>
+                <option value="ambos">Ambos</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:12px">
+            <div class="form-group">
+              <label>WhatsApp (con código país)</label>
+              <input type="text" id="p-whatsapp" placeholder="+573001234567" />
+            </div>
+            <div class="form-group">
+              <label>Correo electrónico</label>
+              <input type="email" id="p-email" placeholder="empresa@correo.com" />
+            </div>
+          </div>
+          <hr class="thin" />
+          <div class="form-row">
+            <div class="form-group">
+              <label>¿Tiene RUP activo?</label>
+              <select id="p-rup-tiene">
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Estado RUP</label>
+              <select id="p-rup-estado">
+                <option value="Activo">Activo</option>
+                <option value="Inactivo">Inactivo / No renovado</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Número RUP</label>
+              <input type="text" id="p-rup-numero" placeholder="Ej: 10901-01-100234" />
+            </div>
+            <div class="form-group">
+              <label>Vencimiento RUP</label>
+              <input type="date" id="p-rup-vence" />
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-save-perfil">💾 Guardar perfil</button>
+        <span id="perfil-save-status" style="margin-left:12px;font-size:.82rem;color:var(--muted)"></span>
+      </div>
+
+      <!-- Tab Financiero -->
+      <div class="tab-panel" id="tab-financiero">
+        <div class="card">
+          <div class="card-title">Indicadores Financieros RUP (Decreto 1082/2015 art. 2.2.1.2.1.5.8)</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Índice de Liquidez (IDL) — ≥ 1.0</label>
+              <input type="number" id="p-idl" step="0.01" min="0" placeholder="Ej: 1.85" />
+            </div>
+            <div class="form-group">
+              <label>Índice de Endeudamiento (NDE) — ≤ 0.80</label>
+              <input type="number" id="p-nde" step="0.01" min="0" max="2" placeholder="Ej: 0.45" />
+            </div>
+            <div class="form-group">
+              <label>Razón Cobertura Intereses (RCI) — ≥ 1.5</label>
+              <input type="number" id="p-rci" step="0.01" placeholder="Ej: 3.2" />
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:12px">
+            <div class="form-group">
+              <label>Patrimonio Líquido (COP)</label>
+              <input type="number" id="p-patrimonio" step="1000000" placeholder="Ej: 850000000" />
+            </div>
+            <div class="form-group">
+              <label>Capital de Trabajo (COP)</label>
+              <input type="number" id="p-capital" step="1000000" placeholder="Ej: 250000000" />
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Rango de Contratos que puede asumir</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Contrato mínimo (COP)</label>
+              <input type="number" id="p-pres-min" step="1000000" placeholder="Ej: 10000000" />
+            </div>
+            <div class="form-group">
+              <label>Contrato máximo (COP)</label>
+              <input type="number" id="p-pres-max" step="1000000" placeholder="Ej: 600000000" />
+            </div>
+          </div>
+          <div style="margin-top:10px; font-size:.78rem; color:var(--muted)">
+            💡 El máximo recomendado = Capacidad Residual K = 0.8 × Patrimonio Líquido − contratos en ejecución (Resolución 196/2016 CCE)
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-save-financiero">💾 Guardar</button>
+      </div>
+
+      <!-- Tab Experiencia -->
+      <div class="tab-panel" id="tab-experiencia">
+        <div class="card">
+          <div class="card-title">Experiencia Técnica (Decreto 1082/2015 art. 2.2.1.2.1.5.7)</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Valor acumulado contratos similares 3 años (COP)</label>
+              <input type="number" id="p-exp-acum" step="1000000" placeholder="Ej: 1200000000" />
+            </div>
+            <div class="form-group">
+              <label>Valor contrato individual más alto (COP)</label>
+              <input type="number" id="p-exp-max" step="1000000" placeholder="Ej: 600000000" />
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:12px">
+            <div class="form-group">
+              <label>Participación mínima en consorcios (%)</label>
+              <input type="number" id="p-exp-part" step="5" min="10" max="100" placeholder="Ej: 30" />
+            </div>
+            <div class="form-group" style="flex:2">
+              <label>Objeto similar (describe lo que construye/presta/suministra)</label>
+              <input type="text" id="p-exp-objeto" placeholder="Ej: construcción y mantenimiento de infraestructura hospitalaria..." />
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:12px">
+            <div class="form-group">
+              <label>Códigos UNSPSC (separados por coma)</label>
+              <input type="text" id="p-unspsc" placeholder="Ej: 401015, 401017, 721015" />
+            </div>
+          </div>
+          <div style="margin-top:10px; font-size:.78rem; color:var(--muted)">
+            💡 Los códigos UNSPSC son el primer filtro del Radar SECOP II. Consúltalos en tu RUP o en <a href="https://www.colombiacompra.gov.co" target="_blank" style="color:var(--accent)">Colombia Compra Eficiente</a>.
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-save-experiencia">💾 Guardar</button>
+      </div>
+
+      <!-- Tab Documentos -->
+      <div class="tab-panel" id="tab-documentos">
+        <div class="card">
+          <div class="card-title">Subir documento del cliente</div>
+          <p class="text-muted" style="font-size:.82rem;margin-bottom:14px">Los documentos se indexan con IA y se usan para cruzar con requisitos del pliego (RAG documental).</p>
+          <div class="form-row" style="margin-bottom:12px">
+            <div class="form-group">
+              <label>Tipo de documento</label>
+              <select id="doc-tipo">
+                <option value="RUP">RUP</option>
+                <option value="Certificado de experiencia">Certificado de experiencia</option>
+                <option value="Estado financiero">Estado financiero</option>
+                <option value="Cámara de comercio">Cámara de comercio</option>
+                <option value="Poder de representación">Poder de representación</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+          </div>
+          <div class="upload-area" id="doc-upload-area">
+            <input type="file" id="doc-file" accept=".pdf,.docx" />
+            <div class="upload-label">📎 Arrastra PDF o DOCX aquí, o haz clic</div>
+            <div class="upload-name" id="doc-filename"></div>
+          </div>
+          <div id="doc-upload-status"></div>
+          <button class="btn btn-secondary" id="btn-upload-doc" disabled style="margin-top:12px">Indexar documento</button>
+        </div>
+        <div class="section-row">
+          <span class="section-title">Documentos indexados</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadDocumentos()">↻ Actualizar</button>
+        </div>
+        <div id="doc-list-container"><div class="loading">Cargando...</div></div>
+      </div>
+    </div><!-- /page-perfil -->
+
+    <!-- ══ BÚSQUEDA ══ -->
+    <div class="page" id="page-busqueda">
+      <div class="page-header">
+        <div class="page-title">🔍 Radar SECOP II</div>
+        <div class="page-sub">Búsqueda híbrida UNSPSC + semántica + scoring con Claude IA</div>
+      </div>
+
+      <div class="card">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Fecha desde</label>
+            <input type="date" id="b-fecha" />
+          </div>
+          <div class="form-group">
+            <label>Valor mínimo (COP)</label>
+            <input type="number" id="b-valor" value="5000000" step="1000000" />
+          </div>
+          <div class="form-group">
+            <label>Departamento</label>
+            <input type="text" id="b-depto" placeholder="Huila (opcional)" />
+          </div>
+          <div class="form-group">
+            <label>Máx. resultados</label>
+            <select id="b-max">
+              <option value="30">30</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div class="form-group form-group-fixed" style="align-items:flex-end">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" id="btn-buscar">Buscar contratos</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Búsqueda avanzada -->
+      <details class="busq-avanzada-wrap" id="busq-avanzada-details">
+        <summary class="busq-avanzada-summary">🔍 Búsqueda avanzada</summary>
+        <div class="busq-avanzada-body">
+          <p class="busq-avanzada-nota">Si ingresas el código exacto del proceso, lo encontraremos aunque no esté en tu sector o esté cerrado.</p>
+          <div class="busq-avanzada-grid">
+            <div class="form-group">
+              <label>Código del proceso</label>
+              <input type="text" id="adv-codigo-proceso" placeholder="Ej: SDQS-1234-2026" />
+            </div>
+            <div class="form-group">
+              <label>NIT de la entidad</label>
+              <input type="text" id="adv-nit" placeholder="Ej: 899999061" />
+            </div>
+            <div class="form-group">
+              <label>Ciudad / Municipio</label>
+              <input type="text" id="adv-municipio" placeholder="Ej: Neiva" />
+            </div>
+            <div class="form-group">
+              <label>Departamento</label>
+              <select id="adv-departamento">
+                <option value="">Todos</option>
+                <option>Amazonas</option><option>Antioquia</option><option>Arauca</option>
+                <option>Atlántico</option><option>Bogotá D.C.</option><option>Bolívar</option>
+                <option>Boyacá</option><option>Caldas</option><option>Caquetá</option>
+                <option>Casanare</option><option>Cauca</option><option>Cesar</option>
+                <option>Chocó</option><option>Córdoba</option><option>Cundinamarca</option>
+                <option>Guainía</option><option>Guaviare</option><option>Huila</option>
+                <option>La Guajira</option><option>Magdalena</option><option>Meta</option>
+                <option>Nariño</option><option>Norte de Santander</option><option>Putumayo</option>
+                <option>Quindío</option><option>Risaralda</option><option>San Andrés y Providencia</option>
+                <option>Santander</option><option>Sucre</option><option>Tolima</option>
+                <option>Valle del Cauca</option><option>Vaupés</option><option>Vichada</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Modalidad</label>
+              <select id="adv-modalidad">
+                <option value="">Todas</option>
+                <option value="Licitación Pública">Licitación Pública</option>
+                <option value="Selección Abreviada">Selección Abreviada</option>
+                <option value="Mínima Cuantía">Mínima Cuantía</option>
+                <option value="Concurso de Méritos">Concurso de Méritos</option>
+                <option value="Contratación Directa">Contratación Directa</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Código UNSPSC</label>
+              <input type="text" id="adv-unspsc" placeholder="Ej: 72131601" />
+            </div>
+            <div class="form-group">
+              <label>Valor mínimo (COP)</label>
+              <input type="number" id="adv-valor-min" placeholder="Ej: 50000000" step="1000000" min="0" />
+            </div>
+            <div class="form-group">
+              <label>Valor máximo (COP)</label>
+              <input type="number" id="adv-valor-max" placeholder="Ej: 2000000000" step="1000000" min="0" />
+            </div>
+            <div class="form-group">
+              <label>Publicado desde</label>
+              <input type="date" id="adv-fecha-desde" />
+            </div>
+            <div class="form-group">
+              <label>Publicado hasta</label>
+              <input type="date" id="adv-fecha-hasta" />
+            </div>
+            <div class="form-group busq-avanzada-full">
+              <label>Palabras clave en el nombre del proceso</label>
+              <input type="text" id="adv-keywords" placeholder="Ej: mantenimiento vías" />
+            </div>
+          </div>
+          <div class="busq-avanzada-actions">
+            <button class="btn btn-primary" id="btn-busq-avanzada">Buscar</button>
+            <button class="btn btn-ghost" id="btn-busq-avanzada-limpiar">Limpiar filtros</button>
+          </div>
+        </div>
+      </details>
+
+      <div id="busq-status"></div>
+
+      <div id="busq-results" style="display:none">
+        <div class="section-row">
+          <span id="busq-count" class="section-title"></span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" id="btn-filtrar-hibrido" disabled>🧬 Filtrar con perfil</button>
+            <button class="btn btn-secondary btn-sm" id="btn-analizar-ia" disabled>🤖 Analizar con IA</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table" id="tabla-contratos">
+            <thead>
+              <tr>
+                <th>Score</th>
+                <th>Nombre del proceso</th>
+                <th>Entidad</th>
+                <th>Valor</th>
+                <th>Fase</th>
+                <th>Cierre</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-body"></tbody>
+          </table>
+        </div>
+
+        <details class="disc-details" id="disc-section" style="display:none">
+          <summary class="disc-summary" id="disc-header">▼ contratos descartados</summary>
+          <div class="disc-list" id="disc-list"></div>
+        </details>
+      </div>
+    </div><!-- /page-busqueda -->
+
+    <!-- ══ AUDITORÍA ══ -->
+    <div class="page" id="page-auditoria">
+      <div class="page-header">
+        <div class="page-title">📂 Auditoría de Pliego</div>
+        <div class="page-sub">Análisis financiero + jurídico con citas de Ley 80, Ley 1150 y Decreto 1082/2015</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">1. Documentos del proceso</div>
+
+        <!-- Pliego (obligatorio) -->
+        <div class="doc-upload-row">
+          <div class="doc-upload-label-row">
+            <span class="doc-upload-label">📄 Pliego de condiciones</span>
+            <span class="req-tag">Obligatorio</span>
+          </div>
+          <div class="upload-area" id="pliego-upload-area">
+            <input type="file" id="pliego-file" accept=".pdf" />
+            <div class="upload-label">Arrastra el PDF aquí o haz clic</div>
+            <div class="upload-name" id="pliego-filename"></div>
+          </div>
+          <div id="pliego-extract-status" style="margin-top:6px"></div>
+          <button class="btn btn-ghost btn-sm" id="btn-extraer" disabled style="margin-top:8px">⚡ Extraer datos automáticamente</button>
+        </div>
+
+        <!-- Documentos adicionales (colapsables) -->
+        <details class="docs-extras" style="margin-top:16px">
+          <summary class="docs-extras-summary">+ Agregar documentos adicionales (opcional)</summary>
+          <div class="docs-extras-body">
+
+            <div class="doc-upload-row-mini">
+              <span class="doc-upload-label">📄 Estudios previos y justificación</span>
+              <div class="upload-mini" id="estudios-upload-area">
+                <input type="file" id="estudios-file" accept=".pdf" />
+                <span class="upload-mini-label">PDF — arrastra o haz clic</span>
+                <span class="upload-name" id="estudios-filename"></span>
+              </div>
+            </div>
+
+            <div class="doc-upload-row-mini">
+              <span class="doc-upload-label">📄 Anexos técnicos</span>
+              <div class="upload-mini" id="anexo-upload-area">
+                <input type="file" id="anexo-file" accept=".pdf" />
+                <span class="upload-mini-label">PDF — arrastra o haz clic</span>
+                <span class="upload-name" id="anexo-filename"></span>
+              </div>
+            </div>
+
+            <div class="doc-upload-row-mini">
+              <span class="doc-upload-label">📄 Adendas</span>
+              <div class="upload-mini" id="adenda-upload-area">
+                <input type="file" id="adenda-file" accept=".pdf" />
+                <span class="upload-mini-label">PDF — arrastra o haz clic</span>
+                <span class="upload-name" id="adenda-filename"></span>
+              </div>
+            </div>
+
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <div class="card-title">2. Parámetros del proceso</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2">
+            <label>Entidad contratante</label>
+            <input type="text" id="a-entidad" placeholder="Nombre de la entidad que publica el proceso" />
+          </div>
+          <div class="form-group" style="flex:3">
+            <label>Objeto del contrato</label>
+            <input type="text" id="a-objeto" placeholder="Descripción del proceso de contratación" />
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:12px">
+          <div class="form-group">
+            <label>Valor base (COP)</label>
+            <input type="number" id="a-valor" value="450000000" step="1000000" />
+          </div>
+          <div class="form-group">
+            <label>Modalidad de selección</label>
+            <select id="a-modalidad">
+              <option value="infraestructura_obra_publica">Obra Pública (Licitación)</option>
+              <option value="infraestructura_menor_cuantia">Menor Cuantía</option>
+              <option value="infraestructura_minima_cuantia">Mínima Cuantía</option>
+              <option value="suministro">Suministro / Compraventa</option>
+              <option value="prestacion_servicios">Prestación de Servicios</option>
+              <option value="consultoria">Consultoría</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Sector</label>
+            <select id="a-sector">
+              <option value="salud">Salud</option>
+              <option value="educacion">Educación</option>
+              <option value="infraestructura">Infraestructura general</option>
+              <option value="transporte">Transporte</option>
+              <option value="deporte">Deporte / Cultura</option>
+              <option value="vivienda">Vivienda</option>
+              <option value="institucional">Institucional</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <button class="btn btn-primary" id="btn-analizar-pliego">🔍 Analizar con IA</button>
+        </div>
+      </div>
+
+      <div id="audit-precargado-banner" style="display:none"></div>
+      <div id="audit-status"></div>
+      <div id="audit-results" style="display:none"></div>
+    </div><!-- /page-auditoria -->
+
+    <!-- ══ EXPEDIENTES ══ -->
+    <div class="page" id="page-expedientes">
+      <div class="page-header">
+        <div class="page-title">📋 Expedientes</div>
+        <div class="page-sub">Seguimiento de procesos con semáforo de urgencia</div>
+      </div>
+      <div id="exp-status"></div>
+      <div id="exp-list" class="exp-list"><div class="loading">Cargando expedientes...</div></div>
+    </div>
+
+    <!-- ══ COMPETIDORES ══ -->
+    <div class="page" id="page-competidores">
+      <div class="page-header">
+        <div class="page-title">🏆 Inteligencia Competitiva</div>
+        <div class="page-sub">Analiza ofertas de competidores y genera estrategia óptima de oferta</div>
+      </div>
+
+      <div id="comp-premium-gate" class="premium-gate">
+        <!-- Gate overlay injected by JS for non-premium -->
+        <div class="card">
+          <div class="card-title">Subir oferta de competidor</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>ID del Proceso SECOP II</label>
+              <input type="text" id="comp-proceso" placeholder="Ej: SEDS-LO-123-2026" />
+            </div>
+            <div class="form-group">
+              <label>NIT del competidor</label>
+              <input type="text" id="comp-nit" placeholder="Ej: 900.123.456-7" />
+            </div>
+            <div class="form-group">
+              <label>Nombre del competidor</label>
+              <input type="text" id="comp-nombre" placeholder="Razón social" />
+            </div>
+          </div>
+          <div class="upload-area" style="margin-top:12px" id="comp-upload-area">
+            <input type="file" id="comp-file" accept=".pdf" />
+            <div class="upload-label">📄 Arrastra la oferta PDF del competidor</div>
+            <div class="upload-name" id="comp-filename"></div>
+          </div>
+          <div id="comp-status" style="margin-top:10px"></div>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <button class="btn btn-secondary" id="btn-extraer-comp" disabled>Analizar oferta PDF</button>
+          </div>
+        </div>
+
+        <div class="section-row" style="margin-top:20px">
+          <span class="section-title" id="comp-proceso-label">Competidores analizados</span>
+          <button class="btn btn-primary" id="btn-estrategia" disabled>🎯 Generar estrategia</button>
+        </div>
+
+        <div id="comp-list"><div class="empty-state">Sube al menos una oferta para ver el análisis comparativo.</div></div>
+        <div id="comp-estrategia" style="display:none"></div>
+      </div>
+    </div><!-- /page-competidores -->
+
+  </main>
+</div>
+
+<!-- ════════════ PANEL DETALLE CONTRATO ════════════ -->
+<div class="detalle-overlay" id="detalle-overlay" onclick="cerrarDetalle()"></div>
+<div class="detalle-panel" id="detalle-panel">
+  <div class="detalle-header">
+    <div class="detalle-title" id="det-nombre">—</div>
+    <button class="btn-close-panel" onclick="cerrarDetalle()" title="Cerrar">✕</button>
+  </div>
+  <div class="det-row"><span class="det-label">Entidad contratante</span><span class="det-val" id="det-entidad">—</span></div>
+  <div class="det-row"><span class="det-label">Valor estimado</span><span class="det-val mono" id="det-valor">—</span></div>
+  <div class="det-row" style="flex-direction:row;gap:24px">
+    <div class="det-row"><span class="det-label">Fase</span><span class="det-val" id="det-fase">—</span></div>
+    <div class="det-row"><span class="det-label">Días para cierre</span><span class="det-val" id="det-dias">—</span></div>
+  </div>
+  <div class="det-row" id="det-url-row" style="display:none">
+    <span class="det-label">Proceso en SECOP II</span>
+    <a class="det-url-link" id="det-url-link" href="#" target="_blank" rel="noopener noreferrer">🔗 Abrir proceso en SECOP II ↗</a>
+    <span class="precargado-secop-url" id="det-url-text"></span>
+  </div>
+  <hr class="thin" />
+  <div class="det-row">
+    <span class="det-label">Documentos que debes revisar / descargar</span>
+    <div class="det-docs">
+      <div class="det-doc">📄 <span>Pliego de condiciones definitivo</span></div>
+      <div class="det-doc">📄 <span>Estudios previos y justificación</span></div>
+      <div class="det-doc">📄 <span>Especificaciones técnicas y anexos</span></div>
+      <div class="det-doc">📄 <span>Lista de proveedores habilitados (para análisis de competencia)</span></div>
+    </div>
+  </div>
+  <div class="det-actions">
+    <button class="btn btn-primary" id="det-btn-auditoria" onclick="irAuditoria()">📂 Ir a Auditoría con estos datos</button>
+    <button class="btn btn-secondary" id="det-btn-expediente" onclick="irAgregarExpediente()">📋 Agregar a Expedientes</button>
+    <button class="btn btn-ghost" id="det-btn-competidores" onclick="irCompetidores()">🏆 Analizar Competencia (Premium)</button>
+  </div>
+</div>
+
+<!-- ════════════ CHAT ASISTENTE ════════════ -->
+<button id="chat-toggle" onclick="toggleChat()" title="Asesor SIACO">💬 Asesor</button>
+
+<div id="chat-panel" style="display:none">
+  <div class="chat-header">
+    <span>🤖 Asesor SIACO</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="chat-clear-btn" onclick="limpiarChat()" title="Nueva conversación">↺</button>
+      <button class="chat-close-btn" onclick="toggleChat()">✕</button>
+    </div>
+  </div>
+  <div class="chat-msgs" id="chat-msgs"></div>
+  <div class="chat-input-row">
+    <textarea id="chat-input" class="chat-textarea" placeholder="Escribe tu consulta..." rows="2"></textarea>
+    <button class="btn btn-primary chat-send-btn" id="btn-chat-send" onclick="sendChat()">Enviar</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

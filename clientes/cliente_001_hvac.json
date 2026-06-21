@@ -1,0 +1,23 @@
+{
+  "id_cliente": "CLI_001",
+  "nombre": "Climatización y Proyectos Técnicos del Huila S.A.S",
+  "nit": "901.777.222-3",
+  "sector": "HVAC",
+  "codigos_unspsc_permitidos": ["401015", "401017", "401018", "411119", "721015", "721512"],
+  "sectores_clave": [
+    "hvac", "aire", "acondicionado", "climatiz", "refriger", 
+    "ventilac", "extract", "duct", "fan coil", "chiller", 
+    "manejadora", "enfriamiento", "cuarto frio", "termic", "energia", 
+    "electric", "mantenimiento"
+  ],
+  "rup": { "tiene_rup": true, "estado_rup": "Activo" },
+  "financiero": {
+    "presupuesto_minimo_contrato": 10000000,
+    "presupuesto_maximo_contrato": 600000000,
+    "indice_liquidez": 1.8,
+    "indice_endeudamiento": 0.45,
+    "capital_trabajo": 250000000,
+    "razon_cobertura_interes": 3.2
+  },
+  "documentacion_al_dia": true
+}
