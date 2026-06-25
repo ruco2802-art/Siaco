@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
-from config import API_KEY
-import config
 import json
+import os
 import re
+
+from dotenv import load_dotenv
+load_dotenv()
+
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 
 def _limpiar_markdown(texto):

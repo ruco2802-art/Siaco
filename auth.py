@@ -2,10 +2,14 @@
 import hashlib
 import secrets
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import config
+from dotenv import load_dotenv
+load_dotenv()
+
+ADMIN_KEY = os.getenv("ADMIN_KEY", "siaco_admin_2026")
 
 
 def generar_hash(password: str, salt: str = None):
@@ -73,7 +77,7 @@ def verificar_credenciales(username: str, password: str):
     """
     # Caso admin
     if username == "admin":
-        if password == config.ADMIN_KEY:
+        if password == ADMIN_KEY:
             return {"id": "admin", "nombre": "Administrador SIACO", "plan": "admin", "perfil_json": {}}
         return None
 
