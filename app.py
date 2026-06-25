@@ -82,8 +82,8 @@ hr { border-color: #1F1F1F !important; }
 # ─────────────────────────────────────────────
 # VERIFICAR API KEY
 # ─────────────────────────────────────────────
-import config as _cfg
-if not _cfg.API_KEY:
+import os as _os
+if not _os.getenv("ANTHROPIC_API_KEY", ""):
     st.error("⚠️ Configura la variable de entorno ANTHROPIC_API_KEY antes de iniciar SIACO.")
     st.code("set ANTHROPIC_API_KEY=sk-ant-api03-...", language="bash")
     st.stop()

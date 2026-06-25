@@ -1,5 +1,5 @@
 # Garantiza que la raíz del proyecto esté en sys.path para que todos los
-# routers puedan hacer `import config`, `import analizador`, etc. sin
+# routers puedan hacer `import analizador`, `import prompts`, etc. sin
 # importar desde qué directorio de trabajo arranque el proceso (Railway, etc.)
 import sys
 from pathlib import Path

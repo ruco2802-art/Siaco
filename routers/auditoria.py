@@ -2,9 +2,11 @@
 """Router de auditoría de pliegos — SIACO v3.0"""
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
 
-from config import API_KEY
+import os
 import anthropic
 import logging
+
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 from analizador import (
     extraer_texto_pliego,

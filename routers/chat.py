@@ -4,9 +4,11 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
+import os
 import anthropic
-from config import API_KEY
 from prompts import SKILL_JURIDICO, SKILL_ESTRATEGIA
+
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 from contexto_sesion import contexto_para_chat
 
 router = APIRouter(tags=["chat"])

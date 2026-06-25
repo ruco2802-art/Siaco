@@ -29,7 +29,8 @@ logging.basicConfig(
 # Conexión al motor de OCR local en Windows
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-from config import API_KEY
+import os
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 client_anthropic = Anthropic(api_key=API_KEY)
 
 # =====================================================================

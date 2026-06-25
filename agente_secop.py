@@ -7,7 +7,7 @@ import urllib.parse
 import time
 from analizador import cargar_clientes, cruzar_licitacion_con_clientes
 from datetime import datetime, timedelta
-from config import API_KEY, DEPARTAMENTO, VALOR_MINIMO, MAX_LICITACIONES, KEYWORDS_HVAC, ARCHIVO_ENVIADOS
+from config_legacy import API_KEY, DEPARTAMENTO, VALOR_MINIMO, MAX_LICITACIONES, KEYWORDS_HVAC, ARCHIVO_ENVIADOS
 
 FASES_EXCLUIDAS = {"manifestación de interés", "adjudicado", "desierto", "liquidado", "terminado", "celebrado"}
 FASES_INCLUIDAS = {"convocado", "publicado", "selección abreviada", "concurso de méritos"}

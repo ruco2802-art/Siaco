@@ -13,8 +13,10 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from config import API_KEY
+import os
 from prompts import SKILL_JURIDICO, SKILL_ESTRATEGIA
+
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 from routers.utils import parsear_json_claude
 
 logger = logging.getLogger("siaco")

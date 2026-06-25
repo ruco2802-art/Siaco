@@ -10,8 +10,10 @@ import requests
 from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 
-from config import API_KEY
+import os
 import anthropic
+
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 router = APIRouter(tags=["busqueda"])
 

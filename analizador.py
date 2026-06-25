@@ -563,7 +563,7 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
 
     # Keywords: del perfil + de KEYWORDS_HVAC de config
     try:
-        from config import KEYWORDS_HVAC as _kw_hvac
+        from config_legacy import KEYWORDS_HVAC as _kw_hvac
         kw_extra = [k.lower() for k in _kw_hvac]
     except Exception:
         kw_extra = []

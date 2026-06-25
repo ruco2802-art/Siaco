@@ -11,7 +11,7 @@ def extraer_datos_oferta(pdf_bytes: bytes, proceso_id: str, nit_competidor: str)
     Guarda resultado en /competidores/{proceso_id}/{nit}.json
     """
     import anthropic
-    from config import API_KEY
+    import os; API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
     texto = ""
     try:
@@ -134,7 +134,7 @@ def generar_estrategia_oferta(cliente_id: str, proceso_id: str, competidores_pro
     Genera estrategia de oferta comparando perfil cliente vs inteligencia acumulada de competidores.
     """
     import anthropic
-    from config import API_KEY
+    import os; API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
     perfil_cliente = {}
     ruta_perfil = Path(f"./clientes/{cliente_id}/perfil.json")
