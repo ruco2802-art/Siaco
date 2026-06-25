@@ -376,10 +376,25 @@ async function analizarConIA() {
       method: 'POST',
       body: JSON.stringify({ contratos: _contratos }),
     });
-    _contratos = data.resultados || [];
+    // Merge by contract ID — preserves hybrid score, adds _score_ia
+    const byId = {};
+    for (const r of (data.resultados || [])) {
+      const id = r.id_del_proceso || r.referencia_del_proceso || '';
+      if (id) byId[id] = r;
+    }
+    _contratos = _contratos.map(c => {
+      const id = c.id_del_proceso || c.referencia_del_proceso || '';
+      const r = byId[id];
+      if (!r) return c;
+      return { ...c, _score_ia: r._score ?? 0, _motivo_ia: r._motivo || '', _urgente: r._urgente ?? c._urgente };
+    });
+    // Sort: IA score desc, hybrid score as tiebreaker
+    _contratos.sort((a, b) =>
+      (b._score_ia ?? -1) - (a._score_ia ?? -1) || (b._score || 0) - (a._score || 0)
+    );
     renderTabla(_contratos);
     stEl.innerHTML = '';
-    toast('Análisis completado — ordenado por relevancia IA', 'success');
+    toast('Análisis completado — ordenado por Score IA', 'success');
   } catch (err) {
     stEl.innerHTML = alertHtml('error', err.message);
   } finally { btn.disabled = false; btn.textContent = '🤖 Analizar con IA'; }
@@ -390,19 +405,28 @@ function renderTabla(lista) {
   txt('busq-count', `${lista.length} contrato${lista.length !== 1 ? 's' : ''} relevantes`);
   const tbody = document.getElementById('tabla-body');
   tbody.innerHTML = lista.map((c, i) => {
-    const score    = c._score || 0;
-    const cls      = score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
-    const nombre   = (c.nombre_del_procedimiento || 'Sin nombre').substring(0, 65);
-    const entidad  = (c.entidad || '—').substring(0, 32);
-    const dias     = c._dias_cierre != null ? `${c._dias_cierre}d` : '—';
-    const scoreBar = `<div class="score-cell">
-      <div class="score-bar"><div class="score-bar-fill ${cls}" style="width:${score}%"></div></div>
-      <span class="score-num-sm ${cls}">${score || '—'}</span>
+    // Columna "Perfil": score del filtro híbrido (siempre visible)
+    const scorePerfil = c._score || 0;
+    const clsP        = scorePerfil >= 70 ? 'score-high' : scorePerfil >= 40 ? 'score-mid' : 'score-low';
+    const scoreBar    = `<div class="score-cell">
+      <div class="score-bar"><div class="score-bar-fill ${clsP}" style="width:${scorePerfil}%"></div></div>
+      <span class="score-num-sm ${clsP}">${scorePerfil || '—'}</span>
     </div>`;
+    // Columna "IA": score de Claude (solo después de "Analizar con IA")
+    const scoreIa = c._score_ia != null ? c._score_ia : null;
+    const clsIA   = scoreIa >= 70 ? 'score-high' : scoreIa >= 40 ? 'score-mid' : 'score-low';
+    const cellIa  = scoreIa != null
+      ? `<span class="score-num-sm ${clsIA}" title="${c._motivo_ia || ''}">${scoreIa}</span>`
+      : `<span class="score-num-sm" style="color:var(--muted)">—</span>`;
+    const nombre  = (c.nombre_del_procedimiento || 'Sin nombre').substring(0, 65);
+    const entidad = (c.entidad || '—').substring(0, 32);
+    const dias    = c._dias_cierre != null ? `${c._dias_cierre}d` : '—';
+    const title   = [c._motivo, c._motivo_ia].filter(Boolean).join(' | ') || 'Ver detalle';
     return `<tr class="${c._urgente ? 'urgente' : ''}" data-idx="${i}">
       <td>${scoreBar}</td>
+      <td class="td-num">${cellIa}</td>
       <td class="td-nombre">
-        <span class="td-nombre-link" onclick="abrirDetalle(${i})" title="${c._motivo || 'Ver detalle'}">${nombre}${c._urgente ? ' <span class="urg-tag">URG</span>' : ''}</span>
+        <span class="td-nombre-link" onclick="abrirDetalle(${i})" title="${title}">${nombre}${c._urgente ? ' <span class="urg-tag">URG</span>' : ''}</span>
       </td>
       <td class="td-sm">${entidad}</td>
       <td class="td-num">${fmtCOP(c.precio_base || 0)}</td>
@@ -1231,8 +1255,14 @@ function renderTablaAvanzada(lista, exacta) {
     const entidad = (c.entidad || '—').substring(0, 32);
     const dias    = c._dias_cierre != null ? `${c._dias_cierre}d` : '—';
     const badge   = `<span class="badge-avanzada">ADV</span>`;
+    const scoreIa = c._score_ia != null ? c._score_ia : null;
+    const clsIA   = scoreIa >= 70 ? 'score-high' : scoreIa >= 40 ? 'score-mid' : 'score-low';
+    const cellIa  = scoreIa != null
+      ? `<span class="score-num-sm ${clsIA}">${scoreIa}</span>`
+      : `<span class="score-num-sm" style="color:var(--muted)">—</span>`;
     return `<tr class="${c._urgente ? 'urgente' : ''}" data-idx="${i}">
       <td>${badge}</td>
+      <td class="td-num">${cellIa}</td>
       <td class="td-nombre">
         <span class="td-nombre-link" onclick="abrirDetalle(${i})" title="Ver detalle">${nombre}${c._urgente ? ' <span class="urg-tag">URG</span>' : ''}</span>
       </td>
