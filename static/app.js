@@ -706,9 +706,11 @@ function renderAuditResult(r) {
     ${docsFalt.length ? `<div class="card"><div class="card-title">📎 Documentos a Gestionar</div>${docsHtml}</div>` : ''}
     ${riesgos.length ? `<div class="card"><div class="card-title">⚠ Riesgos</div><ul class="riesgos-list">${riesgos.map(x=>`<li>⚠ ${x}</li>`).join('')}</ul></div>` : ''}
     ${recs.length ? `<div class="card"><div class="card-title">✅ Plan de Acción</div><ul>${recs.map(x=>`<li>${x}</li>`).join('')}</ul></div>` : ''}
-    <div style="margin-top:20px">
+    <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="descargarPDF(event)">⬇ Descargar PDF Ejecutivo</button>
+      <button id="btn-obs-pliego" class="btn btn-primary" onclick="generarObservaciones(event)">📋 Generar Observaciones al Pliego</button>
     </div>
+    <div id="obs-result" style="margin-top:16px"></div>
   </div>`;
 }
 
@@ -733,6 +735,69 @@ async function descargarPDF(event) {
     toast('PDF descargado', 'success');
   } catch (err) { toast(`Error PDF: ${err.message}`, 'error'); }
   finally { btn.disabled = false; btn.textContent = '⬇ Descargar PDF Ejecutivo'; }
+}
+
+async function generarObservaciones(event) {
+  const btn = event.target;
+  const resDiv = document.getElementById('obs-result');
+  if (!CLIENTE_ID) { toast('Inicia sesión primero', 'warn'); return; }
+  if (!resDiv) { toast('Realiza un análisis de pliego primero', 'warn'); return; }
+  btn.disabled = true; btn.textContent = '⏳ Analizando pliego...';
+  resDiv.innerHTML = '<div class="loading">Comparando con Documentos Tipo CCE…</div>';
+  try {
+    const procesoId = val('a-codigo-proceso') || val('a-objeto') || `obs_${Date.now()}`;
+    const data = await apiJson('/api/observaciones/generar', {
+      method: 'POST',
+      body: JSON.stringify({ cliente_id: CLIENTE_ID, proceso_id: procesoId }),
+    });
+    if (!data.tiene_discrepancias || !data.discrepancias?.length) {
+      resDiv.innerHTML = `<div class="card" style="border-left:4px solid #4caf50">
+        <div class="card-title">✅ Pliego conforme a Documentos Tipo CCE</div>
+        <p>No se encontraron discrepancias que justifiquen observaciones formales.</p>
+      </div>`;
+      return;
+    }
+    const filas = data.discrepancias.map(d => `
+      <tr>
+        <td style="font-weight:700;white-space:nowrap">Obs. ${d.numero}</td>
+        <td>${d.titulo||'—'}</td>
+        <td style="font-size:0.82em;color:#aaa">${d.seccion_pliego||'—'}</td>
+        <td style="font-size:0.82em;color:#e57373">${d.norma_vulnerada||'—'}</td>
+      </tr>`).join('');
+    const descBtn = data.pdf_disponible && data.pdf_filename
+      ? `<button class="btn btn-secondary" style="margin-top:12px"
+           onclick="descargarObservaciones('${data.pdf_filename}')">
+           ⬇ Descargar PDF de Observaciones
+         </button>`
+      : '';
+    resDiv.innerHTML = `<div class="card" style="border-left:4px solid #C6F24E">
+      <div class="card-title">⚠ ${data.total_discrepancias} discrepancia(s) identificada(s) — ${data.entidad||'Entidad'}</div>
+      <div class="table-wrap"><table class="req-table">
+        <thead><tr><th>#</th><th>Título</th><th>Sección</th><th>Norma vulnerada</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table></div>
+      ${descBtn}
+    </div>`;
+    toast(`${data.total_discrepancias} observacion(es) generadas`, 'success');
+  } catch (err) {
+    resDiv.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    toast(`Error: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '📋 Generar Observaciones al Pliego';
+  }
+}
+
+async function descargarObservaciones(filename) {
+  if (!CLIENTE_ID || !filename) { toast('PDF no disponible', 'warn'); return; }
+  try {
+    const res = await api(`/api/observaciones/pdf/${CLIENTE_ID}/${encodeURIComponent(filename)}`);
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+    toast('PDF descargado', 'success');
+  } catch (err) { toast(`Error descargando PDF: ${err.message}`, 'error'); }
 }
 
 // ════════════ EXPEDIENTES ════════════

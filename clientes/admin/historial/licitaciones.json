@@ -98,5 +98,25 @@
     "decision_usuario": null,
     "resultado_final": null,
     "lecciones": []
+  },
+  {
+    "proceso_id": "manual-admin-1782418829",
+    "fecha_analisis": "2026-06-25T15:22:29.208467",
+    "score_financiero": 52,
+    "score_juridico": 52,
+    "concepto_final": "REVISAR",
+    "decision_usuario": null,
+    "resultado_final": null,
+    "lecciones": []
+  },
+  {
+    "proceso_id": "manual-admin-1782421713",
+    "fecha_analisis": "2026-06-25T16:11:39.571376",
+    "score_financiero": 88,
+    "score_juridico": 78,
+    "concepto_final": "PRESENTAR",
+    "decision_usuario": null,
+    "resultado_final": null,
+    "lecciones": []
   }
 ]

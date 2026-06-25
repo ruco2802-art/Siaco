@@ -4,14 +4,18 @@ from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
 
 from config import API_KEY
 import anthropic
+import logging
+
 from analizador import (
     extraer_texto_pliego,
     extraer_texto_completo_pdf,
     chunking_rag_pliego,
     analizar_cliente_vs_licitacion_paralelo,
     guardar_analisis_historial,
-    _extraer_json,
 )
+from routers.utils import parsear_json_claude
+
+logger = logging.getLogger("siaco")
 
 router = APIRouter(tags=["auditoria"])
 
@@ -173,7 +177,10 @@ async def extraer_pliego(
                 '"sector":"salud|educacion|infraestructura|transporte|ambiente|institucional"}'
             )}],
         )
-        extraidos = _extraer_json(resp.content[0].text)
+        raw = resp.content[0].text
+        extraidos = parsear_json_claude(raw) or {}
+        if not extraidos:
+            logger.warning("[AUDITORIA/extraer] parsear_json_claude retornó None. Respuesta cruda:\n%s", raw[:800])
     except Exception:
         pass
 

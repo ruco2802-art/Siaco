@@ -17,15 +17,15 @@
     "razon_cobertura_interes": 3.2,
     "patrimonio_liquido": 850000000.0,
     "presupuesto_minimo_contrato": 1000000000.0,
-    "presupuesto_maximo_contrato": 600000000.0,
+    "presupuesto_maximo_contrato": 900000000.0,
     "capital_trabajo": 250000000.0
   },
   "experiencia": {
     "valor_acumulado": 1200000000.0,
     "valor_individual_max": 600000000.0,
-    "objeto_similar": "mantenimiento, adecuación, construccion, reformas y obras civiles",
+    "objeto_similar": "Mantenimiento, adecuación, construccion, reformas,obras civiles,locativas, infraestructura,remodelación",
     "codigos_unspsc": "401015,401017,721015,72140000,72120000,71170000,72150000",
-    "participacion_minima": 30.0
+    "participacion_minima": 20.0
   },
   "cliente_id": "admin"
 }
