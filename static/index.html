@@ -393,10 +393,15 @@
       <div id="busq-status"></div>
 
       <div id="busq-results" style="display:none">
+        <!-- Banner de resumen de búsqueda -->
+        <div id="busq-banner" style="display:none"></div>
+
         <div class="section-row">
-          <span id="busq-count" class="section-title"></span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="busq-count" class="section-title"></span>
+            <span id="badge-modo" class="badge-avanzada" style="display:none">HÍBRIDO</span>
+          </div>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" id="btn-filtrar-hibrido" disabled>🧬 Filtrar con perfil</button>
             <button class="btn btn-secondary btn-sm" id="btn-analizar-ia" disabled>🤖 Analizar con IA</button>
           </div>
         </div>
@@ -420,7 +425,21 @@
 
         <details class="disc-details" id="disc-section" style="display:none">
           <summary class="disc-summary" id="disc-header">▼ contratos descartados</summary>
-          <div class="disc-list" id="disc-list"></div>
+          <div class="table-wrap">
+            <table class="data-table" id="disc-table">
+              <thead>
+                <tr>
+                  <th>Nombre del proceso</th>
+                  <th>Entidad</th>
+                  <th>Valor</th>
+                  <th>Razón</th>
+                  <th>Score</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="disc-tbody"></tbody>
+            </table>
+          </div>
         </details>
       </div>
     </div><!-- /page-busqueda -->

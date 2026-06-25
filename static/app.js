@@ -292,7 +292,6 @@ document.getElementById('btn-upload-doc').addEventListener('click', async () => 
 
 // ════════════ BÚSQUEDA SECOP II ════════════
 document.getElementById('btn-buscar').addEventListener('click', buscarContratos);
-document.getElementById('btn-filtrar-hibrido').addEventListener('click', filtrarHibrido);
 document.getElementById('btn-analizar-ia').addEventListener('click', analizarConIA);
 
 async function buscarContratos() {
@@ -301,6 +300,8 @@ async function buscarContratos() {
   btn.disabled = true; btn.textContent = 'Buscando...';
   stEl.innerHTML = alertHtml('info', 'Consultando SECOP II... (puede tardar hasta 30 seg)');
   document.getElementById('busq-results').style.display = 'none';
+  const bannerEl = document.getElementById('busq-banner');
+  if (bannerEl) bannerEl.style.display = 'none';
 
   try {
     const qs = new URLSearchParams({
@@ -310,38 +311,59 @@ async function buscarContratos() {
       departamento:   val('b-depto') || '',
     });
     const data = await apiJson(`/api/contratos?${qs}`);
-    _contratos   = data.contratos   || [];
-    _descartados = data.descartados || [];
+
+    // Support both new and legacy response shapes
+    _contratos   = data.contratos_relevantes || data.contratos   || [];
+    _descartados = data.contratos_descartados || data.descartados || [];
+
     stEl.innerHTML = '';
+    renderBusquedaResult(data);
     renderTabla(_contratos);
+    renderDescartados(_descartados);
     document.getElementById('busq-results').style.display = '';
-    document.getElementById('btn-filtrar-hibrido').disabled = !_contratos.length;
-    document.getElementById('btn-analizar-ia').disabled     = !_contratos.length;
-    if (!_contratos.length)
+    document.getElementById('btn-analizar-ia').disabled = !_contratos.length;
+
+    if (!_contratos.length && _descartados.length) {
+      // Zero relevant: auto-expand discarded and show guidance
+      const discSec = document.getElementById('disc-section');
+      if (discSec) discSec.setAttribute('open', '');
+      stEl.innerHTML = alertHtml('warn',
+        `Sin contratos relevantes para tu perfil. Se encontraron ${_descartados.length} contratos — puedes analizarlos individualmente.`
+      );
+    } else if (!_contratos.length) {
       stEl.innerHTML = alertHtml('warn', 'Sin resultados. Prueba ampliar fechas o reducir valor mínimo.');
+    }
   } catch (err) {
     stEl.innerHTML = alertHtml('error', err.message);
   } finally { btn.disabled = false; btn.textContent = 'Buscar contratos'; }
 }
 
-async function filtrarHibrido() {
-  const btn = document.getElementById('btn-filtrar-hibrido');
-  btn.disabled = true; btn.textContent = '🧬 Filtrando...';
-  try {
-    const data = await apiJson('/api/contratos/filtrar', {
-      method: 'POST',
-      body: JSON.stringify({ contratos: _contratos, query: '' }),
-    });
-    // busqueda_hibrida_triple devuelve score_hibrido (0-1) → normalizar a _score (0-100)
-    _contratos = (data.resultados || []).map(c => ({
-      ...c,
-      _score: c._score || Math.round((c.score_hibrido || 0) * 100),
-      _motivo: c._motivo || `UNSPSC:${Math.round((c.score_unspsc||0)*100)} KW:${Math.round((c.score_keywords||0)*100)} Sem:${Math.round((c.score_semantico||0)*100)}`,
-    }));
-    renderTabla(_contratos);
-    toast(`Filtro híbrido: ${_contratos.length} contratos ordenados por relevancia`, 'success');
-  } catch (err) { toast(err.message, 'error'); }
-  finally { btn.disabled = false; btn.textContent = '🧬 Filtrar con perfil'; }
+function renderBusquedaResult(data) {
+  const bannerEl  = document.getElementById('busq-banner');
+  const badgeEl   = document.getElementById('badge-modo');
+  if (!bannerEl) return;
+
+  const rel   = data.total_relevantes  ?? (data.contratos_relevantes  || data.contratos  || []).length;
+  const disc  = data.total_descartados ?? (data.contratos_descartados || data.descartados || []).length;
+  const total = data.total_analizados  ?? data.total_raw ?? (rel + disc);
+  const modo  = data.modo_busqueda || 'keywords_only';
+
+  // Mode badge
+  if (badgeEl) {
+    const isHibrido = modo === 'hibrido';
+    badgeEl.textContent = isHibrido ? '🧬 HÍBRIDO' : 'KEYWORDS';
+    badgeEl.className   = `badge-avanzada ${isHibrido ? 'badge-verde' : 'badge-amber'}`;
+    badgeEl.style.display = '';
+  }
+
+  // Summary banner
+  bannerEl.innerHTML = `<div class="busq-banner-card">
+    <div class="busq-banner-row">
+      <span class="banner-rel">✅ <strong>${rel}</strong> relevantes</span>
+      <span class="banner-disc">🗑 <strong>${disc}</strong> descartados de <strong>${total}</strong> analizados</span>
+    </div>
+  </div>`;
+  bannerEl.style.display = (rel + disc) > 0 ? '' : 'none';
 }
 
 async function analizarConIA() {
@@ -363,9 +385,9 @@ async function analizarConIA() {
   } finally { btn.disabled = false; btn.textContent = '🤖 Analizar con IA'; }
 }
 
-// ─── Render tabla de contratos con score-bar + nombre clickable ─────────────
+// ─── Render tabla principal de contratos ────────────────────────────────────
 function renderTabla(lista) {
-  txt('busq-count', `${lista.length} contratos`);
+  txt('busq-count', `${lista.length} contrato${lista.length !== 1 ? 's' : ''} relevantes`);
   const tbody = document.getElementById('tabla-body');
   tbody.innerHTML = lista.map((c, i) => {
     const score    = c._score || 0;
@@ -393,16 +415,54 @@ function renderTabla(lista) {
       </td>
     </tr>`;
   }).join('');
+}
 
-  // Descartados
-  const discSec = document.getElementById('disc-section');
-  if (_descartados.length) {
-    discSec.style.display = '';
-    document.getElementById('disc-header').textContent = `▼ ${_descartados.length} contratos descartados automáticamente`;
-    document.getElementById('disc-list').innerHTML = _descartados.map(d =>
-      `<div class="disc-item"><span class="disc-nombre">${(d.nombre_del_procedimiento||'?').substring(0,55)}</span><span class="disc-razon">${d._razon||''}</span></div>`
-    ).join('');
-  } else { discSec.style.display = 'none'; }
+// ─── Render tabla de descartados ─────────────────────────────────────────────
+function renderDescartados(descartados) {
+  const discSec  = document.getElementById('disc-section');
+  const discHdr  = document.getElementById('disc-header');
+  const discBody = document.getElementById('disc-tbody');
+  if (!discSec) return;
+
+  if (!descartados.length) {
+    discSec.style.display = 'none';
+    return;
+  }
+
+  discSec.style.display = '';
+  if (discHdr) discHdr.textContent = `▼ ${descartados.length} contratos descartados automáticamente`;
+
+  if (discBody) {
+    discBody.innerHTML = descartados.map((d, i) => {
+      const score = d._score_hibrido ? Math.round(d._score_hibrido * 100) : null;
+      return `<tr>
+        <td class="td-nombre"><span class="td-nombre-link" style="cursor:default">${(d.nombre_del_procedimiento||'Sin nombre').substring(0,55)}</span></td>
+        <td class="td-sm">${(d.entidad||'—').substring(0,28)}</td>
+        <td class="td-num">${fmtCOP(d.precio_base||0)}</td>
+        <td><span class="disc-razon-tag">${d.razon_descarte||d._razon||'—'}</span></td>
+        <td class="td-num">${score != null ? score : '—'}</td>
+        <td class="td-actions">
+          <button class="btn btn-ghost btn-xs" onclick="analizarDeTodasFormas(${i})" title="Incluir en resultados">▶ Analizar</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ─── Mover contrato descartado a resultados principales ──────────────────────
+function analizarDeTodasFormas(idx) {
+  const c = _descartados[idx];
+  if (!c) return;
+  _contratos.push({
+    ...c,
+    _score:  0,
+    _motivo: `Incluido manualmente (${c.razon_descarte || c._razon || 'descartado'})`,
+  });
+  _descartados.splice(idx, 1);
+  renderTabla(_contratos);
+  renderDescartados(_descartados);
+  document.getElementById('btn-analizar-ia').disabled = false;
+  toast('Contrato incluido en resultados principales', 'success');
 }
 
 // ════════════ PANEL DE DETALLE ════════════
@@ -1157,8 +1217,7 @@ async function ejecutarBusquedaAvanzada() {
     renderTablaAvanzada(_contratos, data.busqueda_exacta);
     resEl.style.display = '';
 
-    document.getElementById('btn-filtrar-hibrido').disabled = !_contratos.length;
-    document.getElementById('btn-analizar-ia').disabled     = !_contratos.length;
+    document.getElementById('btn-analizar-ia').disabled = !_contratos.length;
   } catch (err) {
     stEl.innerHTML = alertHtml('error', err.message);
   }

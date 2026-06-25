@@ -34,12 +34,19 @@ def _parse_dt(valor: str) -> Optional[datetime]:
         return None
 
 
-def _fmt_razon(lic: dict, razon: str) -> dict:
+def _fmt_descartado(lic: dict, razon: str) -> dict:
+    """Wraps a SECOP contract with a discard reason, preserving full data for 'Analizar de todas formas'."""
+    try:
+        valor = float(lic.get("precio_base", 0) or 0)
+    except Exception:
+        valor = 0
     return {
-        "_razon": razon,
-        "nombre_del_procedimiento": lic.get("nombre_del_procedimiento", "Sin nombre"),
-        "entidad": lic.get("entidad", ""),
-        "precio_base": lic.get("precio_base", 0),
+        **lic,
+        "razon_descarte": razon,
+        "_razon":         razon,       # backward compat
+        "_score":         0,
+        "_score_hibrido": float(lic.get("score_hibrido", 0)),
+        "precio_base":    valor,       # ensure numeric
     }
 
 
@@ -52,10 +59,11 @@ def buscar_contratos(
     departamento:   str   = Query(""),
     authorization:  str   = Header(None),
 ):
-    """Obtiene contratos de SECOP II y aplica filtros duros de fase/tiempo/valor."""
+    """Obtiene contratos de SECOP II, aplica filtros duros y scoring híbrido con perfil del cliente."""
     from routers.auth import require_auth
-    require_auth(authorization)
+    sesion = require_auth(authorization)
 
+    # ── SECOP II fetch ────────────────────────────────────────────────────
     where = f"fecha_de_publicacion > '{fecha_desde}T00:00:00'"
     if departamento:
         where += f" AND departamento_entidad = '{departamento}'"
@@ -86,9 +94,10 @@ def buscar_contratos(
                     detail="No se pudo conectar con SECOP II. Intente en unos segundos.",
                 )
 
+    # ── Hard filters ──────────────────────────────────────────────────────
     now = datetime.now()
     seen: set[str] = set()
-    contratos: list[dict] = []
+    contratos_pre: list[dict] = []
     descartados: list[dict] = []
 
     for lic in lics_raw:
@@ -99,20 +108,20 @@ def buscar_contratos(
 
         fase = str(lic.get("fase", "") or lic.get("estado_del_procedimiento", "")).lower().strip()
         if any(exc in fase for exc in FASES_EXCLUIDAS):
-            descartados.append(_fmt_razon(lic, f"Fase cerrada: {fase or 'sin fase'}"))
+            descartados.append(_fmt_descartado(lic, f"Fase cerrada: {fase or 'sin fase'}"))
             continue
 
         dt_manif = _parse_dt(lic.get("fecha_limite_manifestacion_interes", ""))
         if dt_manif and dt_manif < now + timedelta(hours=24):
             horas = max(0, int((dt_manif - now).total_seconds() / 3600))
-            descartados.append(_fmt_razon(lic, f"Manifestacion de interes cierra en {horas}h"))
+            descartados.append(_fmt_descartado(lic, f"Manifestacion de interes cierra en {horas}h"))
             continue
 
         dt_oferta = (_parse_dt(lic.get("fecha_limite_recepcion_ofertas", ""))
                      or _parse_dt(lic.get("fecha_de_recepcion_de", "")))
         if dt_oferta and dt_oferta < now + timedelta(hours=48):
             horas = max(0, int((dt_oferta - now).total_seconds() / 3600))
-            descartados.append(_fmt_razon(lic, f"Cierre de ofertas en {horas}h"))
+            descartados.append(_fmt_descartado(lic, f"Cierre de ofertas en {horas}h"))
             continue
 
         try:
@@ -120,14 +129,14 @@ def buscar_contratos(
         except Exception:
             valor = 0
         if valor < valor_minimo:
-            descartados.append(_fmt_razon(lic, f"Valor COP {valor:,.0f} menor al minimo"))
+            descartados.append(_fmt_descartado(lic, f"Valor COP {valor:,.0f} menor al minimo"))
             continue
 
         dias_cierre = None
         if dt_oferta:
             dias_cierre = max(0, int((dt_oferta - now).total_seconds() / 86400))
 
-        contratos.append({
+        contratos_pre.append({
             **lic,
             "_score": 0,
             "_score_hibrido": 0.0,
@@ -136,11 +145,67 @@ def buscar_contratos(
             "_dias_cierre": dias_cierre,
         })
 
+    # ── Hybrid scoring inline (uses client profile from session) ──────────
+    modo_busqueda = "keywords_only"
+    contratos_relevantes = contratos_pre
+
+    try:
+        from routers.perfil import _load_perfil, _cliente_id_from_session
+        from analizador import busqueda_hibrida_triple
+
+        cid = _cliente_id_from_session(sesion)
+        perfil = _load_perfil(cid) if cid else None
+
+        if perfil:
+            exp = perfil.get("experiencia", {}) or {}
+            codigos_unspsc = exp.get("codigos_unspsc", "").strip()
+            objeto_similar = exp.get("objeto_similar", "").strip()
+            sector = perfil.get("sector", "").strip()
+            query = objeto_similar or sector
+
+            if query or codigos_unspsc:
+                perfil_analisis = {
+                    "codigos_unspsc": codigos_unspsc,
+                    "objeto_similar": objeto_similar,
+                }
+                relevantes = busqueda_hibrida_triple(query, perfil_analisis, contratos_pre)
+                ids_rel = {
+                    r.get("id_del_proceso") or r.get("referencia_del_proceso", "")
+                    for r in relevantes
+                }
+                for c in contratos_pre:
+                    ckey = c.get("id_del_proceso") or c.get("referencia_del_proceso", "")
+                    if ckey not in ids_rel:
+                        descartados.append(_fmt_descartado(c, "Baja relevancia para el perfil"))
+
+                contratos_relevantes = []
+                for r in relevantes:
+                    sh = r.get("score_hibrido", 0)
+                    contratos_relevantes.append({
+                        **r,
+                        "_score": int(round(sh * 100)),
+                        "_motivo": (
+                            f"UNSPSC:{int(r.get('score_unspsc', 0)*100)} "
+                            f"KW:{int(r.get('score_keywords', 0)*100)} "
+                            f"Sem:{int(r.get('score_semantico', 0)*100)}"
+                        ),
+                    })
+                modo_busqueda = "hibrido"
+    except Exception:
+        pass  # fallback: all contratos_pre are relevant, keywords_only mode
+
     return {
-        "contratos":   contratos,
-        "descartados": descartados[:5],
-        "total":       len(contratos),
-        "total_raw":   len(lics_raw),
+        "contratos_relevantes":  contratos_relevantes,
+        "contratos_descartados": descartados,
+        "total_analizados":      len(lics_raw),
+        "total_relevantes":      len(contratos_relevantes),
+        "total_descartados":     len(descartados),
+        "modo_busqueda":         modo_busqueda,
+        # backward compat keys for any cached frontend
+        "contratos":             contratos_relevantes,
+        "descartados":           [d for d in descartados if d.get("razon_descarte","").startswith("Fase") or d.get("razon_descarte","").startswith("Manifestacion") or d.get("razon_descarte","").startswith("Cierre") or d.get("razon_descarte","").startswith("Valor")][:5],
+        "total":                 len(contratos_relevantes),
+        "total_raw":             len(lics_raw),
     }
 
 
