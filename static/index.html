@@ -618,11 +618,93 @@
 
     <!-- ══ ADMIN ══ -->
     <div class="page" id="page-admin">
-      <div class="page-header">
-        <div class="page-title">⚙️ Panel de Administración</div>
-        <div class="page-sub">Herramientas exclusivas para administradores de SIACO</div>
+      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="page-title">⚙️ Panel de Administración</div>
+          <div class="page-sub">Herramientas exclusivas para administradores de SIACO</div>
+        </div>
+        <button class="btn btn-primary" onclick="toggleFormNuevoCliente()" style="font-size:.95rem;padding:10px 20px">
+          ➕ Crear nuevo cliente
+        </button>
       </div>
 
+      <!-- FORMULARIO NUEVO CLIENTE -->
+      <div class="card" id="card-nuevo-cliente" style="display:none">
+        <div class="card-title">Datos del nuevo cliente</div>
+        <form id="form-nuevo-cliente" onsubmit="crearCliente(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Nombre de la empresa</label>
+              <input type="text" id="adm-nombre" placeholder="Ej: Constructora Los Andes SAS" required>
+            </div>
+            <div class="form-group" style="flex:0 0 200px">
+              <label>NIT</label>
+              <input type="text" id="adm-nit" placeholder="900123456-7" oninput="sugerirUsuario()" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Usuario <span style="color:var(--muted);font-weight:400;text-transform:none">(sugerido desde el NIT)</span></label>
+              <input type="text" id="adm-user" placeholder="nit900123456" required>
+            </div>
+            <div class="form-group">
+              <label>Contraseña temporal</label>
+              <input type="text" id="adm-pass" placeholder="Ej: Andes2026" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Sector principal</label>
+              <select id="adm-sector">
+                <option value="">— Seleccionar —</option>
+                <option>Construcción y obra civil</option>
+                <option>Tecnología e informática</option>
+                <option>Salud y bienestar</option>
+                <option>Consultoría y asesoría</option>
+                <option>Suministros y compras</option>
+                <option>Servicios generales</option>
+                <option>Educación</option>
+                <option>Transporte y logística</option>
+                <option>Seguridad</option>
+                <option>Otro</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:0 0 180px">
+              <label>Plan</label>
+              <select id="adm-plan">
+                <option value="socio">Socio</option>
+                <option value="herramienta">Herramienta</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="adm-email" placeholder="contacto@empresa.com">
+            </div>
+            <div class="form-group">
+              <label>WhatsApp</label>
+              <input type="text" id="adm-wa" placeholder="573001234567">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:8px">
+            <button type="submit" class="btn btn-primary" id="btn-crear-cliente">Crear cliente</button>
+            <button type="button" class="btn" onclick="toggleFormNuevoCliente()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- RESUMEN DE CREDENCIALES -->
+      <div class="card" id="card-credenciales" style="display:none;border-left:4px solid var(--ok)">
+        <div class="card-title" style="color:var(--ok)">✅ Cliente creado exitosamente</div>
+        <div id="cred-resumen"></div>
+        <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="copiarCredenciales()">📋 Copiar credenciales para WhatsApp</button>
+          <button class="btn" onclick="nuevoClienteForm()">➕ Crear otro cliente</button>
+        </div>
+      </div>
+
+      <!-- DOCUMENTOS -->
       <div class="card">
         <div class="card-title">Documentos y Contratos</div>
         <p style="color:var(--text2);font-size:.88rem;margin-bottom:14px">

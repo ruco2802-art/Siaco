@@ -1287,6 +1287,85 @@ function renderTablaAvanzada(lista, exacta) {
 }
 
 // ════════════ ADMIN ════════════
+let _admCredenciales = {};
+
+function toggleFormNuevoCliente() {
+  const form = document.getElementById('card-nuevo-cliente');
+  const cred = document.getElementById('card-credenciales');
+  if (form.style.display === 'none') {
+    form.style.display = '';
+    cred.style.display = 'none';
+    setTimeout(() => document.getElementById('adm-nombre').focus(), 50);
+  } else {
+    form.style.display = 'none';
+  }
+}
+
+function sugerirUsuario() {
+  const nit = document.getElementById('adm-nit').value;
+  document.getElementById('adm-user').value = 'nit' + nit.replace(/[^0-9]/g, '');
+}
+
+async function crearCliente(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btn-crear-cliente');
+  btn.disabled = true;
+  btn.textContent = 'Creando…';
+  try {
+    const body = {
+      nombre_empresa: document.getElementById('adm-nombre').value.trim(),
+      nit:            document.getElementById('adm-nit').value.trim(),
+      username:       document.getElementById('adm-user').value.trim(),
+      password:       document.getElementById('adm-pass').value.trim(),
+      sector:         document.getElementById('adm-sector').value,
+      plan:           document.getElementById('adm-plan').value,
+      email:          document.getElementById('adm-email').value.trim(),
+      whatsapp:       document.getElementById('adm-wa').value.trim(),
+    };
+    await apiJson('/api/admin/clientes', { method: 'POST', body: JSON.stringify(body) });
+    _admCredenciales = body;
+    mostrarCredenciales(body);
+    toast('Cliente creado exitosamente', 'ok');
+  } catch (err) {
+    toast(err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Crear cliente';
+  }
+}
+
+function mostrarCredenciales(c) {
+  document.getElementById('card-nuevo-cliente').style.display = 'none';
+  const cred = document.getElementById('card-credenciales');
+  cred.style.display = '';
+  document.getElementById('cred-resumen').innerHTML = `
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 24px;font-size:.9rem;margin-top:10px;line-height:1.6">
+      <span style="color:var(--muted)">Empresa</span>   <span>${c.nombre_empresa}</span>
+      <span style="color:var(--muted)">NIT</span>        <span>${c.nit}</span>
+      <span style="color:var(--muted)">Usuario</span>    <strong style="font-family:var(--mono)">${c.username}</strong>
+      <span style="color:var(--muted)">Contraseña</span> <strong style="font-family:var(--mono);color:var(--accent)">${c.password}</strong>
+      <span style="color:var(--muted)">Plan</span>       <span>${c.plan}</span>
+    </div>`;
+  cred.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function copiarCredenciales() {
+  const c = _admCredenciales;
+  const msg = `Bienvenido a SIACO, ${c.nombre_empresa}.\nSu usuario: ${c.username}\nSu contraseña temporal: ${c.password}\nIngrese en: https://siaco-production.up.railway.app`;
+  navigator.clipboard.writeText(msg)
+    .then(() => toast('Credenciales copiadas al portapapeles', 'ok'))
+    .catch(() => toast('No se pudo copiar automáticamente', 'warn'));
+}
+
+function nuevoClienteForm() {
+  document.getElementById('card-credenciales').style.display = 'none';
+  const form = document.getElementById('card-nuevo-cliente');
+  form.style.display = '';
+  document.getElementById('form-nuevo-cliente').reset();
+  document.getElementById('btn-crear-cliente').disabled = false;
+  document.getElementById('btn-crear-cliente').textContent = 'Crear cliente';
+  setTimeout(() => document.getElementById('adm-nombre').focus(), 50);
+}
+
 function descargarContrato() {
   const a = document.createElement('a');
   a.href     = '/api/contrato/descargar';
