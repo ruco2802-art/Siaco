@@ -6,9 +6,11 @@ import sys
 # Asegura que los módulos del proyecto sean importables desde los routers
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import io
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 from routers import auth, busqueda, auditoria, expedientes, perfil, competidores, reportes, chat, observaciones
 
@@ -42,3 +44,17 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "3.0"}
+
+
+@app.get("/api/contrato/descargar")
+def descargar_contrato():
+    """Genera y retorna el contrato de servicios SIACO como archivo .docx."""
+    from generar_contrato import generar_docx
+    buf = io.BytesIO()
+    generar_docx(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": "attachment; filename=Contrato_Servicios_SIACO.docx"},
+    )

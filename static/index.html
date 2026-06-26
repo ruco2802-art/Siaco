@@ -55,6 +55,9 @@
         <span class="nav-icon">🏆</span> Competidores
         <span class="nav-premium-tag">PRO</span>
       </button>
+      <button class="nav-item" data-page="admin" id="nav-admin" style="display:none">
+        <span class="nav-icon">⚙️</span> Admin
+      </button>
     </nav>
 
     <div class="sidebar-bottom">
@@ -612,6 +615,24 @@
         <div id="comp-estrategia" style="display:none"></div>
       </div>
     </div><!-- /page-competidores -->
+
+    <!-- ══ ADMIN ══ -->
+    <div class="page" id="page-admin">
+      <div class="page-header">
+        <div class="page-title">⚙️ Panel de Administración</div>
+        <div class="page-sub">Herramientas exclusivas para administradores de SIACO</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Documentos y Contratos</div>
+        <p style="color:var(--text2);font-size:.88rem;margin-bottom:14px">
+          Genera y descarga el contrato de servicios en blanco para imprimir, firmar y entregar al cliente.
+        </p>
+        <button class="btn btn-primary" onclick="descargarContrato()">
+          📄 Descargar contrato en blanco (.docx)
+        </button>
+      </div>
+    </div><!-- /page-admin -->
 
   </main>
 </div>

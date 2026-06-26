@@ -104,6 +104,10 @@ function initMainScreen() {
   chip.className   = `plan-chip ${PLAN}`;
   document.getElementById('sidebar-user').textContent = NOMBRE || CLIENTE_ID;
 
+  // Mostrar nav de admin solo para plan admin
+  const navAdmin = document.getElementById('nav-admin');
+  if (navAdmin) navAdmin.style.display = PLAN === 'admin' ? '' : 'none';
+
   if (PLAN !== 'premium' && PLAN !== 'admin') {
     const gate = document.getElementById('comp-premium-gate');
     if (gate && !gate.querySelector('.gate-overlay')) {
@@ -1280,6 +1284,16 @@ function renderTablaAvanzada(lista, exacta) {
 
   const discSec = document.getElementById('disc-section');
   if (discSec) discSec.style.display = 'none';
+}
+
+// ════════════ ADMIN ════════════
+function descargarContrato() {
+  const a = document.createElement('a');
+  a.href     = '/api/contrato/descargar';
+  a.download = 'Contrato_Servicios_SIACO.docx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // ════════════ BOOT ════════════
