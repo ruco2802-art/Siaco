@@ -14,6 +14,7 @@ from analizador import (
     chunking_rag_pliego,
     analizar_cliente_vs_licitacion_paralelo,
     guardar_analisis_historial,
+    SCANNED_PDF_MARKER,
 )
 from routers.utils import parsear_json_claude
 
@@ -158,6 +159,15 @@ async def extraer_pliego(
     raw = await pdf.read()
     texto = extraer_texto_pliego(raw)
 
+    if texto == SCANNED_PDF_MARKER:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "El PDF es una imagen escaneada. En este momento el servidor no puede procesarlo "
+                "automáticamente. Por favor intente con un PDF con texto seleccionable, "
+                "o contáctenos para asistencia."
+            ),
+        )
     if not texto:
         raise HTTPException(status_code=422, detail="No se pudo extraer texto del PDF. Verifica que no sea solo imágenes sin OCR.")
 
@@ -250,6 +260,15 @@ async def analizar_pliego(
         if raw:
             texto_pliego = extraer_texto_completo_pdf(raw)
 
+    if texto_pliego == SCANNED_PDF_MARKER:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "El PDF es una imagen escaneada. En este momento el servidor no puede procesarlo "
+                "automáticamente. Por favor intente con un PDF con texto seleccionable, "
+                "o contáctenos para asistencia."
+            ),
+        )
     if not texto_pliego or len(texto_pliego.strip()) < 200:
         raise HTTPException(
             status_code=422,

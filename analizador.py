@@ -8,6 +8,10 @@ load_dotenv()
 
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# Sentinel retornado por las funciones de extracción cuando el PDF es una
+# imagen escaneada y Tesseract no está disponible en el servidor.
+SCANNED_PDF_MARKER = "__SCANNED_PDF_NO_OCR__"
+
 
 def _limpiar_markdown(texto):
     """
@@ -364,14 +368,17 @@ def escanear_paginas_pdf(ruta_pdf_o_bytes):
     - Devuelve las 7 páginas más densas como lista de dicts {"pagina", "texto"}.
     """
     import io as _io
+    import sys
     import fitz  # PyMuPDF
+    TESSERACT_DISPONIBLE = False
     try:
         import pytesseract
         from PIL import Image
+        if sys.platform == "win32":
+            pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
         TESSERACT_DISPONIBLE = True
-        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
     except ImportError:
-        TESSERACT_DISPONIBLE = False
+        pass
 
     keywords_habilitantes = [
         'liquidez', 'endeudamiento', 'capital de trabajo', 'cobertura',
@@ -390,19 +397,26 @@ def escanear_paginas_pdf(ruta_pdf_o_bytes):
         return [{"pagina": 0, "texto": f"[Error abriendo PDF: {str(e)}]"}]
 
     paginas_criticas = []
+    paginas_escaneadas = 0
     for i, pagina in enumerate(doc):
         texto = pagina.get_text()
-        if len(texto.strip()) < 100 and TESSERACT_DISPONIBLE:
-            try:
-                pix = pagina.get_pixmap(matrix=fitz.Matrix(2, 2))
-                imagen = Image.open(_io.BytesIO(pix.tobytes("png")))
-                texto = pytesseract.image_to_string(imagen, lang='spa')
-            except Exception:
-                pass  # conserva el texto nativo residual
+        if len(texto.strip()) < 100:
+            paginas_escaneadas += 1
+            if TESSERACT_DISPONIBLE:
+                try:
+                    pix = pagina.get_pixmap(matrix=fitz.Matrix(2, 2))
+                    imagen = Image.open(_io.BytesIO(pix.tobytes("png")))
+                    texto = pytesseract.image_to_string(imagen, lang='spa')
+                except Exception:
+                    pass  # conserva el texto nativo residual
 
         texto_min = texto.lower()
         if any(kw in texto_min for kw in keywords_habilitantes):
             paginas_criticas.append({"pagina": i + 1, "texto": texto})
+
+    # PDF de imagen sin OCR disponible: señal explícita para el router
+    if not paginas_criticas and paginas_escaneadas > 0 and not TESSERACT_DISPONIBLE:
+        return [{"pagina": 0, "texto": SCANNED_PDF_MARKER}]
 
     paginas_criticas.sort(key=lambda x: len(x["texto"]), reverse=True)
     return paginas_criticas[:7]
@@ -413,10 +427,14 @@ def extraer_texto_pliego(ruta_pdf_o_bytes):
     Función de conveniencia: llama a escanear_paginas_pdf() y concatena
     el texto de las páginas relevantes en un único string listo para
     inyectar en el prompt de los agentes.
+    Retorna SCANNED_PDF_MARKER si el PDF es imagen sin OCR disponible.
     """
     paginas = escanear_paginas_pdf(ruta_pdf_o_bytes)
     if not paginas:
         return ""
+    # Propaga el sentinel sin modificarlo
+    if len(paginas) == 1 and paginas[0].get("texto") == SCANNED_PDF_MARKER:
+        return SCANNED_PDF_MARKER
     bloques = []
     for p in paginas:
         bloques.append(f"--- EXTRACTO PÁGINA {p['pagina']} ---\n{p['texto']}")
@@ -427,16 +445,19 @@ def extraer_texto_completo_pdf(raw_bytes: bytes) -> str:
     """
     Extrae TODO el texto del PDF sin filtrar por keywords.
     OCR automático (Tesseract spa) si la página tiene < 50 chars de texto nativo.
+    Retorna SCANNED_PDF_MARKER si el PDF es imagen sin OCR disponible.
     Retorna string vacío si el PDF no se puede leer.
     """
     import io as _io
+    import sys
     import fitz
 
     TESSERACT = False
     try:
         import pytesseract
         from PIL import Image
-        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        if sys.platform == "win32":
+            pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
         TESSERACT = True
     except ImportError:
         pass
@@ -448,20 +469,28 @@ def extraer_texto_completo_pdf(raw_bytes: bytes) -> str:
         return ""
 
     bloques = []
+    paginas_escaneadas = 0
     for i, pagina in enumerate(doc):
         texto = pagina.get_text().strip()
-        if len(texto) < 50 and TESSERACT:
-            try:
-                pix = pagina.get_pixmap(matrix=fitz.Matrix(2, 2))
-                img = Image.open(_io.BytesIO(pix.tobytes("png")))
-                texto = pytesseract.image_to_string(img, lang="spa").strip()
-            except Exception:
-                pass
+        if len(texto) < 50:
+            paginas_escaneadas += 1
+            if TESSERACT:
+                try:
+                    pix = pagina.get_pixmap(matrix=fitz.Matrix(2, 2))
+                    img = Image.open(_io.BytesIO(pix.tobytes("png")))
+                    texto = pytesseract.image_to_string(img, lang="spa").strip()
+                except Exception:
+                    pass
         if texto:
             bloques.append(f"--- PÁGINA {i + 1} ---\n{texto}")
 
     resultado = "\n".join(bloques)
     print(f"[PDF] Extraídas {len(bloques)} páginas — {len(resultado)} chars totales")
+
+    # PDF es imagen escaneada y OCR no está disponible
+    if not resultado.strip() and paginas_escaneadas > 0:
+        return SCANNED_PDF_MARKER
+
     return resultado
 
 
