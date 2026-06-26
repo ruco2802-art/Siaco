@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Router de búsqueda SECOP II — SIACO v3.0"""
 import json
+import logging
 import re
 import time
 from datetime import datetime, timedelta
@@ -14,6 +15,7 @@ import os
 import anthropic
 
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+logger = logging.getLogger("siaco")
 
 router = APIRouter(tags=["busqueda"])
 
@@ -261,7 +263,9 @@ def analizar_contratos(body: AnalizarBody, authorization: str = Header(None)):
     """Scoring de relevancia con Claude para hasta 50 contratos."""
     from routers.auth import require_auth
     from routers.perfil import _load_perfil, _cliente_id_from_session
-    from prompts import SKILL_ESTRATEGIA
+    from routers.utils import parsear_json_claude
+
+    logger.info("[ANALIZAR] API_KEY presente: %s", bool(API_KEY))
 
     sesion = require_auth(authorization)
     cid = body.cliente_id or _cliente_id_from_session(sesion)
@@ -270,10 +274,15 @@ def analizar_contratos(body: AnalizarBody, authorization: str = Header(None)):
     sector = perfil.get("sector", "obras civiles y servicios")
     objeto_cliente = perfil.get("experiencia", {}).get("objeto_similar", sector)
 
-    client = anthropic.Anthropic(api_key=API_KEY, timeout=25.0)
+    logger.info("[ANALIZAR] Perfil cliente: sector=%s objeto=%s", sector, objeto_cliente[:80])
+
+    if not API_KEY:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY no configurada en el servidor")
+
+    client = anthropic.Anthropic(api_key=API_KEY, timeout=30.0)
     resultados: list[dict] = []
 
-    for lic in body.contratos[:50]:
+    for idx, lic in enumerate(body.contratos[:50]):
         if not isinstance(lic, dict):
             continue
         nombre  = lic.get("nombre_del_procedimiento", "N/A")
@@ -282,36 +291,72 @@ def analizar_contratos(body: AnalizarBody, authorization: str = Header(None)):
         entidad = lic.get("entidad", "N/A")
         fase    = lic.get("fase", "N/A")
 
+        raw_txt = ""
+        analisis: dict = {}
+        error_msg = ""
+
         try:
             resp = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=150,
+                max_tokens=200,
                 temperature=0.0,
                 system=(
                     f"Eres SIACO, experto en licitaciones SECOP II Colombia. "
                     f"El cliente trabaja en: {objeto_cliente}. "
-                    "Evalua relevancia del contrato para el perfil del cliente. "
-                    "Responde SOLO JSON sin texto adicional."
+                    "Evalua la relevancia del contrato para ese perfil. "
+                    "Responde EXCLUSIVAMENTE con un objeto JSON con estos campos exactos: "
+                    '{"score": <entero 0-100>, "motivo": "<max 8 palabras>", "urgente": <true|false>}'
                 ),
                 messages=[{"role": "user", "content": (
-                    f"Objeto: {nombre}\nDesc: {desc}\nValor: COP {valor}\nEntidad: {entidad}\nFase: {fase}\n"
-                    '{"score":0-100,"motivo":"max 8 palabras","urgente":true_o_false}'
+                    f"Contrato a evaluar:\n"
+                    f"Objeto: {nombre}\n"
+                    f"Descripcion: {desc}\n"
+                    f"Valor: COP {valor}\n"
+                    f"Entidad: {entidad}\n"
+                    f"Fase: {fase}"
                 )}],
             )
-            txt = resp.content[0].text.strip()
-            m = re.search(r"\{.*?\}", txt, re.DOTALL)
-            analisis = json.loads(m.group(0)) if m else {}
-        except Exception:
-            analisis = {}
+            raw_txt = resp.content[0].text.strip()
+            logger.info("[ANALIZAR %d] Claude raw: %s", idx, raw_txt[:200])
+
+            analisis = parsear_json_claude(raw_txt) or {}
+            logger.info("[ANALIZAR %d] JSON parseado: %s", idx, analisis)
+
+        except anthropic.AuthenticationError as e:
+            error_msg = f"API key inválida: {str(e)[:100]}"
+            logger.error("[ANALIZAR %d] AuthenticationError: %s", idx, error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
+        except anthropic.APIConnectionError as e:
+            error_msg = f"Sin conexión a Anthropic: {str(e)[:100]}"
+            logger.error("[ANALIZAR %d] ConnectionError: %s", idx, error_msg)
+            raise HTTPException(status_code=503, detail=error_msg)
+        except Exception as e:
+            error_msg = str(e)[:120]
+            logger.error("[ANALIZAR %d] Error inesperado: %s | raw=%s", idx, error_msg, raw_txt[:200])
+            # Continúa con el siguiente contrato en lugar de abortar todo
+
+        # Soporta variantes de nombre de campo: score / score_viabilidad / relevancia
+        score_val = (
+            analisis.get("score")
+            or analisis.get("score_viabilidad")
+            or analisis.get("relevancia")
+            or 0
+        )
+        try:
+            score_val = int(score_val)
+        except (TypeError, ValueError):
+            score_val = 0
 
         resultados.append({
             **lic,
-            "_score":   int(analisis.get("score", 0)),
-            "_motivo":  str(analisis.get("motivo", "Sin análisis")),
+            "_score":   score_val,
+            "_motivo":  str(analisis.get("motivo") or analisis.get("razon") or error_msg or "Sin análisis"),
             "_urgente": bool(analisis.get("urgente", lic.get("_urgente", False))),
         })
 
     resultados.sort(key=lambda x: x["_score"], reverse=True)
+    logger.info("[ANALIZAR] Completado: %d contratos, scores: %s",
+                len(resultados), [r["_score"] for r in resultados[:5]])
     return {"resultados": resultados}
 
 
