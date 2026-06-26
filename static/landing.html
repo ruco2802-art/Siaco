@@ -211,6 +211,31 @@
     .ck { color: var(--accent); font-size: 1.1rem; }
     .cx { color: #404040; font-size: 1.1rem; }
 
+    /* ─── PARA QUIÉN ────────────────────────────────────── */
+    #para-quien { background: var(--bg); }
+    .pq-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 52px;
+    }
+    .pq-card {
+      background: #1A1A1A; border-radius: var(--r);
+      padding: 36px 32px; display: flex; flex-direction: column; gap: 0;
+    }
+    .pq-card-socio  { border-left: 4px solid var(--accent); }
+    .pq-card-herram { border-left: 4px solid #ffffff; }
+    .pq-icon   { font-size: 2.2rem; margin-bottom: 16px; }
+    .pq-title  { font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }
+    .pq-sub    { font-size: .88rem; color: var(--text2); margin-bottom: 22px; line-height: 1.5; }
+    .pq-list   { display: flex; flex-direction: column; gap: 9px; flex: 1; margin-bottom: 24px; }
+    .pq-item   { display: flex; align-items: flex-start; gap: 8px; font-size: .9rem; color: var(--text2); }
+    .pq-item::before { content: "✅"; flex-shrink: 0; }
+    .pq-badge {
+      display: inline-block; padding: 6px 14px; border-radius: 20px;
+      font-size: .78rem; font-weight: 700; width: fit-content;
+    }
+    .pq-badge-socio  { background: rgba(198,242,78,.12); color: var(--accent); border: 1px solid rgba(198,242,78,.3); }
+    .pq-badge-herram { background: rgba(255,255,255,.06); color: #ccc; border: 1px solid rgba(255,255,255,.15); }
+    @media (max-width: 920px) { .pq-grid { grid-template-columns: 1fr; } }
+
     /* ─── PRECIOS ────────────────────────────────────────── */
     #precios { background: var(--bg2); }
     .pricing-center { display: flex; justify-content: center; margin-top: 52px; }
@@ -375,7 +400,8 @@
 <section id="como-funciona">
   <div class="wrap">
     <div class="section-label fi">El proceso</div>
-    <h2 class="section-title fi">Tres pasos, cero burocracia</h2>
+    <h2 class="section-title fi">Simple para unos.<br>Potente para otros.</h2>
+    <p class="section-sub fi" style="margin-bottom:40px">SIACO se adapta a su empresa, no al revés.</p>
     <div class="steps-grid">
       <div class="step fi">
         <div class="step-n">01</div>
@@ -494,11 +520,48 @@
   </div>
 </section>
 
+<!-- ══════════════════ PARA QUIÉN ═════════════════════ -->
+<section id="para-quien">
+  <div class="wrap">
+    <div class="section-label fi">¿Para quién es SIACO?</div>
+    <h2 class="section-title fi">Dos perfiles, una solución</h2>
+    <div class="pq-grid">
+
+      <div class="pq-card pq-card-socio fi">
+        <div class="pq-icon">🏗️</div>
+        <div class="pq-title">Para MiPymes sin equipo de licitaciones</div>
+        <div class="pq-sub">SIACO actúa como su socio gestor</div>
+        <div class="pq-list">
+          <div class="pq-item">Buscamos contratos alineados a su perfil</div>
+          <div class="pq-item">Analizamos pliegos y verificamos si califica</div>
+          <div class="pq-item">Le acompañamos hasta la adjudicación</div>
+          <div class="pq-item">Modelo sin riesgo: paga solo cuando gana</div>
+        </div>
+        <span class="pq-badge pq-badge-socio">Plan Socio — desde $350.000/mes</span>
+      </div>
+
+      <div class="pq-card pq-card-herram fi fi-d1">
+        <div class="pq-icon">👥</div>
+        <div class="pq-title">Para empresas con equipo jurídico y financiero</div>
+        <div class="pq-sub">SIACO potencia a su equipo con IA</div>
+        <div class="pq-list">
+          <div class="pq-item">Reduce semanas de análisis a minutos</div>
+          <div class="pq-item">Detección automática de irregularidades en pliegos</div>
+          <div class="pq-item">Scoring normativo instantáneo con citas exactas</div>
+          <div class="pq-item">Su equipo enfocado en ganar, no en buscar</div>
+        </div>
+        <span class="pq-badge pq-badge-herram">Plan Herramienta — consultar tarifa</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
 <!-- ══════════════════ PRECIOS ══════════════════════════ -->
 <section id="precios">
   <div class="wrap" style="text-align:center">
     <div class="section-label fi">Precios</div>
-    <h2 class="section-title fi">Un modelo justo:<br>paga cuando gana</h2>
+    <h2 class="section-title fi">Plan Socio SIACO<br>— Para MiPymes</h2>
     <div class="pricing-center">
       <div class="pricing-card fi">
         <div class="pricing-badge">El más popular</div>
@@ -525,6 +588,21 @@
         <a href="https://wa.me/573138343997?text=Quiero%20comenzar%20con%20SIACO%20ahora"
            target="_blank" rel="noopener" class="btn-start">Comenzar ahora</a>
       </div>
+    </div>
+
+    <div class="fi" style="margin-top:32px">
+      <p style="font-size:.92rem;color:var(--text2);margin-bottom:12px">
+        ¿Tiene equipo propio de licitaciones?<br>Consulte nuestro <strong style="color:var(--text)">Plan Herramienta</strong>.
+      </p>
+      <a href="https://wa.me/573138343997?text=Hola,%20quiero%20informaci%C3%B3n%20sobre%20el%20Plan%20Herramienta%20de%20SIACO"
+         target="_blank" rel="noopener"
+         style="display:inline-block;background:none;border:1px solid #333;color:var(--text2);
+                padding:9px 22px;border-radius:8px;font:600 .875rem var(--font);
+                text-decoration:none;transition:border-color .2s,color .2s"
+         onmouseover="this.style.borderColor='#555';this.style.color='#fff'"
+         onmouseout="this.style.borderColor='#333';this.style.color='var(--text2)'">
+        Consultar Plan Herramienta →
+      </a>
     </div>
   </div>
 </section>
