@@ -46,6 +46,11 @@ async def health():
     return {"status": "ok", "version": "3.0"}
 
 
+@app.get("/landing")
+async def landing():
+    return FileResponse(os.path.join(STATIC_DIR, "landing.html"))
+
+
 @app.get("/api/contrato/descargar")
 def descargar_contrato():
     """Genera y retorna el contrato de servicios SIACO como archivo .docx."""

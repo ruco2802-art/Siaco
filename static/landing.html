@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIACO — Gane contratos con el Estado sin ser experto en licitaciones</title>
+  <meta name="description" content="SIACO analiza pliegos, detecta oportunidades y le guía paso a paso. Usted solo ejecuta el contrato.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0A0A0A;
+      --bg2:      #111111;
+      --bg3:      #1A1A1A;
+      --accent:   #C6F24E;
+      --accent-d: #A8D93C;
+      --text:     #FFFFFF;
+      --text2:    #A0A0A0;
+      --text3:    #505050;
+      --border:   #1E1E1E;
+      --r:        14px;
+      --font:     'Inter', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+    body  { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.6; overflow-x: hidden; }
+
+    /* ─── NAVBAR ──────────────────────────────────────── */
+    .navbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 clamp(20px, 6vw, 80px); height: 64px;
+      background: rgba(10,10,10,.88); backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo { font-size: 1.4rem; font-weight: 900; letter-spacing: -.04em; text-decoration: none; color: var(--text); }
+    .nav-logo span { color: var(--accent); }
+    .nav-links { display: flex; gap: 8px; align-items: center; }
+    .btn-nav-ghost {
+      background: none; border: 1px solid #2a2a2a; color: var(--text2);
+      padding: 8px 18px; border-radius: 8px; font: 500 .875rem var(--font);
+      cursor: pointer; text-decoration: none; transition: border-color .2s, color .2s;
+    }
+    .btn-nav-ghost:hover { border-color: #444; color: var(--text); }
+    .btn-nav-accent {
+      background: var(--accent); color: #0A0A0A; border: none;
+      padding: 8px 18px; border-radius: 8px; font: 700 .875rem var(--font);
+      cursor: pointer; text-decoration: none; transition: background .2s, transform .12s;
+    }
+    .btn-nav-accent:hover { background: var(--accent-d); transform: translateY(-1px); }
+
+    /* ─── LAYOUT HELPERS ───────────────────────────────── */
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 clamp(20px, 6vw, 80px); }
+    section { padding: 96px clamp(20px, 6vw, 80px); }
+    .section-label {
+      display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: clamp(2rem, 4vw, 3rem); font-weight: 900; line-height: 1.1;
+      letter-spacing: -.04em; margin-bottom: 20px;
+    }
+    .section-sub { font-size: 1.05rem; color: var(--text2); line-height: 1.75; max-width: 560px; }
+
+    /* ─── FADE-IN ──────────────────────────────────────── */
+    .fi { opacity: 0; transform: translateY(22px); transition: opacity .65s ease, transform .65s ease; }
+    .fi.on { opacity: 1; transform: translateY(0); }
+    .fi-d1 { transition-delay: .08s; }
+    .fi-d2 { transition-delay: .16s; }
+    .fi-d3 { transition-delay: .24s; }
+
+    /* ─── HERO ─────────────────────────────────────────── */
+    #hero {
+      padding-top: 148px; padding-bottom: 88px;
+      padding-left: clamp(20px, 6vw, 80px); padding-right: clamp(20px, 6vw, 80px);
+    }
+    .hero-grid {
+      max-width: 1120px; margin: 0 auto;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
+    }
+    .hero-h1 {
+      font-size: clamp(2.6rem, 4.8vw, 3.8rem); font-weight: 900; line-height: 1.06;
+      letter-spacing: -.045em; margin-bottom: 22px;
+    }
+    .hero-h1 em { color: var(--accent); font-style: normal; }
+    .hero-p  { font-size: 1.1rem; color: var(--text2); line-height: 1.75; margin-bottom: 34px; max-width: 460px; }
+    .hero-btns { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+    .btn-lg-accent {
+      background: var(--accent); color: #0A0A0A; border: none;
+      padding: 14px 28px; border-radius: 10px; font: 700 1rem var(--font);
+      cursor: pointer; text-decoration: none; transition: background .2s, transform .12s;
+    }
+    .btn-lg-accent:hover { background: var(--accent-d); transform: translateY(-2px); }
+    .btn-lg-ghost {
+      background: none; border: 1px solid #2a2a2a; color: var(--text);
+      padding: 14px 28px; border-radius: 10px; font: 600 1rem var(--font);
+      cursor: pointer; text-decoration: none; transition: border-color .2s, background .2s;
+    }
+    .btn-lg-ghost:hover { border-color: #444; background: rgba(255,255,255,.04); }
+    .hero-trust { font-size: .82rem; color: var(--text3); }
+    .hero-trust b { color: var(--text2); font-weight: 500; }
+
+    /* ─── CHAT DEMO ────────────────────────────────────── */
+    .chat-demo {
+      background: var(--bg2); border: 1px solid #222;
+      border-radius: 18px; overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0,0,0,.5);
+    }
+    .chat-top {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px; border-bottom: 1px solid #1a1a1a; background: #0e0e0e;
+    }
+    .chat-avatar {
+      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      background: var(--accent); display: flex; align-items: center; justify-content: center;
+      font: 800 .95rem var(--font); color: #0A0A0A;
+    }
+    .chat-name  { font-size: .9rem; font-weight: 700; }
+    .chat-state { font-size: .72rem; color: var(--accent); }
+    .chat-body  { padding: 18px; min-height: 300px; display: flex; flex-direction: column; gap: 10px; }
+    .msg {
+      max-width: 88%; padding: 10px 14px; border-radius: 12px;
+      font-size: .875rem; line-height: 1.55;
+      opacity: 0; transform: translateY(6px);
+      transition: opacity .4s ease, transform .4s ease;
+    }
+    .msg.on { opacity: 1; transform: translateY(0); }
+    .msg-u { background: #252525; color: var(--text2); align-self: flex-end; border-radius: 12px 12px 3px 12px; }
+    .msg-b { background: rgba(198,242,78,.1); border: 1px solid rgba(198,242,78,.18); align-self: flex-start; border-radius: 12px 12px 12px 3px; }
+    .msg-b strong { color: var(--accent); }
+    .typing {
+      display: flex; gap: 5px; align-items: center; padding: 11px 15px;
+      background: rgba(198,242,78,.06); border: 1px solid rgba(198,242,78,.12);
+      border-radius: 12px 12px 12px 3px; align-self: flex-start; width: fit-content;
+      opacity: 0; transition: opacity .3s;
+    }
+    .typing.on { opacity: 1; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite ease-in-out; }
+    .dot:nth-child(2) { animation-delay: .2s; }
+    .dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-5px); } }
+
+    /* ─── PROBLEMA ─────────────────────────────────────── */
+    #problema { background: var(--bg2); }
+    .problem-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; margin: 48px 0 36px;
+    }
+    .problem-card {
+      background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 28px 24px; transition: border-color .25s, transform .25s;
+    }
+    .problem-card:hover { border-color: #333; transform: translateY(-3px); }
+    .problem-icon { font-size: 2.2rem; margin-bottom: 14px; }
+    .problem-card p { font-size: .95rem; color: var(--text2); line-height: 1.65; font-style: italic; }
+    .problem-cta { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+
+    /* ─── CÓMO FUNCIONA ────────────────────────────────── */
+    #como-funciona { background: var(--bg); }
+    .steps-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; margin-top: 52px;
+    }
+    .step {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 36px 28px; transition: border-color .25s;
+    }
+    .step:hover { border-color: rgba(198,242,78,.25); }
+    .step-n {
+      font-size: 4.5rem; font-weight: 900; line-height: 1;
+      color: rgba(198,242,78,.1); margin-bottom: 20px; font-variant-numeric: tabular-nums;
+    }
+    .step h3 { font-size: 1.05rem; font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+    .step p  { font-size: .9rem; color: var(--text2); line-height: 1.7; }
+
+    /* ─── FUNCIONALIDADES ───────────────────────────────── */
+    #funcionalidades { background: var(--bg2); }
+    .feat-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; margin-top: 52px;
+    }
+    .feat-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 28px; transition: border-color .2s, transform .2s;
+    }
+    .feat-card:hover { border-color: rgba(198,242,78,.3); transform: translateY(-3px); }
+    .feat-icon {
+      width: 46px; height: 46px; border-radius: 10px;
+      background: rgba(198,242,78,.08); border: 1px solid rgba(198,242,78,.18);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.35rem; margin-bottom: 16px;
+    }
+    .feat-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+    .feat-card p  { font-size: .875rem; color: var(--text2); line-height: 1.65; }
+
+    /* ─── COMPARATIVA ───────────────────────────────────── */
+    #comparativa { background: var(--bg); }
+    .table-wrap { overflow-x: auto; margin-top: 52px; border-radius: var(--r); border: 1px solid var(--border); }
+    .cmp-table { width: 100%; border-collapse: collapse; min-width: 560px; }
+    .cmp-table th, .cmp-table td {
+      padding: 14px 20px; text-align: center; font-size: .9rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .cmp-table th { background: var(--bg2); font-size: .8rem; font-weight: 700; letter-spacing: .05em; }
+    .cmp-table th:first-child, .cmp-table td:first-child { text-align: left; font-weight: 600; }
+    .cmp-table th.hi { color: var(--accent); }
+    .cmp-table td.hi { background: rgba(198,242,78,.05); }
+    .cmp-table tbody tr:last-child td { border-bottom: none; }
+    .cmp-table tbody tr:hover td { background: rgba(255,255,255,.02); }
+    .cmp-table tbody tr:hover td.hi { background: rgba(198,242,78,.09); }
+    .ck { color: var(--accent); font-size: 1.1rem; }
+    .cx { color: #404040; font-size: 1.1rem; }
+
+    /* ─── PRECIOS ────────────────────────────────────────── */
+    #precios { background: var(--bg2); }
+    .pricing-center { display: flex; justify-content: center; margin-top: 52px; }
+    .pricing-card {
+      background: var(--bg); border: 2px solid var(--accent); border-radius: 20px;
+      padding: 52px 56px; max-width: 520px; width: 100%; text-align: center; position: relative;
+    }
+    .pricing-badge {
+      position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+      background: var(--accent); color: #0A0A0A;
+      font: 800 .7rem var(--font); letter-spacing: .08em; text-transform: uppercase;
+      padding: 4px 18px; border-radius: 20px; white-space: nowrap;
+    }
+    .p-plan  { font-size: .8rem; color: var(--text3); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
+    .p-price { font-size: 3.2rem; font-weight: 900; letter-spacing: -.05em; }
+    .p-per   { font-size: .88rem; color: var(--text3); margin-bottom: 30px; }
+    .p-hr    { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+    .p-label { font-size: .72rem; font-weight: 700; letter-spacing: .1em; color: var(--accent); text-transform: uppercase; margin-bottom: 14px; }
+    .p-tiers { display: flex; flex-direction: column; gap: 8px; text-align: left; margin-bottom: 28px; }
+    .p-tier  {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 9px 14px; border-radius: 8px; background: rgba(255,255,255,.03);
+      font-size: .9rem;
+    }
+    .p-tier .label { color: var(--text2); }
+    .p-tier .pct   { font-weight: 800; color: var(--accent); }
+    .p-perks { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; text-align: left; }
+    .perk    { display: flex; align-items: flex-start; gap: 10px; font-size: .9rem; color: var(--text2); }
+    .perk::before { content: "✅"; flex-shrink: 0; }
+    .btn-start {
+      display: block; width: 100%; background: var(--accent); color: #0A0A0A; border: none;
+      padding: 16px; border-radius: 10px; font: 800 1rem var(--font);
+      cursor: pointer; text-decoration: none; text-align: center;
+      transition: background .2s, transform .12s;
+    }
+    .btn-start:hover { background: var(--accent-d); transform: translateY(-2px); }
+
+    /* ─── CTA FINAL ──────────────────────────────────────── */
+    #cta {
+      background: var(--accent); color: #0A0A0A;
+      padding: 96px clamp(20px, 6vw, 80px);
+      text-align: center;
+    }
+    #cta .section-title { color: #0A0A0A; }
+    #cta .section-sub   { color: rgba(0,0,0,.6); margin: 0 auto 36px; }
+    .btn-dark {
+      display: inline-block; background: #0A0A0A; color: var(--accent); border: none;
+      padding: 16px 36px; border-radius: 10px; font: 800 1rem var(--font);
+      cursor: pointer; text-decoration: none;
+      transition: background .2s, transform .12s;
+    }
+    .btn-dark:hover { background: #1a1a1a; transform: translateY(-2px); }
+    .cta-links { display: flex; justify-content: center; gap: 28px; margin-top: 24px; flex-wrap: wrap; }
+    .cta-a {
+      font-size: .9rem; font-weight: 600; color: rgba(0,0,0,.6);
+      text-decoration: none; display: flex; align-items: center; gap: 6px;
+      transition: color .2s;
+    }
+    .cta-a:hover { color: #0A0A0A; }
+
+    /* ─── FOOTER ─────────────────────────────────────────── */
+    footer {
+      background: #060606; border-top: 1px solid var(--border);
+      padding: 36px clamp(20px, 6vw, 80px); text-align: center;
+    }
+    .ft-logo { font-size: 1.25rem; font-weight: 900; letter-spacing: -.04em; margin-bottom: 8px; }
+    .ft-logo span { color: var(--accent); }
+    .ft-loc  { font-size: .84rem; color: var(--text3); margin-bottom: 6px; }
+    .ft-law  { font-size: .76rem; color: #333; }
+
+    /* ─── RESPONSIVE ─────────────────────────────────────── */
+    @media (max-width: 920px) {
+      .hero-grid                 { grid-template-columns: 1fr; gap: 44px; }
+      .problem-grid, .steps-grid, .feat-grid { grid-template-columns: 1fr; }
+      .pricing-card              { padding: 40px 28px; }
+      section                    { padding: 64px clamp(16px, 5vw, 40px); }
+      #hero                      { padding-top: 112px; padding-bottom: 56px; }
+    }
+    @media (max-width: 600px) {
+      .hero-btns                 { flex-direction: column; }
+      .btn-lg-accent, .btn-lg-ghost { text-align: center; }
+      .pricing-card              { padding: 32px 18px; }
+      .navbar                    { padding: 0 18px; }
+      .btn-nav-ghost             { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════ NAVBAR ══════════════════════════ -->
+<nav class="navbar">
+  <a href="/landing" class="nav-logo">SIACO<span>.</span></a>
+  <div class="nav-links">
+    <a href="/" class="btn-nav-ghost">Iniciar sesión</a>
+    <a href="https://wa.me/573138343997?text=Hola,%20quiero%20solicitar%20una%20demo%20de%20SIACO"
+       target="_blank" rel="noopener" class="btn-nav-accent">Solicitar demo</a>
+  </div>
+</nav>
+
+<!-- ══════════════════ HERO ════════════════════════════ -->
+<section id="hero">
+  <div class="hero-grid">
+    <!-- Left -->
+    <div>
+      <div class="section-label fi">Inteligencia de Contratación Pública · SECOP II</div>
+      <h1 class="hero-h1 fi fi-d1">
+        Gane contratos<br>con el Estado<br><em>sin ser experto</em><br>en licitaciones
+      </h1>
+      <p class="hero-p fi fi-d2">
+        SIACO analiza pliegos, detecta oportunidades y le guía paso a paso.
+        Usted solo ejecuta el contrato.
+      </p>
+      <div class="hero-btns fi fi-d3">
+        <a href="https://wa.me/573138343997?text=Hola,%20quiero%20una%20evaluaci%C3%B3n%20gratuita%20de%20SIACO"
+           target="_blank" rel="noopener" class="btn-lg-accent">Solicitar evaluación gratuita</a>
+        <a href="#como-funciona" class="btn-lg-ghost">Ver cómo funciona ↓</a>
+      </div>
+      <p class="hero-trust fi fi-d3">
+        <b>Sin permanencia</b> · <b>Paga solo cuando gana</b> · <b>Atención personalizada</b>
+      </p>
+    </div>
+    <!-- Right: Chat demo -->
+    <div class="fi fi-d2">
+      <div class="chat-demo">
+        <div class="chat-top">
+          <div class="chat-avatar">S</div>
+          <div>
+            <div class="chat-name">Asesor SIACO</div>
+            <div class="chat-state">● En línea ahora</div>
+          </div>
+        </div>
+        <div class="chat-body" id="chat-body"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ PROBLEMA ══════════════════════════ -->
+<section id="problema">
+  <div class="wrap">
+    <div class="section-label fi">El problema</div>
+    <h2 class="section-title fi">¿Le ha pasado esto?</h2>
+    <div class="problem-grid">
+      <div class="problem-card fi">
+        <div class="problem-icon">😟</div>
+        <p>"Encontré una licitación pero no supe cómo aplicar. Perdí la oportunidad."</p>
+      </div>
+      <div class="problem-card fi fi-d1">
+        <div class="problem-icon">📋</div>
+        <p>"Me rechazaron la oferta por documentos incompletos o requisitos habilitantes que no cumplía."</p>
+      </div>
+      <div class="problem-card fi fi-d2">
+        <div class="problem-icon">⏱️</div>
+        <p>"No tengo tiempo para leer pliegos de 200 páginas. Mi negocio no me lo permite."</p>
+      </div>
+    </div>
+    <p class="problem-cta fi">SIACO resuelve los tres.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ CÓMO FUNCIONA ═══════════════════ -->
+<section id="como-funciona">
+  <div class="wrap">
+    <div class="section-label fi">El proceso</div>
+    <h2 class="section-title fi">Tres pasos, cero burocracia</h2>
+    <div class="steps-grid">
+      <div class="step fi">
+        <div class="step-n">01</div>
+        <h3>Buscamos</h3>
+        <p>SIACO escanea SECOP II diariamente y filtra contratos relevantes para su empresa usando inteligencia artificial. Usted recibe solo lo que aplica para su perfil.</p>
+      </div>
+      <div class="step fi fi-d1">
+        <div class="step-n">02</div>
+        <h3>Analizamos</h3>
+        <p>Revisamos el pliego completo y verificamos si su empresa califica — con citas normativas exactas. Score financiero, jurídico y técnico en minutos, no días.</p>
+      </div>
+      <div class="step fi fi-d2">
+        <div class="step-n">03</div>
+        <h3>Ganamos</h3>
+        <p>Le acompañamos hasta la adjudicación: redacción de observaciones, estrategia de oferta y seguimiento. Cobramos comisión solo si usted gana.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ FUNCIONALIDADES ══════════════════ -->
+<section id="funcionalidades">
+  <div class="wrap">
+    <div class="section-label fi">Herramientas</div>
+    <h2 class="section-title fi">Todo lo que necesita<br>para ganar licitaciones</h2>
+    <div class="feat-grid">
+      <div class="feat-card fi">
+        <div class="feat-icon">🔍</div>
+        <h3>Búsqueda híbrida con IA</h3>
+        <p>Triple scoring: UNSPSC + palabras clave + semántica vectorial. Encuentra lo que otros sistemas no detectan.</p>
+      </div>
+      <div class="feat-card fi fi-d1">
+        <div class="feat-icon">📊</div>
+        <h3>Análisis financiero y jurídico</h3>
+        <p>Score 0-100 por contrato. Verifica índices de liquidez, endeudamiento y capacidad residual automáticamente.</p>
+      </div>
+      <div class="feat-card fi fi-d2">
+        <div class="feat-icon">🛡️</div>
+        <h3>Detección de pliegos ilegales</h3>
+        <p>Compara el pliego con Documentos Tipo CCE y señala cláusulas restrictivas o habilitantes contrarias a la ley.</p>
+      </div>
+      <div class="feat-card fi">
+        <div class="feat-icon">✍️</div>
+        <h3>Observaciones al pliego</h3>
+        <p>Genera observaciones fundamentadas con citas a la Ley 80, Ley 1150 y jurisprudencia del Consejo de Estado.</p>
+      </div>
+      <div class="feat-card fi fi-d1">
+        <div class="feat-icon">🤖</div>
+        <h3>Asesor IA 24/7</h3>
+        <p>Chat con contexto de sus documentos. Pregunte sobre el pliego, los requisitos o la estrategia en cualquier momento.</p>
+      </div>
+      <div class="feat-card fi fi-d2">
+        <div class="feat-icon">📅</div>
+        <h3>Panel de expedientes</h3>
+        <p>Seguimiento visual con semáforo de urgencia. Alertas automáticas de fechas límite para no perder ningún proceso.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ COMPARATIVA ══════════════════════ -->
+<section id="comparativa">
+  <div class="wrap">
+    <div class="section-label fi">Comparativa</div>
+    <h2 class="section-title fi">¿Por qué SIACO y no otro?</h2>
+    <div class="table-wrap fi">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Licitaciones.info</th>
+            <th>LicitarUS</th>
+            <th class="hi">SIACO ✦</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Alertas de nuevos procesos</td>
+            <td><span class="ck">✅</span></td>
+            <td><span class="ck">✅</span></td>
+            <td class="hi"><span class="ck">✅</span></td>
+          </tr>
+          <tr>
+            <td>Análisis de pliego con IA</td>
+            <td><span class="cx">❌</span></td>
+            <td><span class="ck">✅</span></td>
+            <td class="hi"><span class="ck">✅</span></td>
+          </tr>
+          <tr>
+            <td>Citas normativas exactas</td>
+            <td><span class="cx">❌</span></td>
+            <td><span class="ck">✅</span></td>
+            <td class="hi"><span class="ck">✅</span></td>
+          </tr>
+          <tr>
+            <td>Detecta pliegos ilegales</td>
+            <td><span class="cx">❌</span></td>
+            <td><span class="cx">❌</span></td>
+            <td class="hi"><span class="ck">✅</span></td>
+          </tr>
+          <tr>
+            <td>Redacta observaciones al pliego</td>
+            <td><span class="cx">❌</span></td>
+            <td><span class="cx">❌</span></td>
+            <td class="hi"><span class="ck">✅</span></td>
+          </tr>
+          <tr>
+            <td>Paga solo si usted gana</td>
+            <td><span class="cx">❌</span></td>
+            <td><span class="cx">❌</span></td>
+            <td class="hi"><span class="ck">✅</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ PRECIOS ══════════════════════════ -->
+<section id="precios">
+  <div class="wrap" style="text-align:center">
+    <div class="section-label fi">Precios</div>
+    <h2 class="section-title fi">Un modelo justo:<br>paga cuando gana</h2>
+    <div class="pricing-center">
+      <div class="pricing-card fi">
+        <div class="pricing-badge">El más popular</div>
+        <div class="p-plan">Plan Socio SIACO</div>
+        <div class="p-price">$350.000</div>
+        <div class="p-per">COP / mes + IVA</div>
+
+        <hr class="p-hr">
+
+        <div class="p-label">Comisión por adjudicación</div>
+        <div class="p-tiers">
+          <div class="p-tier"><span class="label">Hasta $100 millones</span><span class="pct">5%</span></div>
+          <div class="p-tier"><span class="label">$100M – $300 millones</span><span class="pct">4%</span></div>
+          <div class="p-tier"><span class="label">$300M – $500 millones</span><span class="pct">3%</span></div>
+          <div class="p-tier"><span class="label">Más de $500 millones</span><span class="pct">2%</span></div>
+        </div>
+
+        <div class="p-perks">
+          <div class="perk">Mensualidades descontadas de la primera comisión</div>
+          <div class="perk">Sin permanencia mínima — cancele cuando quiera</div>
+          <div class="perk">Sin cobro de comisión si no hay adjudicación</div>
+        </div>
+
+        <a href="https://wa.me/573138343997?text=Quiero%20comenzar%20con%20SIACO%20ahora"
+           target="_blank" rel="noopener" class="btn-start">Comenzar ahora</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ CTA FINAL ═══════════════════════ -->
+<section id="cta">
+  <div class="wrap">
+    <h2 class="section-title fi">¿Listo para ganar su primer<br>contrato con el Estado?</h2>
+    <p class="section-sub fi" style="margin:16px auto 36px">
+      Evaluación gratuita en 15 minutos. Sin compromiso.
+    </p>
+    <a href="https://wa.me/573138343997?text=Hola,%20quiero%20una%20evaluaci%C3%B3n%20gratuita%20de%20SIACO"
+       target="_blank" rel="noopener" class="btn-dark fi">Solicitar evaluación ahora</a>
+    <div class="cta-links">
+      <a href="https://wa.me/573138343997" target="_blank" rel="noopener" class="cta-a">
+        📱 WhatsApp +57 313 834 3997
+      </a>
+      <a href="mailto:contacto@siaco.co" class="cta-a">
+        ✉️ contacto@siaco.co
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ FOOTER ══════════════════════════ -->
+<footer>
+  <div class="ft-logo">SIACO<span>.</span></div>
+  <div class="ft-loc">Neiva, Huila, Colombia</div>
+  <div class="ft-law">Operamos en cumplimiento de la Ley 1581 de 2012 — Protección de Datos Personales</div>
+</footer>
+
+<script>
+/* ── Chat animation ─────────────────────────────────────── */
+const MSGS = [
+  { t: 'u', html: 'Busco contratos de obras civiles en Neiva' },
+  { t: 'b', html: 'Encontré <strong>8 contratos relevantes</strong> para su perfil. El más urgente cierra en 3 días:<br><br>🏗 <strong>Mantenimiento vial Municipio de Neiva</strong><br>💰 $180.000.000<br><br>¿Analizo el pliego?' },
+  { t: 'u', html: 'Sí' },
+  { t: 'b', html: 'Score financiero: <strong>82/100 ✅ VIABLE</strong><br>Score jurídico: <strong>76/100 ✅ VIABLE</strong><br><br>Su empresa cumple todos los requisitos habilitantes.' },
+];
+
+function runChat() {
+  const box = document.getElementById('chat-body');
+  if (!box) return;
+  box.innerHTML = '';
+  let ms = 700;
+
+  MSGS.forEach((m, i) => {
+    if (m.t === 'b') {
+      setTimeout(() => {
+        const t = document.createElement('div');
+        t.className = 'typing'; t.id = 'ty' + i;
+        t.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+        box.appendChild(t);
+        requestAnimationFrame(() => t.classList.add('on'));
+        box.scrollTop = box.scrollHeight;
+      }, ms);
+      ms += 1100;
+    }
+
+    setTimeout(() => {
+      document.getElementById('ty' + i)?.remove();
+      const d = document.createElement('div');
+      d.className = 'msg msg-' + m.t;
+      d.innerHTML = m.html;
+      box.appendChild(d);
+      requestAnimationFrame(() => requestAnimationFrame(() => d.classList.add('on')));
+      box.scrollTop = box.scrollHeight;
+    }, ms);
+
+    ms += m.t === 'b' ? 2600 : 1100;
+  });
+
+  setTimeout(runChat, ms + 3000);
+}
+
+/* ── Intersection Observer fade-in ─────────────────────── */
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('on'); obs.unobserve(e.target); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.fi').forEach(el => obs.observe(el));
+
+/* ── Navbar scroll shadow ───────────────────────────────── */
+window.addEventListener('scroll', () => {
+  document.querySelector('.navbar').style.borderBottomColor =
+    window.scrollY > 10 ? '#2a2a2a' : 'var(--border)';
+}, { passive: true });
+
+window.addEventListener('load', () => setTimeout(runChat, 900));
+</script>
+</body>
+</html>
