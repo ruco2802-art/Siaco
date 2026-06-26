@@ -48,7 +48,7 @@ async def health():
 
 @app.get("/landing")
 async def landing():
-    return FileResponse(os.path.join(STATIC_DIR, "landing.html"))
+    return FileResponse("static/landing.html")
 
 
 @app.get("/api/contrato/descargar")
