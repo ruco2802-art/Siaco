@@ -494,6 +494,98 @@ def extraer_texto_completo_pdf(raw_bytes: bytes) -> str:
     return resultado
 
 
+# Sentinel para archivos .doc (Word 97-2003) que python-docx no puede abrir
+DOC_NOT_SUPPORTED_MARKER = "__DOC_LEGACY_NOT_SUPPORTED__"
+
+
+def extraer_texto_word(archivo_bytes: bytes) -> str:
+    """Extrae texto y tablas de un documento Word (.docx)."""
+    import io as _io
+    try:
+        from docx import Document
+    except ImportError:
+        return ""
+    try:
+        doc = Document(_io.BytesIO(archivo_bytes))
+        partes = [p.text for p in doc.paragraphs if p.text.strip()]
+        for tabla in doc.tables:
+            for fila in tabla.rows:
+                celda_textos = " | ".join(
+                    c.text.strip() for c in fila.cells if c.text.strip()
+                )
+                if celda_textos:
+                    partes.append(celda_textos)
+        resultado = "\n".join(partes)
+        print(f"[WORD] {len(partes)} bloques — {len(resultado)} chars")
+        return resultado
+    except Exception as e:
+        print(f"[WORD] Error: {e}")
+        return ""
+
+
+def extraer_texto_imagen(archivo_bytes: bytes) -> str:
+    """Extrae texto de una imagen con Tesseract OCR (retorna SCANNED_PDF_MARKER si OCR falla)."""
+    import io as _io
+    import sys
+    try:
+        import pytesseract
+        from PIL import Image
+        if sys.platform == "win32":
+            pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        imagen = Image.open(_io.BytesIO(archivo_bytes))
+        texto = pytesseract.image_to_string(imagen, lang="spa").strip()
+        print(f"[IMG] OCR — {len(texto)} chars")
+        return texto
+    except Exception as e:
+        print(f"[IMG] OCR error: {e}")
+        return SCANNED_PDF_MARKER
+
+
+def extraer_texto_xlsx(archivo_bytes: bytes) -> str:
+    """Extrae texto de celdas de un archivo Excel (.xlsx/.xls)."""
+    import io as _io
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(_io.BytesIO(archivo_bytes), data_only=True)
+        partes: list[str] = []
+        for nombre_hoja in wb.sheetnames:
+            hoja = wb[nombre_hoja]
+            partes.append(f"=== Hoja: {nombre_hoja} ===")
+            for fila in hoja.iter_rows(values_only=True):
+                celda_textos = " | ".join(
+                    str(c) for c in fila if c is not None and str(c).strip()
+                )
+                if celda_textos:
+                    partes.append(celda_textos)
+        resultado = "\n".join(partes)
+        print(f"[XLSX] {len(wb.sheetnames)} hojas — {len(resultado)} chars")
+        return resultado
+    except Exception as e:
+        print(f"[XLSX] Error: {e}")
+        return ""
+
+
+def extraer_texto_documento(archivo_bytes: bytes, filename: str) -> tuple[str, str]:
+    """
+    Extractor unificado multimodal. Retorna (texto, formato_detectado).
+    formato_detectado: 'pdf' | 'word' | 'imagen' | 'excel' | 'doc_legacy' | 'desconocido'
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if filename and "." in filename else ""
+
+    if ext == "pdf":
+        return extraer_texto_completo_pdf(archivo_bytes), "pdf"
+    elif ext == "docx":
+        return extraer_texto_word(archivo_bytes), "word"
+    elif ext == "doc":
+        return DOC_NOT_SUPPORTED_MARKER, "doc_legacy"
+    elif ext in ("png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif"):
+        return extraer_texto_imagen(archivo_bytes), "imagen"
+    elif ext in ("xlsx", "xls"):
+        return extraer_texto_xlsx(archivo_bytes), "excel"
+    else:
+        return "", "desconocido"
+
+
 _RAG_QUERIES = [
     "requisitos financieros indice liquidez endeudamiento capital trabajo patrimonio",
     "experiencia tecnica contratos anteriores similares UNSPSC CIIU objeto similar",

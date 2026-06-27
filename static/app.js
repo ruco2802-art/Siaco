@@ -749,12 +749,12 @@ document.getElementById('btn-analizar-pliego').addEventListener('click', analiza
 
 async function extraerPliego() {
   const file = document.getElementById('pliego-file').files[0];
-  if (!file) { toast('Selecciona un PDF', 'warn'); return; }
+  if (!file) { toast('Selecciona un archivo', 'warn'); return; }
   _pliegoRaw = file;
   const btn  = document.getElementById('btn-extraer');
   const stEl = document.getElementById('pliego-extract-status');
-  btn.disabled = true; btn.textContent = 'Extrayendo...';
-  stEl.innerHTML = alertHtml('info', 'Extrayendo datos del PDF con Claude...');
+  btn.disabled = true; btn.textContent = 'Analizando...';
+  stEl.innerHTML = alertHtml('info', 'Analizando documento con Claude...');
   const fd = new FormData(); fd.append('pdf', file);
   try {
     const d = await apiJson('/api/auditoria/extraer', { method: 'POST', body: fd });
@@ -763,10 +763,11 @@ async function extraerPliego() {
     if (d.valor)     setVal('a-valor',     d.valor);
     if (d.modalidad) setVal('a-modalidad', d.modalidad);
     if (d.sector)    setVal('a-sector',    d.sector);
-    stEl.innerHTML = alertHtml('success', `✓ ${(d.texto_chars||0).toLocaleString()} caracteres extraídos. Campos prellenados.`);
+    const fmt = d.formato_detectado ? ` desde ${d.formato_detectado}` : '';
+    stEl.innerHTML = alertHtml('success', `✓ ${(d.texto_chars||0).toLocaleString()} caracteres extraídos${fmt}. Campos prellenados.`);
   } catch (err) {
     stEl.innerHTML = alertHtml('error', err.message);
-  } finally { btn.disabled = false; btn.textContent = 'Extraer datos del PDF'; }
+  } finally { btn.disabled = false; btn.textContent = '⚡ Extraer datos automáticamente'; }
 }
 
 async function analizarPliego() {
@@ -777,7 +778,7 @@ async function analizarPliego() {
   // Validar que hay pliego subido
   const pliegoFile = document.getElementById('pliego-file').files[0];
   if (!pliegoFile) {
-    stEl.innerHTML = alertHtml('error', '⚠ Debes subir el Pliego de Condiciones (PDF) antes de analizar.');
+    stEl.innerHTML = alertHtml('error', '⚠ Debes subir el Pliego de Condiciones antes de analizar.');
     return;
   }
 

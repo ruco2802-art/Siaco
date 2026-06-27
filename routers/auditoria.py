@@ -11,10 +11,12 @@ API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 from analizador import (
     extraer_texto_pliego,
     extraer_texto_completo_pdf,
+    extraer_texto_documento,
     chunking_rag_pliego,
     analizar_cliente_vs_licitacion_paralelo,
     guardar_analisis_historial,
     SCANNED_PDF_MARKER,
+    DOC_NOT_SUPPORTED_MARKER,
 )
 from routers.utils import parsear_json_claude
 
@@ -152,24 +154,41 @@ async def extraer_pliego(
     pdf: UploadFile = File(...),
     authorization: str = Header(None),
 ):
-    """Extrae texto y metadatos relevantes de un PDF de pliego."""
+    """Extrae texto y metadatos de un documento de pliego (PDF, Word, Excel o imagen)."""
     from routers.auth import require_auth
     require_auth(authorization)
 
-    raw = await pdf.read()
-    texto = extraer_texto_pliego(raw)
+    raw_bytes = await pdf.read()
+    texto, formato = extraer_texto_documento(raw_bytes, pdf.filename or "")
 
+    if formato == "doc_legacy":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "El formato .doc (Word 97-2003) no está soportado directamente. "
+                "Abre el archivo en Word y guárdalo como .docx, luego vuelve a intentarlo."
+            ),
+        )
     if texto == SCANNED_PDF_MARKER:
         raise HTTPException(
             status_code=422,
             detail=(
-                "El PDF es una imagen escaneada. En este momento el servidor no puede procesarlo "
-                "automáticamente. Por favor intente con un PDF con texto seleccionable, "
+                "El documento es una imagen escaneada y OCR no está disponible en este momento. "
+                "Por favor intente con un archivo con texto seleccionable, "
                 "o contáctenos para asistencia."
             ),
         )
-    if not texto:
-        raise HTTPException(status_code=422, detail="No se pudo extraer texto del PDF. Verifica que no sea solo imágenes sin OCR.")
+    if not texto or not texto.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=f"No se pudo extraer texto del archivo ({formato}). Verifica que el documento tenga contenido legible.",
+        )
+
+    _FORMATO_LABELS = {
+        "pdf": "PDF", "word": "Word (.docx)",
+        "imagen": "Imagen (OCR)", "excel": "Excel",
+    }
+    formato_label = _FORMATO_LABELS.get(formato, formato)
 
     extraidos: dict = {}
     try:
@@ -189,16 +208,17 @@ async def extraer_pliego(
                 '"sector":"salud|educacion|infraestructura|transporte|ambiente|institucional"}'
             )}],
         )
-        raw = resp.content[0].text
-        extraidos = parsear_json_claude(raw) or {}
+        raw_resp = resp.content[0].text
+        extraidos = parsear_json_claude(raw_resp) or {}
         if not extraidos:
-            logger.warning("[AUDITORIA/extraer] parsear_json_claude retornó None. Respuesta cruda:\n%s", raw[:800])
+            logger.warning("[AUDITORIA/extraer] parsear_json_claude retornó None. Respuesta cruda:\n%s", raw_resp[:800])
     except Exception:
         pass
 
     return {
         "texto_chars": len(texto),
         "paginas_extraidas": texto.count("--- EXTRACTO PÁGINA"),
+        "formato_detectado": formato_label,
         "entidad":   extraidos.get("entidad", ""),
         "objeto":    extraidos.get("objeto", ""),
         "valor":     extraidos.get("valor"),
@@ -256,16 +276,21 @@ async def analizar_pliego(
     archivo_pliego = pliego or pdf
     texto_pliego = ""
     if archivo_pliego and archivo_pliego.filename:
-        raw = await archivo_pliego.read()
-        if raw:
-            texto_pliego = extraer_texto_completo_pdf(raw)
+        raw_pliego = await archivo_pliego.read()
+        if raw_pliego:
+            texto_pliego, fmt_pliego = extraer_texto_documento(raw_pliego, archivo_pliego.filename)
+            if fmt_pliego == "doc_legacy":
+                raise HTTPException(
+                    status_code=422,
+                    detail="El formato .doc (Word 97-2003) no está soportado. Guarda el archivo como .docx e inténtalo de nuevo.",
+                )
 
     if texto_pliego == SCANNED_PDF_MARKER:
         raise HTTPException(
             status_code=422,
             detail=(
-                "El PDF es una imagen escaneada. En este momento el servidor no puede procesarlo "
-                "automáticamente. Por favor intente con un PDF con texto seleccionable, "
+                "El documento es una imagen escaneada y OCR no está disponible en este momento. "
+                "Por favor intente con un archivo con texto seleccionable, "
                 "o contáctenos para asistencia."
             ),
         )
@@ -273,9 +298,9 @@ async def analizar_pliego(
         raise HTTPException(
             status_code=422,
             detail=(
-                "No se pudo extraer texto del pliego. "
-                "Verifica que el PDF no sea solo imágenes sin OCR, "
-                "o que hayas subido el archivo correctamente."
+                "No se pudo extraer texto suficiente del pliego. "
+                "Verifica que el archivo no sea solo imágenes sin OCR "
+                "y que hayas subido el documento correctamente."
             ),
         )
 
@@ -288,10 +313,10 @@ async def analizar_pliego(
     ]
     for nombre_doc, archivo in docs_adicionales:
         if archivo and archivo.filename:
-            raw = await archivo.read()
-            if raw:
-                t = extraer_texto_completo_pdf(raw)
-                if t:
+            raw_doc = await archivo.read()
+            if raw_doc:
+                t, _ = extraer_texto_documento(raw_doc, archivo.filename)
+                if t and t not in (SCANNED_PDF_MARKER, DOC_NOT_SUPPORTED_MARKER):
                     textos_extra.append(f"=== {nombre_doc} ===\n{t[:4000]}")
 
     # ── Guardar texto completo en sesión para el chat ─
