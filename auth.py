@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=False)  # Railway env vars tienen prioridad sobre .env local
 
 ADMIN_KEY = os.getenv("ADMIN_KEY", "siaco_admin_2026")
 

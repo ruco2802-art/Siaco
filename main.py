@@ -7,6 +7,13 @@ import sys
 from datetime import datetime as _datetime
 from pathlib import Path
 
+# Diagnóstico de variables de entorno al arrancar
+_api_key_raw = os.getenv("ANTHROPIC_API_KEY", "")
+print(f"[STARTUP] API_KEY presente: {bool(_api_key_raw)}")
+print(f"[STARTUP] Primeros 10 chars: {_api_key_raw[:10]!r}")
+print(f"[STARTUP] Platform: {sys.platform} | CWD: {os.getcwd()}")
+print(f"[STARTUP] .env existe: {Path('.env').exists()}")
+
 # Asegura que los módulos del proyecto sean importables desde los routers
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

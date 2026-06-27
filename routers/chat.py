@@ -128,7 +128,7 @@ def chat_asistente(body: ChatBody, authorization: str = Header(None)):
     hist.append({"role": "user", "content": body.mensaje})
 
     try:
-        client = anthropic.Anthropic(api_key=API_KEY, timeout=30.0, max_retries=2)
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), timeout=30.0, max_retries=2)
         resp   = client.messages.create(
             model      = "claude-sonnet-4-6",
             max_tokens = 600,

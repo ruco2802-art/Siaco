@@ -5,7 +5,7 @@
 from dotenv import load_dotenv
 import os
 
-load_dotenv(override=True)
+load_dotenv(override=False)  # Railway env vars tienen prioridad sobre .env local
 
 API_KEY            = os.getenv("ANTHROPIC_API_KEY")
 ADMIN_KEY          = os.getenv("ADMIN_KEY", "siaco_admin_2026")

@@ -115,7 +115,7 @@ def generar_observaciones(body: ObservacionesBody, authorization: str = Header(N
         contexto_normativo = "Biblioteca normativa no disponible para esta consulta."
 
     # 4. Llamado único a Claude
-    client = anthropic.Anthropic(api_key=API_KEY, timeout=120.0, max_retries=2)
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), timeout=120.0, max_retries=2)
 
     system_prompt = (
         f"{SKILL_JURIDICO}\n"

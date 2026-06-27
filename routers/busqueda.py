@@ -265,7 +265,8 @@ def analizar_contratos(body: AnalizarBody, authorization: str = Header(None)):
     from routers.perfil import _load_perfil, _cliente_id_from_session
     from routers.utils import parsear_json_claude
 
-    logger.info("[ANALIZAR] API_KEY presente: %s", bool(API_KEY))
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    logger.info("[ANALIZAR] API_KEY presente: %s | primeros 10: %r", bool(api_key), api_key[:10])
 
     sesion = require_auth(authorization)
     cid = body.cliente_id or _cliente_id_from_session(sesion)
@@ -276,10 +277,10 @@ def analizar_contratos(body: AnalizarBody, authorization: str = Header(None)):
 
     logger.info("[ANALIZAR] Perfil cliente: sector=%s objeto=%s", sector, objeto_cliente[:80])
 
-    if not API_KEY:
+    if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY no configurada en el servidor")
 
-    client = anthropic.Anthropic(api_key=API_KEY, timeout=30.0)
+    client = anthropic.Anthropic(api_key=api_key, timeout=30.0)
     resultados: list[dict] = []
 
     for idx, lic in enumerate(body.contratos[:50]):

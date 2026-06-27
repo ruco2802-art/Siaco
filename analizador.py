@@ -4,7 +4,7 @@ import os
 import re
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=False)  # Railway env vars tienen prioridad sobre .env local
 
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 

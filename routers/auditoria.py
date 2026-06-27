@@ -192,7 +192,7 @@ async def extraer_pliego(
 
     extraidos: dict = {}
     try:
-        client = anthropic.Anthropic(api_key=API_KEY, timeout=20.0)
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), timeout=20.0)
         resp = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=400,
