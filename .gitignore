@@ -2,6 +2,10 @@
 .env
 config.py
 
+# Datos generados en runtime (NO versionar)
+sesiones.json
+solicitudes_demo.json
+
 # Embeddings y datos generados
 clientes/*/embeddings/*.pkl
 competidores/

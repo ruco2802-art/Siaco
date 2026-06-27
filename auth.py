@@ -20,7 +20,22 @@ def generar_hash(password: str, salt: str = None):
     return hash_val, salt
 
 
-def crear_cliente(cliente_id: str, password: str, plan: str = "básico", dias_vigencia: int = 30) -> dict:
+_USOS_PREMIUM_DEFAULT = {
+    "descargar_pdf_analisis": False,
+    "descargar_pdf_observaciones": False,
+    "analisis_competencia": False,
+    "notificaciones": False,
+    "subir_documentos": False,
+}
+
+
+def crear_cliente(
+    cliente_id: str,
+    password: str,
+    plan: str = "básico",
+    tipo: str = "cliente",
+    dias_acceso: int = 30,
+) -> dict:
     """Crea estructura de carpetas y archivos para un nuevo cliente."""
     base = Path(f"./clientes/{cliente_id}")
     for subdir in [
@@ -35,17 +50,21 @@ def crear_cliente(cliente_id: str, password: str, plan: str = "básico", dias_vi
 
     hash_val, salt = generar_hash(password)
     ahora = datetime.now().isoformat()
-    vencimiento = (datetime.now() + timedelta(days=dias_vigencia)).isoformat()
+    vencimiento = (datetime.now() + timedelta(days=dias_acceso)).isoformat()
 
     credenciales = {
         "cliente_id": cliente_id,
         "hash": hash_val,
         "salt": salt,
         "plan": plan,
+        "tipo": tipo,
         "activo": True,
         "fecha_creacion": ahora,
         "fecha_vencimiento": vencimiento,
     }
+    if tipo == "tester":
+        credenciales["usos_premium"] = dict(_USOS_PREMIUM_DEFAULT)
+
     perfil = {
         "cliente_id": cliente_id,
         "nombre": cliente_id,
@@ -66,22 +85,26 @@ def crear_cliente(cliente_id: str, password: str, plan: str = "básico", dias_vi
     with open(base / "expedientes.json", "w", encoding="utf-8") as f:
         json.dump([], f)
 
-    return {"ok": True, "cliente_id": cliente_id, "plan": plan}
+    return {"ok": True, "cliente_id": cliente_id, "plan": plan, "tipo": tipo}
 
 
 def verificar_credenciales(username: str, password: str):
     """
     Verifica credenciales de un usuario.
-    Retorna dict con {id, nombre, plan, perfil_json} si válido, None si no.
+    Retorna dict con datos del cliente si válido.
+    Retorna {"_bloqueado": True, "_mensaje": "..."} si cuenta expirada.
+    Retorna None si credenciales inválidas.
     Caso especial: username "admin" + password == ADMIN_KEY → retorna perfil admin.
     """
-    # Caso admin
     if username == "admin":
         if password == ADMIN_KEY:
-            return {"id": "admin", "nombre": "Administrador SIACO", "plan": "admin", "perfil_json": {}}
+            return {
+                "id": "admin", "nombre": "Administrador SIACO",
+                "plan": "admin", "tipo": "admin", "perfil_json": {},
+            }
         return None
 
-    ruta_cred = Path(f"./clientes/{username}/credenciales.json")
+    ruta_cred  = Path(f"./clientes/{username}/credenciales.json")
     ruta_perfil = Path(f"./clientes/{username}/perfil.json")
 
     if not ruta_cred.exists():
@@ -96,9 +119,18 @@ def verificar_credenciales(username: str, password: str):
     if not cred.get("activo", False):
         return None
 
+    tipo = cred.get("tipo", "cliente")
+
+    # Verificar vencimiento
     try:
         fecha_venc = datetime.fromisoformat(cred["fecha_vencimiento"])
         if datetime.now() > fecha_venc:
+            if tipo == "tester":
+                return {
+                    "_bloqueado": True,
+                    "_mensaje": "Su acceso de prueba ha vencido. Contáctenos para continuar.",
+                    "_whatsapp": "573138343997",
+                }
             return None
     except Exception:
         pass
@@ -115,12 +147,23 @@ def verificar_credenciales(username: str, password: str):
         except Exception:
             pass
 
-    return {
+    resultado = {
         "id": username,
         "nombre": perfil.get("nombre", username),
         "plan": cred.get("plan", "básico"),
+        "tipo": tipo,
         "perfil_json": perfil,
     }
+
+    if tipo == "tester":
+        resultado["usos_premium"] = cred.get("usos_premium", dict(_USOS_PREMIUM_DEFAULT))
+        try:
+            fv = datetime.fromisoformat(cred["fecha_vencimiento"])
+            resultado["dias_restantes"] = max(0, (fv - datetime.now()).days)
+        except Exception:
+            resultado["dias_restantes"] = 0
+
+    return resultado
 
 
 def listar_clientes_activos() -> list:
@@ -144,17 +187,94 @@ def listar_clientes_activos() -> list:
             if ruta_p.exists():
                 with open(ruta_p, "r", encoding="utf-8") as f:
                     perfil = json.load(f)
-            clientes.append({
+
+            tipo = cred.get("tipo", "cliente")
+            entrada = {
                 "cliente_id": cred["cliente_id"],
                 "nombre": perfil.get("nombre", cred["cliente_id"]),
                 "plan": cred.get("plan", "básico"),
+                "tipo": tipo,
                 "activo": cred.get("activo", False),
                 "fecha_creacion": cred.get("fecha_creacion", ""),
                 "fecha_vencimiento": cred.get("fecha_vencimiento", ""),
-            })
+            }
+            if tipo == "tester":
+                entrada["usos_premium"] = cred.get("usos_premium", dict(_USOS_PREMIUM_DEFAULT))
+                try:
+                    fv = datetime.fromisoformat(cred["fecha_vencimiento"])
+                    entrada["dias_restantes"] = max(0, (fv - datetime.now()).days)
+                except Exception:
+                    entrada["dias_restantes"] = 0
+
+            clientes.append(entrada)
         except Exception:
             continue
     return clientes
+
+
+def actualizar_usos_premium(cliente_id: str, feature: str) -> str:
+    """
+    Marca una función premium como usada por el tester.
+    Retorna: 'ok' (primera vez), 'ya_usado', 'no_aplica' (no es tester o feature inválida).
+    """
+    ruta_cred = Path(f"./clientes/{cliente_id}/credenciales.json")
+    if not ruta_cred.exists():
+        return "no_aplica"
+    try:
+        with open(ruta_cred, "r", encoding="utf-8") as f:
+            cred = json.load(f)
+        if cred.get("tipo") != "tester":
+            return "no_aplica"
+        usos = cred.get("usos_premium", {})
+        if feature not in usos:
+            return "no_aplica"
+        if usos[feature]:
+            return "ya_usado"
+        usos[feature] = True
+        cred["usos_premium"] = usos
+        with open(ruta_cred, "w", encoding="utf-8") as f:
+            json.dump(cred, f, ensure_ascii=False, indent=2)
+        return "ok"
+    except Exception:
+        return "no_aplica"
+
+
+def extender_acceso(cliente_id: str, dias: int = 7) -> bool:
+    """Extiende la fecha de vencimiento del tester en X días desde hoy."""
+    ruta_cred = Path(f"./clientes/{cliente_id}/credenciales.json")
+    if not ruta_cred.exists():
+        return False
+    try:
+        with open(ruta_cred, "r", encoding="utf-8") as f:
+            cred = json.load(f)
+        try:
+            base = max(datetime.now(), datetime.fromisoformat(cred.get("fecha_vencimiento", "")))
+        except Exception:
+            base = datetime.now()
+        cred["fecha_vencimiento"] = (base + timedelta(days=dias)).isoformat()
+        with open(ruta_cred, "w", encoding="utf-8") as f:
+            json.dump(cred, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def convertir_a_cliente(cliente_id: str) -> bool:
+    """Convierte un tester a cliente: elimina restricciones y extiende acceso."""
+    ruta_cred = Path(f"./clientes/{cliente_id}/credenciales.json")
+    if not ruta_cred.exists():
+        return False
+    try:
+        with open(ruta_cred, "r", encoding="utf-8") as f:
+            cred = json.load(f)
+        cred["tipo"] = "cliente"
+        cred["fecha_vencimiento"] = (datetime.now() + timedelta(days=3650)).isoformat()
+        cred.pop("usos_premium", None)
+        with open(ruta_cred, "w", encoding="utf-8") as f:
+            json.dump(cred, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
 
 
 def generar_nueva_password(cliente_id: str):

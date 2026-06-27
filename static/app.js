@@ -2,10 +2,13 @@
 'use strict';
 
 // ════════════ ESTADO GLOBAL ════════════
-let TOKEN        = localStorage.getItem('siaco_token') || '';
-let CLIENTE_ID   = localStorage.getItem('siaco_cid')   || '';
-let PLAN         = localStorage.getItem('siaco_plan')   || 'basico';
-let NOMBRE       = localStorage.getItem('siaco_nombre') || '';
+let TOKEN          = localStorage.getItem('siaco_token') || '';
+let CLIENTE_ID     = localStorage.getItem('siaco_cid')   || '';
+let PLAN           = localStorage.getItem('siaco_plan')   || 'basico';
+let NOMBRE         = localStorage.getItem('siaco_nombre') || '';
+let TIPO           = localStorage.getItem('siaco_tipo')   || 'cliente';
+let USOS_PREMIUM   = JSON.parse(localStorage.getItem('siaco_usos') || '{}');
+let DIAS_RESTANTES = parseInt(localStorage.getItem('siaco_dias')  || '0');
 let _contratos   = [];
 let _descartados = [];
 let _pliegoRaw   = null;
@@ -70,13 +73,19 @@ document.getElementById('login-form').addEventListener('submit', async e => {
     });
     TOKEN      = data.token;
     const cli  = data.cliente || {};
-    CLIENTE_ID = cli.cliente_id || cli.id || '';
-    PLAN       = cli.plan || 'basico';
-    NOMBRE     = cli.nombre || CLIENTE_ID;
+    CLIENTE_ID     = cli.cliente_id || cli.id || '';
+    PLAN           = cli.plan || 'basico';
+    NOMBRE         = cli.nombre || CLIENTE_ID;
+    TIPO           = cli.tipo || 'cliente';
+    USOS_PREMIUM   = cli.usos_premium || {};
+    DIAS_RESTANTES = cli.dias_restantes || 0;
     localStorage.setItem('siaco_token',  TOKEN);
     localStorage.setItem('siaco_cid',    CLIENTE_ID);
     localStorage.setItem('siaco_plan',   PLAN);
     localStorage.setItem('siaco_nombre', NOMBRE);
+    localStorage.setItem('siaco_tipo',   TIPO);
+    localStorage.setItem('siaco_usos',   JSON.stringify(USOS_PREMIUM));
+    localStorage.setItem('siaco_dias',   String(DIAS_RESTANTES));
     initMainScreen();
   } catch (err) {
     errEl.innerHTML = alertHtml('error', err.message);
@@ -86,9 +95,11 @@ document.getElementById('login-form').addEventListener('submit', async e => {
 
 function doLogout() {
   api('/api/logout', { method: 'POST' }).catch(() => {});
-  ['siaco_token','siaco_cid','siaco_plan','siaco_nombre'].forEach(k => localStorage.removeItem(k));
+  ['siaco_token','siaco_cid','siaco_plan','siaco_nombre','siaco_tipo','siaco_usos','siaco_dias']
+    .forEach(k => localStorage.removeItem(k));
   sessionStorage.clear();
   TOKEN = CLIENTE_ID = PLAN = NOMBRE = '';
+  TIPO = 'cliente'; USOS_PREMIUM = {}; DIAS_RESTANTES = 0;
   document.getElementById('main-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = '';
 }
@@ -100,13 +111,31 @@ function initMainScreen() {
   document.getElementById('main-screen').style.display  = '';
 
   const chip = document.getElementById('plan-chip');
-  chip.textContent = PLAN === 'admin' ? 'Admin' : PLAN === 'premium' ? 'Premium' : 'Básico';
-  chip.className   = `plan-chip ${PLAN}`;
+  if      (PLAN === 'admin')   { chip.textContent = 'Admin';   chip.className = 'plan-chip admin'; }
+  else if (PLAN === 'premium') { chip.textContent = 'Premium'; chip.className = 'plan-chip premium'; }
+  else if (TIPO === 'tester')  { chip.textContent = 'Prueba';  chip.className = 'plan-chip tester'; }
+  else                         { chip.textContent = 'Básico';  chip.className = 'plan-chip basico'; }
   document.getElementById('sidebar-user').textContent = NOMBRE || CLIENTE_ID;
 
   // Mostrar nav de admin solo para plan admin
   const navAdmin = document.getElementById('nav-admin');
   if (navAdmin) navAdmin.style.display = PLAN === 'admin' ? '' : 'none';
+
+  // Banner tester
+  const banner = document.getElementById('tester-banner');
+  if (banner) {
+    if (TIPO === 'tester') {
+      banner.style.display = '';
+      const diasEl = document.getElementById('tester-dias');
+      if (diasEl) diasEl.textContent = DIAS_RESTANTES;
+      if (DIAS_RESTANTES <= 2) banner.classList.add('dias-critico');
+      else banner.classList.remove('dias-critico');
+      document.body.style.paddingTop = (banner.offsetHeight || 42) + 'px';
+    } else {
+      banner.style.display = 'none';
+      document.body.style.paddingTop = '';
+    }
+  }
 
   if (PLAN !== 'premium' && PLAN !== 'admin') {
     const gate = document.getElementById('comp-premium-gate');
@@ -128,6 +157,14 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 });
 
 function navigateTo(page) {
+  if (page === 'competidores' && TIPO === 'tester') {
+    checkTesterPremium('analisis_competencia', () => _doNavigate('competidores'));
+    return;
+  }
+  _doNavigate(page);
+}
+
+function _doNavigate(page) {
   cerrarDetalle();
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -139,6 +176,55 @@ function navigateTo(page) {
   if (page === 'expedientes')  loadExpedientes();
   if (page === 'auditoria')    checkPrecargadoBusqueda();
   if (page === 'competidores') checkPrecargadoCompetidores();
+}
+
+// ════════════ GATE TESTER ════════════
+function checkTesterPremium(feature, onProceed) {
+  if (TIPO !== 'tester') { onProceed(); return; }
+  if (USOS_PREMIUM[feature] === true) { showTesterBlockModal(); return; }
+  showTesterConfirmModal(feature, onProceed);
+}
+
+function showTesterConfirmModal(feature, onProceed) {
+  const overlay = document.getElementById('tester-gate-modal');
+  overlay.style.display = 'flex';
+  const btnConfirm = document.getElementById('tgm-confirm');
+  const btnCancel  = document.getElementById('tgm-cancel');
+  const doConfirm = async () => {
+    overlay.style.display = 'none';
+    btnConfirm.removeEventListener('click', doConfirm);
+    btnCancel.removeEventListener('click', doCancel);
+    try {
+      await apiJson('/api/tester/consumir', { method: 'POST', body: JSON.stringify({ feature }) });
+      USOS_PREMIUM[feature] = true;
+      localStorage.setItem('siaco_usos', JSON.stringify(USOS_PREMIUM));
+      onProceed();
+    } catch (err) {
+      if (err.message && err.message.includes('Ya utilizaste')) {
+        USOS_PREMIUM[feature] = true;
+        localStorage.setItem('siaco_usos', JSON.stringify(USOS_PREMIUM));
+        showTesterBlockModal();
+      } else { toast(err.message || 'Error', 'error'); }
+    }
+  };
+  const doCancel = () => {
+    overlay.style.display = 'none';
+    btnConfirm.removeEventListener('click', doConfirm);
+    btnCancel.removeEventListener('click', doCancel);
+  };
+  btnConfirm.addEventListener('click', doConfirm);
+  btnCancel.addEventListener('click', doCancel);
+}
+
+function showTesterBlockModal() {
+  const overlay = document.getElementById('tester-block-modal');
+  overlay.style.display = 'flex';
+  const btnClose = document.getElementById('tbm-close');
+  const doClose = () => {
+    overlay.style.display = 'none';
+    btnClose.removeEventListener('click', doClose);
+  };
+  btnClose.addEventListener('click', doClose);
 }
 
 // ════════════ TABS (PERFIL) ════════════
@@ -226,6 +312,14 @@ function buildPerfilBody() {
 }
 
 async function savePerfil() {
+  const tieneContacto = val('p-whatsapp') || val('p-email');
+  if (TIPO === 'tester' && tieneContacto) {
+    checkTesterPremium('notificaciones', () => _savePerfilImpl());
+    return;
+  }
+  _savePerfilImpl();
+}
+async function _savePerfilImpl() {
   try {
     await apiJson('/api/perfil', { method: 'PUT', body: JSON.stringify(buildPerfilBody()) });
     toast('Perfil guardado correctamente', 'success');
@@ -274,7 +368,10 @@ async function deleteDoc(enc) {
 }
 
 setupUpload('doc-upload-area', 'doc-file', 'doc-filename', 'btn-upload-doc');
-document.getElementById('btn-upload-doc').addEventListener('click', async () => {
+document.getElementById('btn-upload-doc').addEventListener('click', () => {
+  checkTesterPremium('subir_documentos', () => _uploadDocImpl());
+});
+async function _uploadDocImpl() {
   const file = document.getElementById('doc-file').files[0];
   if (!file) { toast('Selecciona un archivo', 'warn'); return; }
   const fd = new FormData();
@@ -292,7 +389,7 @@ document.getElementById('btn-upload-doc').addEventListener('click', async () => 
   } catch (err) {
     stEl.innerHTML = alertHtml('error', err.message);
   } finally { btn.disabled = false; }
-});
+}
 
 // ════════════ BÚSQUEDA SECOP II ════════════
 document.getElementById('btn-buscar').addEventListener('click', buscarContratos);
@@ -803,8 +900,11 @@ function renderAuditResult(r) {
 }
 
 async function descargarPDF(event) {
-  if (!window._lastAnalisis) { toast('Realiza un análisis primero', 'warn'); return; }
   const btn = event.target;
+  checkTesterPremium('descargar_pdf_analisis', () => _descargarPDFImpl(btn));
+}
+async function _descargarPDFImpl(btn) {
+  if (!window._lastAnalisis) { toast('Realiza un análisis primero', 'warn'); return; }
   btn.disabled = true; btn.textContent = '⏳ Generando PDF...';
   try {
     const res = await api('/api/reportes/pdf', {
@@ -875,7 +975,10 @@ async function generarObservaciones(event) {
   }
 }
 
-async function descargarObservaciones(filename) {
+function descargarObservaciones(filename) {
+  checkTesterPremium('descargar_pdf_observaciones', () => _descargarObsImpl(filename));
+}
+async function _descargarObsImpl(filename) {
   if (!CLIENTE_ID || !filename) { toast('PDF no disponible', 'warn'); return; }
   try {
     const res = await api(`/api/observaciones/pdf/${CLIENTE_ID}/${encodeURIComponent(filename)}`);
@@ -1289,6 +1392,84 @@ function renderTablaAvanzada(lista, exacta) {
 // ════════════ ADMIN ════════════
 let _admCredenciales = {};
 
+function toggleDiasAcceso() {
+  const tipo = document.getElementById('adm-tipo')?.value;
+  const diasGroup = document.getElementById('adm-dias-group');
+  if (diasGroup) diasGroup.style.display = tipo === 'tester' ? '' : 'none';
+}
+
+async function cargarListaClientes() {
+  const el = document.getElementById('admin-clientes-lista');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--muted);font-size:.85rem">Cargando...</div>';
+  try {
+    const data = await apiJson('/api/admin/clientes');
+    const lista = data.clientes || [];
+    if (!lista.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:.85rem">No hay clientes registrados.</div>';
+      return;
+    }
+    el.innerHTML = `<div class="table-wrap"><table class="data-table" style="font-size:.82rem">
+      <thead><tr>
+        <th>Usuario</th><th>Empresa</th><th>Plan</th><th>Tipo</th>
+        <th>Estado</th><th>Funciones usadas</th><th>Acciones</th>
+      </tr></thead>
+      <tbody>${lista.map(c => {
+        const tipo = c.tipo || 'cliente';
+        const badge = tipo === 'tester'
+          ? '<span class="admin-client-badge badge-tester">🧪 Tester</span>'
+          : tipo === 'admin'
+          ? '<span class="admin-client-badge badge-admin-b">👑 Admin</span>'
+          : '<span class="admin-client-badge badge-cliente">✅ Cliente</span>';
+        const dias = tipo === 'tester' && c.dias_restantes !== undefined
+          ? `<span class="${c.dias_restantes <= 2 ? 'dias-critico' : 'dias-restantes'}">${c.dias_restantes}d restantes</span>`
+          : c.activo
+          ? '<span style="color:var(--ok)">Activo</span>'
+          : '<span style="color:var(--danger)">Inactivo</span>';
+        const usos = tipo === 'tester' && c.usos_premium
+          ? Object.entries(c.usos_premium).map(([k, v]) =>
+              `<span style="font-size:.72rem;display:block">${v ? '✅' : '⏳'} ${k.replace(/_/g,' ')}</span>`
+            ).join('')
+          : '—';
+        const acciones = tipo === 'tester'
+          ? `<button class="btn" style="font-size:.72rem;padding:3px 8px;margin-bottom:4px;display:block"
+               onclick="extenderAcceso('${c.cliente_id}')">+7 días</button>
+             <button class="btn btn-primary" style="font-size:.72rem;padding:3px 8px;display:block"
+               onclick="convertirACliente('${c.cliente_id}')">→ Cliente</button>`
+          : '—';
+        return `<tr>
+          <td style="font-family:var(--mono);font-size:.78rem">${c.cliente_id}</td>
+          <td>${c.nombre || '—'}</td>
+          <td>${c.plan || '—'}</td>
+          <td>${badge}</td>
+          <td>${dias}</td>
+          <td style="line-height:1.8">${usos}</td>
+          <td>${acciones}</td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>`;
+  } catch (err) {
+    el.innerHTML = `<div style="color:var(--danger);font-size:.85rem">${err.message}</div>`;
+  }
+}
+
+async function extenderAcceso(username) {
+  try {
+    await apiJson(`/api/admin/clientes/${encodeURIComponent(username)}/extender`, { method: 'POST' });
+    toast(`Acceso de ${username} extendido 7 días`, 'ok');
+    cargarListaClientes();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function convertirACliente(username) {
+  if (!confirm(`¿Convertir a ${username} de Tester a Cliente?`)) return;
+  try {
+    await apiJson(`/api/admin/clientes/${encodeURIComponent(username)}/convertir`, { method: 'POST' });
+    toast(`${username} convertido a Cliente`, 'ok');
+    cargarListaClientes();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
 function toggleFormNuevoCliente() {
   const form = document.getElementById('card-nuevo-cliente');
   const cred = document.getElementById('card-credenciales');
@@ -1319,6 +1500,8 @@ async function crearCliente(e) {
       password:       document.getElementById('adm-pass').value.trim(),
       sector:         document.getElementById('adm-sector').value,
       plan:           document.getElementById('adm-plan').value,
+      tipo:           document.getElementById('adm-tipo')?.value || 'cliente',
+      dias_acceso:    parseInt(document.getElementById('adm-dias')?.value || '7'),
       email:          document.getElementById('adm-email').value.trim(),
       whatsapp:       document.getElementById('adm-wa').value.trim(),
     };

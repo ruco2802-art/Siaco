@@ -8,6 +8,38 @@
 </head>
 <body>
 
+<!-- ════════════ TESTER BANNER ════════════ -->
+<div id="tester-banner" style="display:none">
+  <span>🧪 Modo prueba — <strong id="tester-dias">?</strong> días restantes | Cada función premium disponible una vez</span>
+  <a href="https://wa.me/573138343997?text=Quiero%20el%20plan%20completo%20de%20SIACO" target="_blank" rel="noopener">💬 Contáctanos</a>
+</div>
+
+<!-- MODAL CONFIRMACIÓN TESTER -->
+<div class="modal-overlay" id="tester-gate-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-icon">⚠️</div>
+    <div class="modal-title">Acceso de prueba</div>
+    <div class="modal-body">Como usuario de prueba puede usar esta función <strong>UNA SOLA VEZ</strong> para evaluarla. Después necesitará un plan activo.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="tgm-confirm">Sí, usar mi acceso</button>
+      <button class="btn" id="tgm-cancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL BLOQUEO TESTER -->
+<div class="modal-overlay" id="tester-block-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-icon">🔒</div>
+    <div class="modal-title">Ya utilizaste tu acceso de prueba</div>
+    <div class="modal-body">Para acceder ilimitadamente a esta y todas las funciones premium, contáctanos para activar tu plan.</div>
+    <div class="modal-actions">
+      <a href="https://wa.me/573138343997?text=Quiero%20activar%20mi%20plan%20SIACO" target="_blank" rel="noopener" class="btn btn-primary">💬 Hablar con SIACO</a>
+      <button class="btn" id="tbm-close">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════ LOGIN ════════════ -->
 <div id="login-screen">
   <div class="login-card">
@@ -678,6 +710,19 @@
             </div>
           </div>
           <div class="form-row">
+            <div class="form-group" style="flex:0 0 180px">
+              <label>Tipo de acceso</label>
+              <select id="adm-tipo" onchange="toggleDiasAcceso()">
+                <option value="cliente">Cliente</option>
+                <option value="tester">🧪 Tester (prueba)</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:0 0 160px;display:none" id="adm-dias-group">
+              <label>Días de acceso</label>
+              <input type="number" id="adm-dias" value="7" min="1" max="90">
+            </div>
+          </div>
+          <div class="form-row">
             <div class="form-group">
               <label>Email</label>
               <input type="email" id="adm-email" placeholder="contacto@empresa.com">
@@ -701,6 +746,17 @@
         <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
           <button class="btn btn-primary" onclick="copiarCredenciales()">📋 Copiar credenciales para WhatsApp</button>
           <button class="btn" onclick="nuevoClienteForm()">➕ Crear otro cliente</button>
+        </div>
+      </div>
+
+      <!-- LISTA DE CLIENTES -->
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Clientes registrados</span>
+          <button class="btn" style="font-size:.78rem;padding:5px 12px" onclick="cargarListaClientes()">🔄 Actualizar</button>
+        </div>
+        <div id="admin-clientes-lista" style="color:var(--muted);font-size:.85rem">
+          Haz clic en Actualizar para cargar la lista.
         </div>
       </div>
 

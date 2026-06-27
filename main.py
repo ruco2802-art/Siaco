@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """SIACO v3.0 — FastAPI backend"""
+import io
+import json as _json
 import os
 import sys
+from datetime import datetime as _datetime
+from pathlib import Path
 
 # Asegura que los módulos del proyecto sean importables desde los routers
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import io
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -49,6 +51,32 @@ async def health():
 @app.get("/landing")
 async def landing():
     return FileResponse("static/landing.html")
+
+
+@app.post("/api/solicitud-demo")
+async def solicitud_demo(request: Request):
+    """Guarda solicitud de evaluación gratuita."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body["fecha"] = _datetime.now().isoformat()
+    _guardar_solicitud(body)
+    return {"ok": True}
+
+
+def _guardar_solicitud(data: dict):
+    try:
+        ruta = Path("solicitudes_demo.json")
+        lista: list = []
+        if ruta.exists():
+            with open(ruta, "r", encoding="utf-8") as f:
+                lista = _json.load(f)
+        lista.append(data)
+        with open(ruta, "w", encoding="utf-8") as f:
+            _json.dump(lista, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 
 @app.get("/api/contrato/descargar")

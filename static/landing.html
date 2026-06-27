@@ -321,6 +321,55 @@
       .navbar                    { padding: 0 18px; }
       .btn-nav-ghost             { display: none; }
     }
+
+    /* ─── MODAL SOLICITUD DEMO ───────────────────────── */
+    button.btn-lg-accent, button.btn-nav-accent, button.btn-dark {
+      font-family: var(--font); cursor: pointer; border: none;
+    }
+    .soli-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,.78); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; opacity: 0; pointer-events: none;
+      transition: opacity .25s;
+    }
+    .soli-overlay.open { opacity: 1; pointer-events: auto; }
+    .soli-box {
+      background: #111; border: 1px solid #222; border-radius: 16px;
+      padding: 40px 36px; max-width: 480px; width: 100%;
+      transform: translateY(20px); transition: transform .25s;
+    }
+    .soli-overlay.open .soli-box { transform: none; }
+    .soli-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 6px; }
+    .soli-sub   { font-size: .9rem; color: #888; margin-bottom: 28px; }
+    .soli-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .soli-field label { font-size: .75rem; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: .05em; }
+    .soli-field input,
+    .soli-field select {
+      background: #1A1A1A; border: 1px solid #2A2A2A; border-radius: 8px;
+      color: #F0F0EB; font-family: var(--font); font-size: .9rem;
+      padding: 10px 14px; width: 100%; outline: none; transition: border-color .15s;
+    }
+    .soli-field input:focus, .soli-field select:focus { border-color: var(--accent); }
+    .soli-field input::placeholder { color: #444; }
+    .soli-field select option { background: #1A1A1A; }
+    .soli-actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    .btn-soli-send {
+      flex: 1; background: var(--accent); color: #0A0A0A; border: none;
+      padding: 12px 20px; border-radius: 10px; font: 700 .95rem var(--font);
+      cursor: pointer; transition: background .15s;
+    }
+    .btn-soli-send:hover { background: var(--accent-d); }
+    .btn-soli-send:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-soli-cancel {
+      background: none; border: 1px solid #2A2A2A; color: #888;
+      padding: 12px 20px; border-radius: 10px; font: 500 .9rem var(--font);
+      cursor: pointer; transition: border-color .15s;
+    }
+    .btn-soli-cancel:hover { border-color: #444; color: #fff; }
+    .soli-success { text-align: center; padding: 20px 0; }
+    .soli-success-icon { font-size: 3rem; margin-bottom: 16px; }
+    .soli-success-msg { font-size: 1rem; color: #A0A0A0; line-height: 1.6; }
   </style>
 </head>
 <body>
@@ -330,8 +379,7 @@
   <a href="/landing" class="nav-logo">SIACO<span>.</span></a>
   <div class="nav-links">
     <a href="/" class="btn-nav-ghost">Iniciar sesión</a>
-    <a href="https://wa.me/573138343997?text=Hola,%20quiero%20solicitar%20una%20demo%20de%20SIACO"
-       target="_blank" rel="noopener" class="btn-nav-accent">Solicitar demo</a>
+    <button class="btn-nav-accent" onclick="abrirModalSolicitud()">Solicitar demo</button>
   </div>
 </nav>
 
@@ -349,8 +397,7 @@
         Usted solo ejecuta el contrato.
       </p>
       <div class="hero-btns fi fi-d3">
-        <a href="https://wa.me/573138343997?text=Hola,%20quiero%20una%20evaluaci%C3%B3n%20gratuita%20de%20SIACO"
-           target="_blank" rel="noopener" class="btn-lg-accent">Solicitar evaluación gratuita</a>
+        <button class="btn-lg-accent" onclick="abrirModalSolicitud()">Solicitar evaluación gratuita</button>
         <a href="#como-funciona" class="btn-lg-ghost">Ver cómo funciona ↓</a>
       </div>
       <p class="hero-trust fi fi-d3">
@@ -614,8 +661,7 @@
     <p class="section-sub fi" style="margin:16px auto 36px">
       Evaluación gratuita en 15 minutos. Sin compromiso.
     </p>
-    <a href="https://wa.me/573138343997?text=Hola,%20quiero%20una%20evaluaci%C3%B3n%20gratuita%20de%20SIACO"
-       target="_blank" rel="noopener" class="btn-dark fi">Solicitar evaluación ahora</a>
+    <button class="btn-dark fi" onclick="abrirModalSolicitud()">Solicitar evaluación ahora</button>
     <div class="cta-links">
       <a href="https://wa.me/573138343997" target="_blank" rel="noopener" class="cta-a">
         📱 WhatsApp +57 313 834 3997
@@ -691,6 +737,94 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 
 window.addEventListener('load', () => setTimeout(runChat, 900));
+
+/* ── Modal solicitud demo ─────────────────────────────── */
+function abrirModalSolicitud() {
+  document.getElementById('soli-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => { const el = document.getElementById('soli-nombre'); if (el) el.focus(); }, 300);
+}
+function cerrarModalSolicitud() {
+  document.getElementById('soli-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  setTimeout(() => {
+    document.getElementById('soli-form-content').style.display = '';
+    document.getElementById('soli-success-content').style.display = 'none';
+    const f = document.getElementById('soli-form'); if (f) f.reset();
+    const btn = document.getElementById('btn-soli-send');
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar solicitud'; }
+  }, 300);
+}
+async function enviarSolicitud(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btn-soli-send');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  const body = {
+    nombre:   document.getElementById('soli-nombre').value.trim(),
+    empresa:  document.getElementById('soli-empresa').value.trim(),
+    sector:   document.getElementById('soli-sector').value,
+    whatsapp: document.getElementById('soli-wa').value.trim(),
+    ciudad:   document.getElementById('soli-ciudad').value.trim(),
+  };
+  try {
+    await fetch('/api/solicitud-demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) { /* silencioso — igual mostramos éxito */ }
+  document.getElementById('soli-form-content').style.display = 'none';
+  document.getElementById('soli-success-content').style.display = '';
+  setTimeout(cerrarModalSolicitud, 3000);
+}
 </script>
+
+<!-- ══════════════════ MODAL SOLICITUD ══════════════════════ -->
+<div class="soli-overlay" id="soli-overlay" onclick="if(event.target===this)cerrarModalSolicitud()">
+  <div class="soli-box">
+    <div id="soli-form-content">
+      <div class="soli-title">Solicitar evaluación gratuita</div>
+      <div class="soli-sub">Le contactamos en menos de 24 horas. Sin compromiso.</div>
+      <form id="soli-form" onsubmit="enviarSolicitud(event)">
+        <div class="soli-field">
+          <label>Nombre completo</label>
+          <input type="text" id="soli-nombre" placeholder="Juan García" required>
+        </div>
+        <div class="soli-field">
+          <label>Empresa</label>
+          <input type="text" id="soli-empresa" placeholder="Constructora Los Andes SAS" required>
+        </div>
+        <div class="soli-field">
+          <label>Sector</label>
+          <select id="soli-sector" required>
+            <option value="">— Seleccionar —</option>
+            <option>Obras civiles</option>
+            <option>Mantenimiento</option>
+            <option>Suministros</option>
+            <option>Servicios</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="soli-field">
+          <label>WhatsApp</label>
+          <input type="tel" id="soli-wa" placeholder="573001234567" required>
+        </div>
+        <div class="soli-field">
+          <label>Ciudad</label>
+          <input type="text" id="soli-ciudad" placeholder="Neiva, Huila" required>
+        </div>
+        <div class="soli-actions">
+          <button type="submit" class="btn-soli-send" id="btn-soli-send">Enviar solicitud</button>
+          <button type="button" class="btn-soli-cancel" onclick="cerrarModalSolicitud()">Cancelar</button>
+        </div>
+      </form>
+    </div>
+    <div id="soli-success-content" class="soli-success" style="display:none">
+      <div class="soli-success-icon">✅</div>
+      <div class="soli-success-msg">Solicitud enviada. En menos de 24 horas nos comunicaremos con usted.</div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
