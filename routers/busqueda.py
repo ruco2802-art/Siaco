@@ -53,18 +53,31 @@ def _fmt_descartado(lic: dict, razon: str) -> dict:
     }
 
 
+_SECOP_TIMEOUT_MSG = (
+    "El SECOP II está tardando demasiado en responder. "
+    "Por favor, intenta aplicar más filtros de búsqueda o inténtalo de nuevo en unos minutos."
+)
+
+
 def _fetch_secop(url: str, params: dict) -> list[dict]:
-    """Fetch con retry desde un endpoint SECOP II. Retorna lista vacía en fallo silencioso."""
-    for intento in range(3):
+    """Fetch con un solo reintento desde un endpoint SECOP II.
+    - timeout=15s por intento.
+    - Propaga requests.exceptions.Timeout sin reintentar (el caller lanza 504).
+    - Retorna [] en cualquier otro fallo de red.
+    """
+    for intento in range(2):
         try:
-            resp   = requests.get(url, params=params, timeout=30)
+            resp   = requests.get(url, params=params, timeout=15)
             parsed = resp.json()
             if isinstance(parsed, list):
                 return [x for x in parsed if isinstance(x, dict)]
             return []
-        except Exception:
-            if intento < 2:
-                time.sleep(3)
+        except requests.exceptions.Timeout:
+            raise  # propagar inmediatamente; el caller decide el HTTP status
+        except Exception as e:
+            logger.warning("[SECOP] Intento %d/%s falló: %s", intento + 1, url, e)
+            if intento == 0:
+                time.sleep(2)
     return []
 
 
@@ -120,8 +133,11 @@ def buscar_contratos(
         "$order": "fecha_de_publicacion DESC",
     }
 
-    fuente1 = _fetch_secop(SECOP_URL,   params_base)
-    fuente2 = _fetch_secop(SECOP_URL_2, params_base)
+    try:
+        fuente1 = _fetch_secop(SECOP_URL,   params_base)
+        fuente2 = _fetch_secop(SECOP_URL_2, params_base)
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
 
     if not fuente1 and not fuente2:
         raise HTTPException(
@@ -465,8 +481,11 @@ def busqueda_avanzada(
         "$order": "fecha_de_publicacion DESC",
     }
 
-    fuente1 = _fetch_secop(SECOP_URL,   params_av)
-    fuente2 = _fetch_secop(SECOP_URL_2, params_av)
+    try:
+        fuente1 = _fetch_secop(SECOP_URL,   params_av)
+        fuente2 = _fetch_secop(SECOP_URL_2, params_av)
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
 
     if not fuente1 and not fuente2 and not busqueda_exacta:
         raise HTTPException(

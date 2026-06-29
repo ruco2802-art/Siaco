@@ -85,9 +85,9 @@ def _listar_documentos_relevantes(modalidad, sector):
     Devuelve: lista de dicts {"archivo": str, "carpeta": str, "texto": str}
     """
     import os
+    import fitz  # PyMuPDF
     import pandas as pd
     from docx import Document
-    from pypdf import PdfReader
 
     variantes_sector = {
         "educacion": ["educacion", "educación", "educativo", "educativa"],
@@ -161,12 +161,12 @@ def _listar_documentos_relevantes(modalidad, sector):
 
             elif nombre_lower.endswith(".pdf"):
                 try:
-                    reader = PdfReader(ruta_completa)
+                    doc_pdf = fitz.open(str(ruta_completa))
                     paginas_texto = []
-                    for i, pagina in enumerate(reader.pages):
+                    for i, pagina in enumerate(doc_pdf):
                         if i >= LIMITE_PAGINAS_PDF:
                             break
-                        paginas_texto.append(pagina.extract_text() or "")
+                        paginas_texto.append(pagina.get_text() or "")
                     extraido = "\n".join(paginas_texto)
                 except Exception as e:
                     extraido = f"[Error leyendo PDF {archivo}: {str(e)}]"
