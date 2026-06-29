@@ -31,7 +31,10 @@ def _headers(extra: dict | None = None) -> dict:
     key = os.environ.get("SUPABASE_KEY", "")
     if not key:
         raise RuntimeError("SUPABASE_KEY debe configurarse en variables de entorno.")
-    h = {"Authorization": f"Bearer {key}"}
+    h = {
+        "Authorization": f"Bearer {key}",
+        "apikey": key,          # Supabase exige este header además del Authorization
+    }
     if extra:
         h.update(extra)
     return h
