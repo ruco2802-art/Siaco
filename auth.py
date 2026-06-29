@@ -9,7 +9,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(override=False)  # Railway env vars tienen prioridad sobre .env local
 
-ADMIN_KEY = os.getenv("ADMIN_KEY", "siaco_admin_2026")
+ADMIN_KEY = os.getenv("ADMIN_KEY")
+if not ADMIN_KEY:
+    raise RuntimeError("FATAL: ADMIN_KEY no configurada en variables de entorno.")
 
 
 def generar_hash(password: str, salt: str = None):

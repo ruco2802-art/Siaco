@@ -1106,23 +1106,54 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
 
 def analizar_cliente_vs_licitacion_paralelo(licitacion, cliente, modalidad, sector, texto_pliego=None, cliente_id=None):
     """
-    ORQUESTADOR CENTRAL v3.0.
+    ORQUESTADOR CENTRAL v3.1 — agentes financiero y legal en paralelo (ThreadPoolExecutor).
+    El contexto RAG se computa en el hilo principal antes de lanzar los hilos para evitar
+    condiciones de carrera en la carga del modelo de embeddings.
     cliente_id: si se proporciona, enriquece análisis con documentos e historial del cliente.
     """
-    res_financiero = agente_financiero(licitacion, cliente, texto_pliego=texto_pliego, cliente_id=cliente_id)
+    from concurrent.futures import ThreadPoolExecutor
 
+    _ERR_FIN = {
+        "score_financiero": 0, "cumple_financiero": False, "concepto": "ERROR",
+        "razones": [], "articulos_aplicables": [], "recomendaciones": [],
+        "indices_evaluados": {}, "analisis_numerico": "", "checklist_detallado": [],
+    }
+    _ERR_LEG = {
+        "viable_juridico": False, "score_juridico": 0, "concepto": "ERROR",
+        "riesgos_legales": "", "argumentos_viabilidad": "", "documentos_a_gestionar": [],
+        "documentos_faltantes": [], "riesgos": [], "requisitos_habilitantes": [],
+        "matriz_experiencia": [],
+    }
+
+    # Contexto RAG en hilo principal — garantiza modelo cargado antes de paralelizar
     consulta_rag = " ".join(filter(None, [
         licitacion.get('nombre_del_procedimiento', ''),
         f"Sector {sector}",
         f"Modalidad {modalidad}",
         " ".join(cliente.get("codigos_unspsc_permitidos", []) or []),
     ]))
-
     contexto_legal = obtener_contexto_legal(modalidad, sector, consulta=consulta_rag, top_k=8)
-    res_legal = agente_legal_rag(
-        licitacion, contexto_legal, cliente.get("experiencia"),
-        texto_pliego, cliente_id=cliente_id
-    )
+
+    def _run_financiero():
+        try:
+            return agente_financiero(licitacion, cliente, texto_pliego=texto_pliego, cliente_id=cliente_id)
+        except Exception as e:
+            return {**_ERR_FIN, "analisis_numerico": f"Error agente financiero: {e}"}
+
+    def _run_legal():
+        try:
+            return agente_legal_rag(
+                licitacion, contexto_legal, cliente.get("experiencia"),
+                texto_pliego, cliente_id=cliente_id,
+            )
+        except Exception as e:
+            return {**_ERR_LEG, "riesgos_legales": f"Error agente legal: {e}"}
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fut_fin = executor.submit(_run_financiero)
+        fut_leg = executor.submit(_run_legal)
+        res_financiero = fut_fin.result()
+        res_legal      = fut_leg.result()
 
     viable_final = res_financiero["cumple_financiero"] and res_legal["viable_juridico"]
     score_fin = res_financiero.get("score_financiero", 0)
