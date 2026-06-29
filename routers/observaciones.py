@@ -69,10 +69,14 @@ def generar_observaciones(body: ObservacionesBody, authorization: str = Header(N
     from contexto_sesion import obtener_contexto_sesion
     from analizador import obtener_contexto_legal
 
-    require_auth(authorization)
+    sesion = require_auth(authorization)
 
-    # 1. Texto del pliego desde sesión de auditoría
-    ctx = obtener_contexto_sesion(body.cliente_id)
+    # 1. Texto del pliego desde sesión de auditoría.
+    # Fallback igual al router de chat: si body.cliente_id no tiene pliego guardado,
+    # intenta con el id del token de sesión. Esto cubre desajustes entre el cliente_id
+    # del formulario y el key usado por auditoria al guardar el contexto.
+    cid_token = sesion.get("cliente_id") or sesion.get("id") or ""
+    ctx = obtener_contexto_sesion(body.cliente_id) or obtener_contexto_sesion(cid_token)
     texto_pliego = ctx.get("texto_pliego", "")
     if not texto_pliego or len(texto_pliego.strip()) < 200:
         raise HTTPException(

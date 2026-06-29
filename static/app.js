@@ -838,6 +838,9 @@ async function analizarPliego() {
     resEl.innerHTML = renderAuditResult(data);
     resEl.scrollIntoView({ behavior: 'smooth' });
     window._lastAnalisis = data;
+    // Registra que el análisis completó y qué cliente_id fue usado,
+    // para que observaciones y otras pestañas usen exactamente el mismo key de sesión.
+    sessionStorage.setItem('siaco_pliego_sesion_cid', CLIENTE_ID);
   } catch (err) {
     clearTimers();
     stEl.innerHTML = alertHtml('error', err.message);
@@ -930,14 +933,26 @@ async function generarObservaciones(event) {
   const btn = event.target;
   const resDiv = document.getElementById('obs-result');
   if (!CLIENTE_ID) { toast('Inicia sesión primero', 'warn'); return; }
-  if (!resDiv) { toast('Realiza un análisis de pliego primero', 'warn'); return; }
+
+  // Usar el cliente_id que fue confirmado cuando el análisis de pliego terminó con éxito.
+  // Si no existe en sessionStorage, el usuario no completó el análisis — avisar antes
+  // de hacer la llamada API para evitar el 422 "No hay pliego en sesión".
+  const _pliegoCid = sessionStorage.getItem('siaco_pliego_sesion_cid');
+  if (!_pliegoCid) {
+    if (resDiv) resDiv.innerHTML = alertHtml('warn',
+      '⚠ No hay pliego en sesión. Ve a la pestaña <b>Auditoría</b>, ' +
+      'sube el PDF del pliego y haz clic en <b>Analizar con IA</b> primero.');
+    toast('Primero analiza el pliego en Auditoría', 'warn');
+    return;
+  }
+
   btn.disabled = true; btn.textContent = '⏳ Analizando pliego...';
-  resDiv.innerHTML = '<div class="loading">Comparando con Documentos Tipo CCE…</div>';
+  if (resDiv) resDiv.innerHTML = '<div class="loading">Comparando con Documentos Tipo CCE…</div>';
   try {
     const procesoId = val('a-codigo-proceso') || val('a-objeto') || `obs_${Date.now()}`;
     const data = await apiJson('/api/observaciones/generar', {
       method: 'POST',
-      body: JSON.stringify({ cliente_id: CLIENTE_ID, proceso_id: procesoId }),
+      body: JSON.stringify({ cliente_id: _pliegoCid, proceso_id: procesoId }),
     });
     if (!data.tiene_discrepancias || !data.discrepancias?.length) {
       resDiv.innerHTML = `<div class="card" style="border-left:4px solid #4caf50">
