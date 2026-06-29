@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
 import numpy as np
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger("siaco")
 
 TIPOS_DOCUMENTO = [
     "RUP",
@@ -70,43 +73,58 @@ def _chunkear(texto: str, tamano: int = 500, overlap: int = 100) -> list:
     return chunks
 
 
-# ── Almacenamiento sin pickle: JSON (metadata) + NPY (embeddings) ──────────
+# ── Almacenamiento: caché local /tmp + Supabase Storage ──────────────────────
+#
+# Estrategia:
+#   - Escritura: guardar en /tmp (rápido) + subir a Supabase (persistente)
+#   - Lectura:   leer desde /tmp si existe; si no, descargar desde Supabase
+#   - /tmp sobrevive entre requests del mismo contenedor pero no entre deploys.
+#   - Supabase persiste entre deploys.
 
-def _ruta_meta(cliente_id: str) -> Path:
-    return Path(f"./clientes/{cliente_id}/embeddings/documentos_meta.json")
+def _cache_meta(cliente_id: str) -> Path:
+    return Path(f"/tmp/siaco/{cliente_id}/embeddings/documentos_meta.json")
 
 
-def _ruta_emb(cliente_id: str) -> Path:
-    return Path(f"./clientes/{cliente_id}/embeddings/documentos_emb.npy")
+def _cache_emb(cliente_id: str) -> Path:
+    return Path(f"/tmp/siaco/{cliente_id}/embeddings/documentos_emb.npy")
+
+
+def _sb_meta(cid: str) -> str:
+    return f"clientes/{cid}/embeddings/documentos_meta.json"
+
+
+def _sb_emb(cid: str) -> str:
+    return f"clientes/{cid}/embeddings/documentos_emb.npy"
 
 
 def _cargar_indice(cliente_id: str) -> list:
     """
-    Carga el índice de documentos desde JSON + NPY.
-    Migra automáticamente archivos .pkl heredados renombrándolos a .pkl.bak.
+    Carga el índice de documentos.
+    1. Busca en caché local /tmp (mismo contenedor — rápido).
+    2. Si no existe, descarga desde Supabase (después de un redeploy).
     """
-    ruta_meta = _ruta_meta(cliente_id)
-    ruta_emb  = _ruta_emb(cliente_id)
+    cache_meta = _cache_meta(cliente_id)
+    cache_emb  = _cache_emb(cliente_id)
 
-    # Migración automática desde pickle (formato heredado)
-    ruta_pkl = Path(f"./clientes/{cliente_id}/embeddings/documentos_index.pkl")
-    if ruta_pkl.exists() and not ruta_meta.exists():
+    if not cache_meta.exists() or not cache_emb.exists():
         try:
-            import pickle as _pkl
-            with open(ruta_pkl, "rb") as f:
-                indice_legacy = _pkl.load(f)
-            _guardar_indice(cliente_id, indice_legacy)
-            ruta_pkl.rename(ruta_pkl.with_suffix(".pkl.bak"))
-        except Exception:
-            return []
+            from supabase_client import sb_download
+            meta_bytes = sb_download(_sb_meta(cliente_id))
+            emb_bytes  = sb_download(_sb_emb(cliente_id))
+            if meta_bytes and emb_bytes:
+                cache_meta.parent.mkdir(parents=True, exist_ok=True)
+                cache_meta.write_bytes(meta_bytes)
+                cache_emb.write_bytes(emb_bytes)
+        except Exception as exc:
+            logger.warning("[DOCUMENTOS] No se pudo descargar índice de Supabase: %s", exc)
 
-    if not ruta_meta.exists() or not ruta_emb.exists():
+    if not cache_meta.exists() or not cache_emb.exists():
         return []
 
     try:
-        with open(ruta_meta, "r", encoding="utf-8") as f:
+        with open(cache_meta, "r", encoding="utf-8") as f:
             meta = json.load(f)
-        embs = np.load(str(ruta_emb), allow_pickle=False)
+        embs = np.load(str(cache_emb), allow_pickle=False)
         if len(meta) != len(embs):
             return []
         return [{**m, "embedding": embs[i]} for i, m in enumerate(meta)]
@@ -115,17 +133,26 @@ def _cargar_indice(cliente_id: str) -> list:
 
 
 def _guardar_indice(cliente_id: str, indice: list) -> None:
-    """Persiste metadata en JSON y vectores en NPY — sin pickle."""
-    ruta_meta = _ruta_meta(cliente_id)
-    ruta_emb  = _ruta_emb(cliente_id)
-    ruta_meta.parent.mkdir(parents=True, exist_ok=True)
+    """
+    Persiste el índice:
+    1. En caché local /tmp (rápido para la sesión actual).
+    2. En Supabase Storage (persistente entre deploys).
+    Lanza excepción si Supabase falla, para que el llamador retorne HTTP 500.
+    """
+    cache_meta = _cache_meta(cliente_id)
+    cache_emb  = _cache_emb(cliente_id)
+    cache_meta.parent.mkdir(parents=True, exist_ok=True)
 
     meta_sin_emb = [{k: v for k, v in e.items() if k != "embedding"} for e in indice]
     embs = np.array([e["embedding"] for e in indice]) if indice else np.empty((0,))
 
-    with open(ruta_meta, "w", encoding="utf-8") as f:
+    with open(cache_meta, "w", encoding="utf-8") as f:
         json.dump(meta_sin_emb, f, ensure_ascii=False)
-    np.save(str(ruta_emb), embs)
+    np.save(str(cache_emb), embs)
+
+    from supabase_client import sb_upload
+    sb_upload(_sb_meta(cliente_id), cache_meta.read_bytes(), "application/json")
+    sb_upload(_sb_emb(cliente_id), cache_emb.read_bytes(), "application/octet-stream")
 
 
 # ── API pública ─────────────────────────────────────────────────────────────
@@ -133,6 +160,7 @@ def _guardar_indice(cliente_id: str, indice: list) -> None:
 def procesar_documento(archivo_bytes: bytes, filename: str, cliente_id: str, tipo_doc: str) -> dict:
     """
     Extrae texto, genera chunks y embeddings, actualiza el índice del cliente.
+    Guarda el archivo original en Supabase Storage.
     Retorna dict con ok, filename, tipo, chunks, caracteres.
     """
     from analizador import _obtener_modelo_embeddings
@@ -154,21 +182,35 @@ def procesar_documento(archivo_bytes: bytes, filename: str, cliente_id: str, tip
     fecha_subida = datetime.now().isoformat()
     for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
         indice.append({
-            "doc_type":    tipo_doc,
-            "filename":    filename,
+            "doc_type":     tipo_doc,
+            "filename":     filename,
             "fecha_subida": fecha_subida,
-            "chunk_id":    i,
-            "texto":       chunk,
-            "embedding":   emb,
+            "chunk_id":     i,
+            "texto":        chunk,
+            "embedding":    emb,
         })
 
-    _guardar_indice(cliente_id, indice)
+    try:
+        _guardar_indice(cliente_id, indice)
+    except Exception as exc:
+        logger.error("[DOCUMENTOS] Error guardando índice en Supabase: %s", exc)
+        return {"ok": False, "error": "Error al guardar el documento en la nube."}
+
+    # Guardar archivo original en Supabase Storage
+    try:
+        from supabase_client import sb_upload
+        ext   = Path(filename).suffix.lower()
+        ctype = "application/pdf" if ext == ".pdf" else "application/octet-stream"
+        sb_upload(f"clientes/{cliente_id}/documentos/{filename}", archivo_bytes, ctype)
+    except Exception as exc:
+        logger.error("[DOCUMENTOS] Error subiendo archivo original a Supabase: %s", exc)
+        return {"ok": False, "error": "Error al guardar el documento en la nube."}
 
     return {
-        "ok":        True,
-        "filename":  filename,
-        "tipo":      tipo_doc,
-        "chunks":    len(chunks),
+        "ok":         True,
+        "filename":   filename,
+        "tipo":       tipo_doc,
+        "chunks":     len(chunks),
         "caracteres": len(texto),
     }
 
@@ -201,23 +243,37 @@ def buscar_en_documentos_cliente(query: str, cliente_id: str, top_k: int = 5) ->
 
 
 def verificar_vigencia_rup(cliente_id: str) -> dict:
-    """Verifica vigencia del RUP leyendo perfil.json del cliente."""
-    ruta_perfil = Path(f"./clientes/{cliente_id}/perfil.json")
-    if not ruta_perfil.exists():
-        return {"tiene_rup": False, "dias_restantes": None, "alerta": False}
+    """
+    Verifica vigencia del RUP leyendo perfil.json.
+    Busca primero en caché /tmp (poblado por _load_perfil en routers/perfil.py),
+    luego en Supabase como fallback.
+    """
+    cache_perfil = Path(f"/tmp/siaco/{cliente_id}/perfil.json")
+    perfil = {}
 
-    try:
-        with open(ruta_perfil, "r", encoding="utf-8") as f:
-            perfil = json.load(f)
-    except Exception:
-        return {"tiene_rup": False, "dias_restantes": None, "alerta": False}
+    if cache_perfil.exists():
+        try:
+            with open(cache_perfil, "r", encoding="utf-8") as f:
+                perfil = json.load(f)
+        except Exception:
+            pass
+
+    if not perfil:
+        try:
+            from supabase_client import sb_download
+            data = sb_download(f"clientes/{cliente_id}/perfil.json")
+            if data:
+                perfil = json.loads(data.decode("utf-8"))
+                cache_perfil.parent.mkdir(parents=True, exist_ok=True)
+                cache_perfil.write_bytes(data)
+        except Exception:
+            pass
 
     fecha_str = perfil.get("fecha_vencimiento_rup", "")
     if not fecha_str:
         return {"tiene_rup": False, "dias_restantes": None, "alerta": False}
 
     try:
-        from datetime import datetime
         fecha_venc = datetime.fromisoformat(fecha_str)
         dias = (fecha_venc - datetime.now()).days
         return {
@@ -231,12 +287,28 @@ def verificar_vigencia_rup(cliente_id: str) -> dict:
 
 
 def listar_documentos(cliente_id: str) -> list:
-    """Tabla de documentos cargados: tipo, filename, fecha_subida, chunks."""
-    ruta_meta = _ruta_meta(cliente_id)
-    if not ruta_meta.exists():
+    """
+    Tabla de documentos cargados: tipo, filename, fecha_subida, chunks.
+    Lee solo la metadata (sin embeddings) desde caché o Supabase.
+    """
+    cache_meta = _cache_meta(cliente_id)
+
+    # Poblar caché si falta (ej. tras un redeploy)
+    if not cache_meta.exists():
+        try:
+            from supabase_client import sb_download
+            meta_bytes = sb_download(_sb_meta(cliente_id))
+            if meta_bytes:
+                cache_meta.parent.mkdir(parents=True, exist_ok=True)
+                cache_meta.write_bytes(meta_bytes)
+        except Exception:
+            return []
+
+    if not cache_meta.exists():
         return []
+
     try:
-        with open(ruta_meta, "r", encoding="utf-8") as f:
+        with open(cache_meta, "r", encoding="utf-8") as f:
             indice = json.load(f)
     except Exception:
         return []

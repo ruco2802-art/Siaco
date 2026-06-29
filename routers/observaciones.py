@@ -3,7 +3,6 @@
 import json
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import logging
@@ -281,25 +280,38 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error generando PDF: {str(e)[:200]}")
 
-        # 6. Guardar PDF + metadata
+        # 6. Subir PDF + metadata a Supabase Storage
         proceso_id_safe = re.sub(r"[^\w\-]", "_", body.proceso_id or "proceso")[:40]
         pdf_filename    = f"{proceso_id_safe}_observaciones.pdf"
-        carpeta         = Path(f"./clientes/{body.cliente_id}/observaciones")
-        carpeta.mkdir(parents=True, exist_ok=True)
+        sb_prefix       = f"clientes/{body.cliente_id}/observaciones"
 
-        (carpeta / pdf_filename).write_bytes(pdf_bytes)
+        try:
+            from supabase_client import sb_upload
+            sb_upload(f"{sb_prefix}/{pdf_filename}", pdf_bytes, "application/pdf")
+        except Exception as exc:
+            logger.error("[OBSERVACIONES] No se pudo subir PDF a Supabase: %s", exc)
+            raise HTTPException(
+                status_code=500,
+                detail="Error al guardar el documento en la nube.",
+            )
 
         meta = {
-            "proceso_id":         body.proceso_id,
-            "proceso":            resultado.get("proceso", ""),
-            "entidad":            resultado.get("entidad", ""),
+            "proceso_id":          body.proceso_id,
+            "proceso":             resultado.get("proceso", ""),
+            "entidad":             resultado.get("entidad", ""),
             "total_discrepancias": len(discrepancias),
-            "fecha_generacion":   datetime.now().isoformat(),
-            "pdf_filename":       pdf_filename,
+            "fecha_generacion":    datetime.now().isoformat(),
+            "pdf_filename":        pdf_filename,
         }
-        (carpeta / f"{proceso_id_safe}_meta.json").write_text(
-            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        try:
+            from supabase_client import sb_upload
+            sb_upload(
+                f"{sb_prefix}/{proceso_id_safe}_meta.json",
+                json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8"),
+                "application/json",
+            )
+        except Exception:
+            pass  # metadata es no crítica
 
     return {
         "tiene_discrepancias":         tiene_disc,
@@ -321,20 +333,30 @@ def descargar_pdf_observaciones(
     filename:   str,
     authorization: str = Header(None),
 ):
-    """Descarga el PDF de observaciones previamente generado."""
+    """Descarga el PDF de observaciones previamente generado desde Supabase Storage."""
     from routers.auth import require_auth
     require_auth(authorization)
 
-    # Sanitizar: solo chars seguros para evitar path traversal
     if not re.match(r"^[\w\-\.]+$", filename):
         raise HTTPException(status_code=400, detail="Nombre de archivo inválido.")
 
-    ruta = Path(f"./clientes/{cliente_id}/observaciones/{filename}")
-    if not ruta.exists():
-        raise HTTPException(status_code=404, detail="PDF no encontrado. Genera las observaciones primero.")
+    try:
+        from supabase_client import sb_download
+        pdf_bytes = sb_download(f"clientes/{cliente_id}/observaciones/{filename}")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al acceder al almacenamiento en la nube: {str(exc)[:200]}",
+        )
+
+    if not pdf_bytes:
+        raise HTTPException(
+            status_code=404,
+            detail="PDF no encontrado. Genera las observaciones primero.",
+        )
 
     return Response(
-        content=ruta.read_bytes(),
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

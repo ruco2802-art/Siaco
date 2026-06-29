@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Router de auditoría de pliegos — SIACO v3.0"""
+import re
+
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
 
 import os
@@ -294,6 +296,18 @@ async def analizar_pliego(
                 "o contáctenos para asistencia."
             ),
         )
+
+    # Guardar pliego original en Supabase (best-effort: no bloquea el análisis si falla)
+    if raw_pliego and archivo_pliego and archivo_pliego.filename:
+        try:
+            from supabase_client import sb_upload
+            fname_safe = re.sub(r"[^\w.\-]", "_", archivo_pliego.filename)[:120]
+            ext        = fname_safe.rsplit(".", 1)[-1].lower() if "." in fname_safe else ""
+            ctype      = "application/pdf" if ext == "pdf" else "application/octet-stream"
+            sb_upload(f"clientes/{cid}/pliego/{fname_safe}", raw_pliego, ctype)
+        except Exception as exc:
+            logger.warning("[AUDITORIA] No se pudo guardar pliego en Supabase: %s", exc)
+
     if not texto_pliego or len(texto_pliego.strip()) < 200:
         raise HTTPException(
             status_code=422,
