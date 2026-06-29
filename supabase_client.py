@@ -1,68 +1,79 @@
 # -*- coding: utf-8 -*-
 """
-Cliente singleton de Supabase Storage para SIACO.
+Cliente de Supabase Storage para SIACO — implementado sobre requests.
+No usa el SDK supabase-py para evitar conflictos de dependencias con httpx.
 
 Variables de entorno requeridas:
-  SUPABASE_URL  — URL del proyecto Supabase (ej. https://xxxx.supabase.co)
-  SUPABASE_KEY  — service_role key (no la anon key)
+  SUPABASE_URL  — URL del proyecto (ej. https://xxxx.supabase.co)
+  SUPABASE_KEY  — service_role key (NO la anon key)
 
 Bucket:  siaco-documentos
+API ref: https://supabase.com/docs/reference/javascript/storage-from-upload
 """
 import logging
 import os
+
+import requests
 
 logger = logging.getLogger("siaco")
 
 BUCKET = "siaco-documentos"
 
-_client = None  # tipo: supabase.Client
+
+def _base_url() -> str:
+    url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    if not url:
+        raise RuntimeError("SUPABASE_URL debe configurarse en variables de entorno.")
+    return f"{url}/storage/v1/object/{BUCKET}"
 
 
-def get_supabase():
-    """Retorna el cliente Supabase (inicialización perezosa al primer uso)."""
-    global _client
-    if _client is None:
-        from supabase import create_client
-        url = os.environ.get("SUPABASE_URL", "")
-        key = os.environ.get("SUPABASE_KEY", "")
-        if not url or not key:
-            raise RuntimeError(
-                "SUPABASE_URL y SUPABASE_KEY deben configurarse en variables de entorno."
-            )
-        _client = create_client(url, key)
-    return _client
+def _headers(extra: dict | None = None) -> dict:
+    key = os.environ.get("SUPABASE_KEY", "")
+    if not key:
+        raise RuntimeError("SUPABASE_KEY debe configurarse en variables de entorno.")
+    h = {"Authorization": f"Bearer {key}"}
+    if extra:
+        h.update(extra)
+    return h
 
 
 def sb_upload(path: str, data: bytes, content_type: str = "application/octet-stream") -> None:
     """
     Sube bytes a Supabase Storage con upsert (sobreescribe si existe).
-    Lanza excepción si la operación falla — el llamador decide si es fatal.
+    Lanza excepción si la operación falla.
+
+    Usa PUT /storage/v1/object/{bucket}/{path}?upsert=true
     """
-    sb = get_supabase()
-    storage = sb.storage.from_(BUCKET)
-    try:
-        storage.upload(path, data, {"content-type": content_type, "x-upsert": "true"})
-    except Exception as primary_exc:
-        # Compatibilidad con versiones del SDK que no soportan x-upsert:
-        # intentar eliminar el archivo y volver a subir.
-        if any(w in str(primary_exc).lower() for w in ("already", "duplicate", "exists", "409")):
-            try:
-                storage.remove([path])
-            except Exception:
-                pass
-            storage.upload(path, data, {"content-type": content_type})
-        else:
-            raise primary_exc
+    url = f"{_base_url()}/{path}"
+    resp = requests.put(
+        url,
+        data=data,
+        headers=_headers({"Content-Type": content_type, "x-upsert": "true"}),
+        timeout=30,
+    )
+    if not resp.ok:
+        raise RuntimeError(
+            f"Supabase upload falló [{resp.status_code}] {path}: {resp.text[:200]}"
+        )
 
 
 def sb_download(path: str) -> bytes | None:
     """
     Descarga bytes desde Supabase Storage.
-    Retorna None si el archivo no existe o hay error de red.
+    Retorna None si el archivo no existe (404) o hay error de red.
     """
     try:
-        sb = get_supabase()
-        return bytes(sb.storage.from_(BUCKET).download(path))
+        url = f"{_base_url()}/{path}"
+        resp = requests.get(url, headers=_headers(), timeout=30)
+        if resp.status_code == 404:
+            return None
+        if not resp.ok:
+            logger.warning(
+                "[SUPABASE] Download error [%s] %s: %s",
+                resp.status_code, path, resp.text[:200],
+            )
+            return None
+        return resp.content
     except Exception as exc:
-        logger.debug("[SUPABASE] Archivo no encontrado o error: %s — %s", path, exc)
+        logger.debug("[SUPABASE] Download excepción: %s — %s", path, exc)
         return None
