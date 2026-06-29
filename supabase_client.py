@@ -48,7 +48,8 @@ def sb_upload(path: str, data: bytes, content_type: str = "application/octet-str
     Usa PUT /storage/v1/object/{bucket}/{path}?upsert=true
     """
     url = f"{_base_url()}/{path}"
-    resp = requests.post(           # Supabase Storage usa POST, no PUT
+    logger.info("[SUPABASE] POST %s", url)
+    resp = requests.post(
         url,
         data=data,
         headers=_headers({"Content-Type": content_type, "x-upsert": "true"}),
@@ -56,7 +57,7 @@ def sb_upload(path: str, data: bytes, content_type: str = "application/octet-str
     )
     if not resp.ok:
         raise RuntimeError(
-            f"Supabase upload falló [{resp.status_code}] {path}: {resp.text[:200]}"
+            f"Supabase upload falló [{resp.status_code}] URL={url} : {resp.text[:300]}"
         )
 
 
