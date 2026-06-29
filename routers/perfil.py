@@ -111,11 +111,17 @@ def _save_perfil(cid: str, datos: dict):
     try:
         from supabase_client import sb_upload
         sb_upload(_sb_perfil_path(cid), cache.read_bytes(), "application/json")
+    except RuntimeError as exc:
+        # RuntimeError = variables de entorno faltantes o bucket inexistente
+        msg = str(exc)
+        logger.error("[PERFIL] Supabase config error: %s", msg)
+        raise HTTPException(status_code=500, detail=f"Supabase: {msg[:300]}")
     except Exception as exc:
-        logger.error("[PERFIL] No se pudo guardar perfil en Supabase: %s", exc)
+        msg = str(exc)
+        logger.error("[PERFIL] No se pudo guardar perfil en Supabase: %s", msg)
         raise HTTPException(
             status_code=500,
-            detail="Error al guardar el documento en la nube.",
+            detail=f"Error al guardar en la nube: {msg[:300]}",
         )
 
 
