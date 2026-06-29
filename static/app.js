@@ -1559,6 +1559,581 @@ function descargarContrato() {
   document.body.removeChild(a);
 }
 
+// ════════════ CALCULADORA APU ════════════
+let _apuLastResult = null;
+let _apuMatIdx = 0, _apuMoIdx = 0, _apuEqIdx = 0;
+let _apuLastFlujo = null;
+
+// Factor prestacional 2026 — FACTOR_PRESTACIONAL_CON_AUXILIO=0.5238 → multiplicador total
+const APU_FACTOR_PREST = 1.5238;
+
+// ── Agregar filas ─────────────────────────────────────────────────────────
+function apu_agregarMaterial() {
+  const idx = _apuMatIdx++;
+  const tr  = document.createElement('tr');
+  tr.id = `apu-mat-row-${idx}`;
+  tr.innerHTML = `
+    <td><input class="apu-td-input" data-apu="nombre" placeholder="Descripción" oninput="apu_calcularLocal()" /></td>
+    <td><input class="apu-td-input" data-apu="unidad" placeholder="und" style="width:60px" /></td>
+    <td><input class="apu-td-input" data-apu="cantidad" type="number" value="1" min="0" step="0.01" oninput="apu_calcularLocal()" /></td>
+    <td><input class="apu-td-input" data-apu="precio" type="number" value="0" min="0" step="1000" oninput="apu_calcularLocal()" /></td>
+    <td class="apu-td-total" id="apu-mat-rt-${idx}">$0</td>
+    <td><button class="apu-btn-del" onclick="apu_delFila('mat',${idx})">✕</button></td>`;
+  document.getElementById('apu-mat-body').appendChild(tr);
+  apu_calcularLocal();
+}
+
+function apu_agregarPersonal() {
+  const idx = _apuMoIdx++;
+  const tr  = document.createElement('tr');
+  tr.id = `apu-mo-row-${idx}`;
+  tr.innerHTML = `
+    <td><input class="apu-td-input" data-apu="cargo" placeholder="Cargo" oninput="apu_calcularLocal()" /></td>
+    <td><input class="apu-td-input" data-apu="salario" type="number" value="1423500" min="0" step="50000" oninput="apu_calcularLocal()" /></td>
+    <td><input class="apu-td-input" data-apu="cant" type="number" value="1" min="1" style="width:52px" oninput="apu_calcularLocal()" /></td>
+    <td><input class="apu-td-input" data-apu="dias" type="number" value="30" min="1" style="width:58px" oninput="apu_calcularLocal()" /></td>
+    <td class="apu-td-total" id="apu-mo-fp-${idx}" style="color:var(--text2)">52.17%</td>
+    <td class="apu-td-total" id="apu-mo-rt-${idx}">$0</td>
+    <td><button class="apu-btn-del" onclick="apu_delFila('mo',${idx})">✕</button></td>`;
+  document.getElementById('apu-mo-body').appendChild(tr);
+  apu_calcularLocal();
+}
+
+function apu_agregarEquipo() {
+  const idx = _apuEqIdx++;
+  const tr  = document.createElement('tr');
+  tr.id = `apu-eq-row-${idx}`;
+  tr.innerHTML = `
+    <td><input class="apu-td-input" data-apu="nombre" placeholder="Equipo o herramienta" oninput="apu_calcularLocal()" /></td>
+    <td><input class="apu-td-input" data-apu="costo_dia" type="number" value="0" min="0" step="5000" oninput="apu_calcularLocal()" /></td>
+    <td><input class="apu-td-input" data-apu="dias" type="number" value="1" min="1" oninput="apu_calcularLocal()" /></td>
+    <td class="apu-td-total" id="apu-eq-rt-${idx}">$0</td>
+    <td><button class="apu-btn-del" onclick="apu_delFila('eq',${idx})">✕</button></td>`;
+  document.getElementById('apu-eq-body').appendChild(tr);
+  apu_calcularLocal();
+}
+
+function apu_delFila(tipo, idx) {
+  const row = document.getElementById(`apu-${tipo}-row-${idx}`);
+  if (row) row.remove();
+  apu_calcularLocal();
+}
+
+// ── Cálculo local en tiempo real (sin API) ────────────────────────────────
+function apu_calcularLocal() {
+  // Materiales
+  let totMat = 0;
+  document.querySelectorAll('#apu-mat-body tr').forEach(tr => {
+    const cant  = parseFloat(tr.querySelector('[data-apu="cantidad"]')?.value) || 0;
+    const precio = parseFloat(tr.querySelector('[data-apu="precio"]')?.value) || 0;
+    const sub = cant * precio;
+    totMat += sub;
+    const idx = tr.id.replace('apu-mat-row-', '');
+    const cell = document.getElementById(`apu-mat-rt-${idx}`);
+    if (cell) cell.textContent = fmtCOP(sub);
+  });
+
+  // Mano de obra
+  let totMO = 0;
+  document.querySelectorAll('#apu-mo-body tr').forEach(tr => {
+    const salario = parseFloat(tr.querySelector('[data-apu="salario"]')?.value) || 0;
+    const cant    = parseFloat(tr.querySelector('[data-apu="cant"]')?.value) || 1;
+    const dias    = parseFloat(tr.querySelector('[data-apu="dias"]')?.value) || 30;
+    const costoMes = salario * APU_FACTOR_PREST;
+    const costo   = costoMes * cant * (dias / 30);
+    totMO += costo;
+    const idx = tr.id.replace('apu-mo-row-', '');
+    const fp  = document.getElementById(`apu-mo-fp-${idx}`);
+    const rt  = document.getElementById(`apu-mo-rt-${idx}`);
+    if (fp) fp.textContent = `${((APU_FACTOR_PREST - 1) * 100).toFixed(2)}%`;
+    if (rt) rt.textContent = fmtCOP(costo);
+  });
+
+  // Equipos
+  let totEQ = 0;
+  document.querySelectorAll('#apu-eq-body tr').forEach(tr => {
+    const costoDia = parseFloat(tr.querySelector('[data-apu="costo_dia"]')?.value) || 0;
+    const dias     = parseFloat(tr.querySelector('[data-apu="dias"]')?.value) || 1;
+    const sub = costoDia * dias;
+    totEQ += sub;
+    const idx = tr.id.replace('apu-eq-row-', '');
+    const cell = document.getElementById(`apu-eq-rt-${idx}`);
+    if (cell) cell.textContent = fmtCOP(sub);
+  });
+
+  // Totales de sección
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtCOP(v); };
+  setTxt('apu-mat-total', totMat);
+  setTxt('apu-mo-total',  totMO);
+  setTxt('apu-eq-total',  totEQ);
+
+  // AIU
+  const adminPct  = (parseFloat(document.getElementById('apu-admin')?.value)  || 12) / 100;
+  const imprevPct = (parseFloat(document.getElementById('apu-imprev')?.value) || 3)  / 100;
+  const utilPct   = (parseFloat(document.getElementById('apu-util')?.value)   || 8)  / 100;
+  const directos  = totMat + totMO + totEQ;
+  const admin     = directos * adminPct;
+  const imprev    = directos * imprevPct;
+  const utilidad  = directos * utilPct;
+
+  setTxt('apu-admin-val',  admin);
+  setTxt('apu-imprev-val', imprev);
+  setTxt('apu-util-val',   utilidad);
+
+  const precioMin = directos + admin + imprev + utilidad;
+  const precioSug = precioMin * 1.05;
+  const margenPct = precioMin > 0 ? ((utilidad / precioMin) * 100).toFixed(1) : '0.0';
+
+  // Resultados
+  if (directos > 0 || admin > 0) {
+    const resDiv = document.getElementById('apu-resultados');
+    if (resDiv) resDiv.style.display = '';
+
+    setTxt('apu-res-minimo',   precioMin);
+    setTxt('apu-res-sugerido', precioSug);
+    setTxt('apu-res-utilidad', utilidad);
+    const m = document.getElementById('apu-res-margen'); if (m) m.textContent = `${margenPct}%`;
+
+    const desglose = document.getElementById('apu-res-desglose');
+    if (desglose) desglose.innerHTML = `
+      <div>Materiales:</div>   <div style="font-family:var(--mono);text-align:right">${fmtCOP(totMat)}</div>
+      <div>Mano de obra:</div> <div style="font-family:var(--mono);text-align:right">${fmtCOP(totMO)}</div>
+      <div>Equipos:</div>      <div style="font-family:var(--mono);text-align:right">${fmtCOP(totEQ)}</div>
+      <div>AIU (${((adminPct+imprevPct+utilPct)*100).toFixed(1)}%):</div>
+      <div style="font-family:var(--mono);text-align:right">${fmtCOP(admin+imprev+utilidad)}</div>`;
+  }
+
+  // Viabilidad rápida (sin pólizas — el servidor las añade)
+  const presupuesto = parseFloat(document.getElementById('apu-presupuesto')?.value) || 0;
+  const viabCard    = document.getElementById('apu-viabilidad-card');
+  if (viabCard && presupuesto > 0 && precioMin > 0) {
+    viabCard.style.display = '';
+    const diff      = presupuesto - precioMin;
+    const mViab     = ((diff / presupuesto) * 100).toFixed(1);
+    let concepto, css, icon, recom;
+    if (diff < 0) {
+      concepto='INVIABLE'; css='danger'; icon='❌';
+      recom=`Presupuesto ${fmtCOP(presupuesto)} menor que precio mínimo ${fmtCOP(precioMin)}. Reduzca costos.`;
+    } else if (parseFloat(mViab) < 8) {
+      concepto='AJUSTADO'; css='warn'; icon='⚠️';
+      recom=`Margen disponible ${mViab}% — estrecho. Revise las partidas de mayor peso.`;
+    } else {
+      concepto='VIABLE'; css='ok'; icon='✅';
+      recom=`Margen de ${mViab}% sobre precio mínimo. Puede presentar una oferta competitiva.`;
+    }
+    viabCard.className = `card viab-${concepto.toLowerCase()}`;
+    const vc = document.getElementById('apu-viabilidad-content');
+    if (vc) vc.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:12px">
+        <div><div style="font-size:.72rem;color:var(--muted)">Presupuesto oficial</div>
+          <div style="font-family:var(--mono);font-weight:600">${fmtCOP(presupuesto)}</div></div>
+        <div><div style="font-size:.72rem;color:var(--muted)">Su precio mínimo</div>
+          <div style="font-family:var(--mono);font-weight:600">${fmtCOP(precioMin)}</div></div>
+        <div><div style="font-size:.72rem;color:var(--muted)">Margen disponible</div>
+          <div style="font-family:var(--mono);font-weight:600;color:var(--${css})">${mViab}%</div></div>
+      </div>
+      <div class="viab-concepto ${css}">${icon} ${concepto}</div>
+      <div style="font-size:.85rem;color:var(--text2)">${recom}</div>`;
+  } else if (viabCard && presupuesto === 0) {
+    viabCard.style.display = 'none';
+  }
+}
+
+// ── Cálculo completo con servidor ─────────────────────────────────────────
+async function apu_calcularServidor() {
+  const btn  = document.getElementById('btn-apu-calcular');
+  const stEl = document.getElementById('apu-calc-status');
+  btn.disabled = true; btn.textContent = '⏳ Calculando...';
+  stEl.textContent = '';
+  try {
+    const body = {
+      materiales:      apu_leerMateriales(),
+      personal:        apu_leerPersonal(),
+      equipos:         apu_leerEquipos(),
+      aiu: {
+        admin_pct:       (parseFloat(document.getElementById('apu-admin').value)  || 12) / 100,
+        imprevistos_pct: (parseFloat(document.getElementById('apu-imprev').value) || 3)  / 100,
+        utilidad_pct:    (parseFloat(document.getElementById('apu-util').value)   || 8)  / 100,
+      },
+      plazo_meses:     parseInt(document.getElementById('apu-plazo').value)        || 6,
+      incluir_polizas: document.getElementById('apu-polizas').checked,
+    };
+    const presupuesto = parseFloat(document.getElementById('apu-presupuesto').value) || 0;
+    if (presupuesto > 0) body.presupuesto_oficial = presupuesto;
+
+    const data = await apiJson('/api/calculadora/oferta', { method:'POST', body:JSON.stringify(body) });
+    _apuLastResult = data;
+    apu_renderResultados(data);
+    document.getElementById('apu-flujo-card').style.display    = '';
+    document.getElementById('apu-export-btns').style.display   = '';
+    document.getElementById('apu-docs-section').style.display  = '';
+    stEl.textContent = '✓ Cálculo completo con pólizas estimadas';
+    toast('Oferta calculada', 'ok');
+  } catch (err) {
+    stEl.textContent = err.message;
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '🧮 Calcular oferta completa';
+  }
+}
+
+function apu_renderResultados(data) {
+  const resDiv = document.getElementById('apu-resultados');
+  if (resDiv) resDiv.style.display = '';
+
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtCOP(v); };
+  setTxt('apu-res-minimo',   data.precio_minimo);
+  setTxt('apu-res-sugerido', data.precio_sugerido);
+  setTxt('apu-res-utilidad', data.resumen?.utilidad_proyectada || 0);
+  const m = document.getElementById('apu-res-margen');
+  if (m) m.textContent = `${data.resumen?.margen_utilidad_pct || 0}%`;
+
+  const cd  = data.costos_directos || {};
+  const aiu = data.aiu || {};
+  const des = document.getElementById('apu-res-desglose');
+  if (des) des.innerHTML = `
+    <div>Materiales:</div>   <div style="font-family:var(--mono);text-align:right">${fmtCOP(cd.materiales)}</div>
+    <div>Mano de obra:</div> <div style="font-family:var(--mono);text-align:right">${fmtCOP(cd.mano_obra)}</div>
+    <div>Equipos:</div>      <div style="font-family:var(--mono);text-align:right">${fmtCOP(cd.equipos)}</div>
+    <div>AIU (${aiu.porcentaje_total || 0}%):</div>
+    <div style="font-family:var(--mono);text-align:right">${fmtCOP(aiu.total_aiu)}</div>
+    ${data.polizas_estimadas ? `<div>Pólizas est.:</div><div style="font-family:var(--mono);text-align:right">${fmtCOP(data.polizas_estimadas)}</div>` : ''}`;
+
+  const viabCard = document.getElementById('apu-viabilidad-card');
+  if (data.viabilidad && viabCard) {
+    const v   = data.viabilidad;
+    const csm = { VIABLE:'ok', AJUSTADO:'warn', INVIABLE:'danger' };
+    const ico = { VIABLE:'✅', AJUSTADO:'⚠️', INVIABLE:'❌' };
+    const css = csm[v.concepto] || 'ok';
+    viabCard.style.display  = '';
+    viabCard.className      = `card viab-${v.concepto.toLowerCase()}`;
+    const vc = document.getElementById('apu-viabilidad-content');
+    if (vc) vc.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:12px">
+        <div><div style="font-size:.72rem;color:var(--muted)">Presupuesto oficial</div>
+          <div style="font-family:var(--mono);font-weight:600">${fmtCOP(v.presupuesto_oficial)}</div></div>
+        <div><div style="font-size:.72rem;color:var(--muted)">Su precio mínimo</div>
+          <div style="font-family:var(--mono);font-weight:600">${fmtCOP(v.precio_minimo)}</div></div>
+        <div><div style="font-size:.72rem;color:var(--muted)">Margen disponible</div>
+          <div style="font-family:var(--mono);font-weight:600;color:var(--${css})">${v.margen_disponible_pct}%</div></div>
+      </div>
+      <div class="viab-concepto ${css}">${ico[v.concepto]} ${v.concepto}</div>
+      <div style="font-size:.85rem;color:var(--text2)">${v.recomendacion}</div>`;
+  }
+}
+
+// ── Leer filas de tablas ──────────────────────────────────────────────────
+function apu_leerMateriales() {
+  return Array.from(document.querySelectorAll('#apu-mat-body tr')).map(tr => ({
+    nombre:          tr.querySelector('[data-apu="nombre"]')?.value.trim()  || '',
+    unidad:          tr.querySelector('[data-apu="unidad"]')?.value.trim()  || 'und',
+    cantidad:        parseFloat(tr.querySelector('[data-apu="cantidad"]')?.value)       || 0,
+    precio_unitario: parseFloat(tr.querySelector('[data-apu="precio"]')?.value)          || 0,
+  })).filter(i => i.cantidad > 0 || i.precio_unitario > 0);
+}
+
+function apu_leerPersonal() {
+  return Array.from(document.querySelectorAll('#apu-mo-body tr')).map(tr => ({
+    cargo:    tr.querySelector('[data-apu="cargo"]')?.value.trim() || 'Personal',
+    salario:  parseFloat(tr.querySelector('[data-apu="salario"]')?.value) || 0,
+    cantidad: parseInt(tr.querySelector('[data-apu="cant"]')?.value)      || 1,
+    dias:     parseFloat(tr.querySelector('[data-apu="dias"]')?.value)    || 30,
+  })).filter(i => i.salario > 0);
+}
+
+function apu_leerEquipos() {
+  return Array.from(document.querySelectorAll('#apu-eq-body tr')).map(tr => ({
+    nombre:    tr.querySelector('[data-apu="nombre"]')?.value.trim()      || 'Equipo',
+    costo_dia: parseFloat(tr.querySelector('[data-apu="costo_dia"]')?.value) || 0,
+    dias:      parseFloat(tr.querySelector('[data-apu="dias"]')?.value)   || 1,
+  })).filter(i => i.costo_dia > 0);
+}
+
+// ── Flujo de caja ─────────────────────────────────────────────────────────
+async function apu_calcularFlujo() {
+  if (!_apuLastResult) { toast('Calcule la oferta primero', 'warn'); return; }
+  try {
+    const adminPct  = (parseFloat(document.getElementById('apu-admin')?.value)  || 12) / 100;
+    const imprevPct = (parseFloat(document.getElementById('apu-imprev')?.value) || 3)  / 100;
+    const utilPct   = (parseFloat(document.getElementById('apu-util')?.value)   || 8)  / 100;
+    const body = {
+      valor_contrato:  _apuLastResult.precio_minimo,
+      anticipo_pct:    (parseFloat(document.getElementById('apu-anticipo').value) || 30) / 100,
+      plazo_meses:     parseInt(document.getElementById('apu-plazo').value) || 6,
+      costos_directos: _apuLastResult.costos_directos?.subtotal || 0,
+      aiu_pct:         adminPct + imprevPct + utilPct,
+    };
+    const data = await apiJson('/api/calculadora/flujo-caja', { method:'POST', body:JSON.stringify(body) });
+    _apuLastFlujo = data;
+
+    const alertDiv = document.getElementById('apu-flujo-alertas');
+    if (alertDiv) {
+      const msgs = [];
+      if (data.alerta_deficit) msgs.push('Déficit de flujo detectado — revise anticipo o plazo.');
+      if (data.capital_trabajo_adicional > 0)
+        msgs.push(`Capital de trabajo adicional requerido: ${fmtCOP(data.capital_trabajo_adicional)}`);
+      alertDiv.innerHTML = msgs.map(a => `<div class="flujo-alerta">⚠️ ${a}</div>`).join('');
+    }
+
+    const resumenDiv = document.getElementById('apu-flujo-resumen');
+    if (resumenDiv && data.resumen) resumenDiv.textContent = data.resumen;
+
+    const meses = data.flujo_mensual || data.proyeccion || [];
+    const tbody = document.getElementById('apu-flujo-body');
+    if (tbody) tbody.innerHTML = meses.map(m => {
+      const actaBruta = m.ingresos?.acta_cobrada ?? (typeof m.ingresos === 'number' ? m.ingresos : 0);
+      const amort     = m.amortizacion_anticipo ?? 0;
+      const egresos   = m.egresos?.total_egresos ?? (typeof m.egresos === 'number' ? m.egresos : 0);
+      const flujoN    = m.flujo_neto_mes ?? m.saldo_mes ?? 0;
+      const saldoAc   = m.saldo_acumulado ?? 0;
+      const neg       = saldoAc < 0 ? 'class="flujo-negativo"' : '';
+      const colorSaldo = saldoAc < 0 ? 'var(--danger)' : 'var(--ok)';
+      return `<tr ${neg}>
+        <td style="text-align:center">Mes ${m.mes}</td>
+        <td style="font-family:var(--mono);text-align:right">${fmtCOP(actaBruta)}</td>
+        <td style="font-family:var(--mono);text-align:right;color:var(--warn)">${fmtCOP(amort)}</td>
+        <td style="font-family:var(--mono);text-align:right">${fmtCOP(egresos)}</td>
+        <td style="font-family:var(--mono);text-align:right">${fmtCOP(flujoN)}</td>
+        <td style="font-family:var(--mono);text-align:right;font-weight:600;color:${colorSaldo}">${fmtCOP(saldoAc)}</td>
+      </tr>`;
+    }).join('');
+
+    const tabla = document.getElementById('apu-flujo-tabla');
+    if (tabla) tabla.style.display = '';
+    toast('Flujo de caja generado', 'ok');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Exportaciones ─────────────────────────────────────────────────────────
+async function apu_exportarExcel() {
+  if (!_apuLastResult) { toast('Calcule la oferta primero', 'warn'); return; }
+  try {
+    const body = {
+      materiales: apu_leerMateriales(),
+      personal:   apu_leerPersonal(),
+      equipos:    apu_leerEquipos(),
+      resultado:  _apuLastResult,
+      flujo:      _apuLastFlujo || {},
+    };
+    const res  = await api('/api/calculadora/exportar-excel', { method:'POST', body:JSON.stringify(body) });
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `SIACO_Analisis_Oferta_${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Excel generado', 'ok');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function apu_exportarPDF() {
+  if (!_apuLastResult) { toast('Calcule la oferta primero', 'warn'); return; }
+  toast('Abriendo diálogo de impresión...', 'info');
+  setTimeout(() => window.print(), 300);
+}
+
+// ════════════ GENERADOR DE DOCUMENTOS DE OFERTA ════════════
+
+function apu_docs_prefill() {
+  // Intenta precargar el proceso desde sessionStorage o el campo de competidores
+  const pid = sessionStorage.getItem('siaco_comp_proceso') || val('comp-proceso') || '';
+  if (pid) setVal('apu-docs-proceso', pid);
+}
+
+async function apu_generarDoc(tipo) {
+  if (!_apuLastResult && tipo !== 'carta-presentacion' && tipo !== 'formato-experiencia' && tipo !== 'capacidad-residual') {
+    toast('Calcule la oferta primero para incluir los valores económicos', 'warn');
+  }
+  const pid    = val('apu-docs-proceso').trim();
+  if (!pid) { toast('Ingresa el ID del proceso SECOP II', 'warn'); return; }
+  const stEl   = document.getElementById('apu-docs-status');
+  if (stEl) stEl.textContent = `⏳ Generando ${tipo}...`;
+
+  const clienteId = CLIENTE_ID || '';
+
+  try {
+    let endpoint, body, filename, mime;
+
+    if (tipo === 'carta-presentacion') {
+      endpoint = '/api/oferta/carta-presentacion';
+      body     = { cliente_id: clienteId, proceso_id: pid };
+      filename = `Carta_Presentacion_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    } else if (tipo === 'formulario-economico') {
+      endpoint = '/api/oferta/formulario-economico';
+      body     = { cliente_id: clienteId, proceso_id: pid, datos_apu: _apuLastResult || {} };
+      filename = `Formulario_Economico_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    } else if (tipo === 'formato-experiencia') {
+      endpoint = '/api/oferta/formato-experiencia';
+      body     = { cliente_id: clienteId, proceso_id: pid };
+      filename = `Formulario_Experiencia_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    } else if (tipo === 'capacidad-residual') {
+      endpoint = '/api/oferta/capacidad-residual';
+      body     = { cliente_id: clienteId, proceso_id: pid, k_requerido: 0, contratos_vigentes: [] };
+      filename = `Capacidad_Residual_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    } else if (tipo === 'paquete-completo') {
+      endpoint = '/api/oferta/paquete-completo';
+      body     = { cliente_id: clienteId, proceso_id: pid, datos_apu: _apuLastResult || {}, k_requerido: 0, contratos_vigentes: [] };
+      filename = `SIACO_Oferta_${pid}_${new Date().toISOString().slice(0,10)}.zip`;
+      mime     = 'application/zip';
+    } else {
+      toast('Tipo de documento no reconocido', 'error'); return;
+    }
+
+    const res  = await api(endpoint, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+      throw new Error(err.detail || `Error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+    if (stEl) stEl.textContent = `✓ ${filename} descargado`;
+    toast('Documento generado', 'ok');
+  } catch (err) {
+    if (stEl) stEl.textContent = `Error: ${err.message}`;
+    toast(err.message, 'error');
+  }
+}
+
+// Mostrar sección de docs cuando la oferta está calculada
+const _origRenderResultados = typeof apu_renderResultados === 'function' ? apu_renderResultados : null;
+
+// ════════════ ESTRATEGIA DE PRECIO (Módulo 2) ════════════
+
+async function calcularEstrategiaPrecio() {
+  const btn   = document.getElementById('btn-estrategia-precio');
+  const stEl  = document.getElementById('ep-status');
+  const resEl = document.getElementById('ep-resultado');
+  const pid   = val('comp-proceso').trim();
+
+  const precioMin  = parseFloat(val('ep-precio-minimo'))  || 0;
+  const presupuesto= parseFloat(val('ep-presupuesto'))    || 0;
+  const metodo     = val('ep-metodo')     || 'media_aritmetica';
+  const nProp      = parseInt(val('ep-proponentes')) || 3;
+
+  if (!precioMin)   { toast('Ingresa el precio mínimo', 'warn'); return; }
+  if (!presupuesto) { toast('Ingresa el presupuesto oficial', 'warn'); return; }
+
+  btn.disabled = true;
+  stEl.textContent = '⏳ Calculando...';
+  resEl.style.display = 'none';
+
+  try {
+    const clienteId = CLIENTE_ID || '';
+    const data = await apiJson('/api/competidores/estrategia-precio', {
+      method: 'POST',
+      body: JSON.stringify({
+        cliente_id:            clienteId,
+        proceso_id:            pid || 'sin-proceso',
+        precio_minimo_cliente: precioMin,
+        presupuesto_oficial:   presupuesto,
+        metodo_calificacion:   metodo,
+        n_proponentes:         nProp,
+      }),
+    });
+
+    const p = data.probabilidades || {};
+    const u = data.utilidades_proyectadas || {};
+    const up = data.utilidades_pct || {};
+
+    const barWidth = (prob) => `${Math.round(prob * 100)}%`;
+    const barCol   = (prob) => prob >= 0.65 ? 'var(--ok)' : prob >= 0.45 ? 'var(--warn)' : 'var(--danger)';
+
+    const escenarioHTML = (label, precio, prob, utilidad, pct, icon) => `
+      <div style="display:grid;grid-template-columns:140px 1fr auto;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #222">
+        <div>
+          <div style="font-size:.78rem;color:var(--muted)">${label}</div>
+          <div style="font-family:var(--mono);font-weight:600;font-size:1.05rem">${fmtCOP(precio)}</div>
+        </div>
+        <div>
+          <div style="background:#222;border-radius:4px;height:8px;overflow:hidden">
+            <div style="width:${barWidth(prob)};height:100%;background:${barCol(prob)};border-radius:4px;transition:width .4s"></div>
+          </div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:3px">${icon} Prob. adjudicación: <strong style="color:${barCol(prob)}">${Math.round(prob*100)}%</strong></div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:.72rem;color:var(--muted)">Utilidad</div>
+          <div style="font-family:var(--mono);color:var(--ok)">${fmtCOP(utilidad)}</div>
+          <div style="font-size:.72rem;color:var(--muted)">(${pct}%)</div>
+        </div>
+      </div>`;
+
+    resEl.innerHTML = `
+      <div style="margin-bottom:12px">
+        <span style="font-size:.8rem;color:var(--muted)">Método: </span>
+        <strong>${data.metodo_label || metodo}</strong>
+        <span style="margin-left:16px;font-size:.8rem;color:var(--muted)">Históricos: </span>
+        <strong>${data.n_historicos_analizados}</strong>
+        <span style="margin-left:16px;font-size:.8rem;color:var(--muted)">Proponentes esperados: </span>
+        <strong>${data.n_proponentes_esperados}</strong>
+        <span style="margin-left:16px;font-size:.8rem;color:var(--muted)">Confianza: </span>
+        <strong style="color:${data.confianza_modelo==='alta'?'var(--ok)':data.confianza_modelo==='media'?'var(--warn)':'var(--danger)'}">${data.confianza_modelo || '—'}</strong>
+      </div>
+
+      <div style="background:var(--bg2);border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:14px">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">PRECIO MÍNIMO (no perder dinero)</div>
+        <div style="font-family:var(--mono);font-size:1.1rem;color:var(--muted)">━━━  ${fmtCOP(data.precio_minimo)}</div>
+
+        ${escenarioHTML('PRECIO AGRESIVO', data.precio_agresivo, p.agresivo, u.agresivo, up.agresivo, '')}
+        ${escenarioHTML('PRECIO ÓPTIMO ⭐', data.precio_optimo, p.optimo, u.optimo, up.optimo, '⭐')}
+        ${escenarioHTML('PRECIO CONSERVADOR', data.precio_conservador, p.conservador, u.conservador, up.conservador, '')}
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div style="background:var(--bg2);border-radius:6px;padding:10px;border:1px solid #333">
+          <div style="font-size:.72rem;color:var(--muted)">Precio ideal estimado</div>
+          <div style="font-family:var(--mono);font-weight:600">${fmtCOP(data.precio_ideal_estimado||0)}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:6px;padding:10px;border:1px solid #333">
+          <div style="font-size:.72rem;color:var(--muted)">Rango competitivo</div>
+          <div style="font-family:var(--mono);font-size:.85rem">${fmtCOP(data.rango_competitivo?.minimo||0)} – ${fmtCOP(data.rango_competitivo?.maximo||0)}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:6px;padding:10px;border:1px solid #333">
+          <div style="font-size:.72rem;color:var(--muted)">Presupuesto oficial</div>
+          <div style="font-family:var(--mono);font-weight:600">${fmtCOP(presupuesto)}</div>
+        </div>
+      </div>
+
+      ${data.estrategia_recomendada ? `
+      <div style="background:#0a1a0a;border:1px solid #1a4a1a;border-radius:6px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:.78rem;color:var(--ok);font-weight:600;margin-bottom:6px">⭐ Recomendación SIACO</div>
+        <div style="font-size:.85rem;color:var(--text2);line-height:1.6">${data.estrategia_recomendada}</div>
+      </div>` : ''}
+
+      ${data.advertencias?.length ? `
+      <div style="font-size:.78rem;color:var(--warn)">
+        ${data.advertencias.map(a => `<div style="margin-bottom:3px">⚠ ${a}</div>`).join('')}
+      </div>` : ''}
+    `;
+    resEl.style.display = '';
+    stEl.textContent = `✓ Calculado con ${data.n_historicos_analizados} precio(s) histórico(s)`;
+    toast('Estrategia de precio calculada', 'ok');
+  } catch (err) {
+    stEl.textContent = err.message;
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Prefill precio mínimo desde calculadora APU → competidores
+function ep_prefillarDesdeAPU() {
+  if (_apuLastResult?.precio_minimo) {
+    setVal('ep-precio-minimo', _apuLastResult.precio_minimo);
+  }
+}
+
 // ════════════ BOOT ════════════
 (function boot() {
   if (TOKEN) {

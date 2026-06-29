@@ -1,0 +1,62 @@
+{ciudad}, {fecha}
+
+Señores
+{nombre_entidad}
+Ciudad
+
+Asunto: Presentación de Oferta – Proceso No. {codigo_proceso}
+
+Respetados señores:
+
+En respuesta al proceso de selección No. {codigo_proceso}, cuyo objeto es "{objeto_proceso}", nos permitimos presentar oferta formal por parte de {razon_social}, identificada con NIT {nit}.
+
+DECLARACIONES DEL PROPONENTE
+
+El suscrito representante legal, actuando en nombre y representación de {razon_social}, bajo la gravedad del juramento, declara:
+
+1. Que conoce íntegramente el pliego de condiciones del proceso No. {codigo_proceso} y todas sus adendas, y acepta en su totalidad los requisitos y condiciones allí establecidos.
+
+2. Que la empresa {razon_social} con NIT {nit} no se encuentra incursa en ninguna causal de inhabilidad e incompatibilidad establecida en la Constitución Política, la Ley 80 de 1993, la Ley 1150 de 2007 y demás normas concordantes.
+
+3. Que toda la información, datos y documentos suministrados en la presente oferta son veraces, auténticos y verificables, y que la empresa asume plena responsabilidad por su contenido.
+
+4. Que acepta íntegramente las condiciones económicas, técnicas y jurídicas del proceso de selección, y se compromete a ejecutar el objeto contractual en las condiciones, plazos y valores ofertados.
+
+5. Que la empresa y su representante legal se comprometen a cumplir con todas las obligaciones legales, tributarias, laborales y de seguridad social durante la ejecución del contrato.
+
+PROPUESTA ECONÓMICA
+
+El valor total de la oferta presentada asciende a la suma de:
+
+{valor_letras}
+(${valor_numeros})
+
+Valor que incluye todos los costos directos, AIU, pólizas y cualquier otro costo necesario para la correcta ejecución del objeto contractual. El valor ofertado NO incluye IVA, de conformidad con lo establecido en el pliego de condiciones.
+
+PLAZO DE EJECUCIÓN
+
+El plazo propuesto para la ejecución del contrato es de {plazo_meses} ({plazo_meses_num}) meses calendario, contados a partir de la suscripción del acta de inicio.
+
+DOCUMENTOS ADJUNTOS
+
+Se adjuntan a la presente oferta los documentos habilitantes y de calificación requeridos en el pliego de condiciones, incluyendo:
+- Formulario 1: Propuesta Económica
+- Formulario 2: Experiencia del Proponente
+- Capacidad Residual de Contratación (Factor K)
+- [Demás documentos habilitantes según pliego]
+
+En fe de lo anterior, firma el representante legal de {razon_social}:
+
+
+_______________________________
+{nombre_representante}
+{cargo_representante}
+C.C. No. {cedula_representante}
+Representante Legal
+{razon_social}
+NIT: {nit}
+Dirección: {direccion}
+Teléfono: {telefono}
+Correo electrónico: {correo}
+
+⚠️ BORRADOR — Revise y complete antes de firmar y cargar en SECOP II

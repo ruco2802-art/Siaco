@@ -1,0 +1,40 @@
+FORMULARIO 1 – PROPUESTA ECONÓMICA
+Proceso No.: {codigo_proceso}
+Entidad contratante: {nombre_entidad}
+Proponente: {razon_social}   NIT: {nit}
+Fecha: {fecha}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ÍTEMS DE LA PROPUESTA ECONÓMICA
+
+{tabla_items}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RESUMEN DE COSTOS
+
+SUBTOTAL COSTOS DIRECTOS:                          $ {subtotal_directos}
+A. ADMINISTRACIÓN ({admin_pct}%):                  $ {valor_admin}
+I. IMPREVISTOS ({imprev_pct}%):                    $ {valor_imprev}
+U. UTILIDAD ({util_pct}%):                         $ {valor_util}
+SUBTOTAL AIU:                                      $ {subtotal_aiu}
+VALOR TOTAL OFERTA (sin IVA):                      $ {valor_total}
+IVA (si aplica 0%):                                $ {valor_iva}
+VALOR TOTAL DEFINITIVO DE LA OFERTA:               $ {valor_total_definitivo}
+
+VALOR EN LETRAS:
+{valor_letras}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DECLARACIÓN
+
+El proponente declara que el valor ofertado incluye todos los costos directos e indirectos necesarios para la correcta ejecución del objeto contractual, así como las obligaciones laborales, prestacionales, tributarias y de cualquier otra naturaleza que se deriven del contrato.
+
+Firma:  _______________________________
+{nombre_representante}
+{cargo_representante}   C.C. {cedula_representante}
+Representante Legal — {razon_social}
+
+⚠️ BORRADOR — Revise y complete antes de firmar y cargar en SECOP II

@@ -87,6 +87,9 @@
         <span class="nav-icon">🏆</span> Competidores
         <span class="nav-premium-tag">PRO</span>
       </button>
+      <button class="nav-item" data-page="calculadora">
+        <span class="nav-icon">🧮</span> Calculadora APU
+      </button>
       <button class="nav-item" data-page="admin" id="nav-admin" style="display:none">
         <span class="nav-icon">⚙️</span> Admin
       </button>
@@ -645,6 +648,41 @@
 
         <div id="comp-list"><div class="empty-state">Sube al menos una oferta para ver el análisis comparativo.</div></div>
         <div id="comp-estrategia" style="display:none"></div>
+
+        <!-- PANEL: ESTRATEGIA DE PRECIO -->
+        <div class="card" style="margin-top:24px;border:1px solid var(--accent)">
+          <div class="card-title">🎯 Estrategia de Precio</div>
+          <div style="font-size:.82rem;color:var(--muted);margin-bottom:14px">Modelo matemático con simulación Monte Carlo — maximiza probabilidad de adjudicación</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Precio mínimo (calculadora APU)</label>
+              <input type="number" id="ep-precio-minimo" placeholder="Ej: 185000000" step="1000" />
+            </div>
+            <div class="form-group">
+              <label>Presupuesto oficial del pliego</label>
+              <input type="number" id="ep-presupuesto" placeholder="Ej: 220000000" step="1000" />
+            </div>
+            <div class="form-group">
+              <label>Método de calificación económica</label>
+              <select id="ep-metodo">
+                <option value="media_aritmetica">Media aritmética</option>
+                <option value="media_geometrica">Media geométrica</option>
+                <option value="menor_valor">Menor valor</option>
+                <option value="media_aritmetica_alta">Media aritmética alta</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:0 0 140px">
+              <label>Proponentes esperados</label>
+              <input type="number" id="ep-proponentes" value="3" min="1" max="20" />
+            </div>
+          </div>
+          <div style="margin-top:10px">
+            <button class="btn btn-primary" id="btn-estrategia-precio" onclick="calcularEstrategiaPrecio()">🎯 Calcular estrategia óptima</button>
+            <span id="ep-status" style="margin-left:12px;font-size:.82rem;color:var(--muted)"></span>
+          </div>
+          <div id="ep-resultado" style="margin-top:18px;display:none"></div>
+        </div>
+
       </div>
     </div><!-- /page-competidores -->
 
@@ -771,6 +809,272 @@
         </button>
       </div>
     </div><!-- /page-admin -->
+
+    <!-- ══ CALCULADORA APU ══ -->
+    <div class="page" id="page-calculadora">
+      <div class="page-header">
+        <div class="page-title">🧮 Calculadora de Oferta Económica</div>
+        <div class="page-sub">Calcule el precio mínimo para no perder dinero y el precio óptimo para ganar el contrato</div>
+      </div>
+
+      <!-- SECCIÓN 1 — MATERIALES -->
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>1. Materiales e Insumos</span>
+          <button class="btn btn-ghost btn-sm" onclick="apu_agregarMaterial()">+ Agregar material</button>
+        </div>
+        <div class="table-wrap" style="margin-top:10px">
+          <table class="data-table" id="apu-mat-table">
+            <thead><tr>
+              <th>Descripción</th><th>Unidad</th><th style="width:90px">Cantidad</th>
+              <th style="width:130px">Precio unit.</th><th style="width:120px">Total</th>
+              <th style="width:50px"></th>
+            </tr></thead>
+            <tbody id="apu-mat-body"></tbody>
+            <tfoot>
+              <tr style="border-top:1px solid var(--border2)">
+                <td colspan="4" style="text-align:right;font-weight:600;padding:8px 12px;color:var(--text2)">Subtotal materiales</td>
+                <td style="padding:8px 12px;font-weight:700;color:var(--accent);font-family:var(--mono)" id="apu-mat-total">$0</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 2 — MANO DE OBRA -->
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>2. Mano de Obra</span>
+          <button class="btn btn-ghost btn-sm" onclick="apu_agregarPersonal()">+ Agregar cargo</button>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:10px;font-size:.8rem;color:var(--text2)">
+          💡 Factor prestacional 2026: <strong style="color:var(--accent)">~52.17%</strong> sobre el salario básico —
+          incluye prestaciones, parafiscales y seguridad social empleador.
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="apu-mo-table">
+            <thead><tr>
+              <th>Cargo</th><th style="width:130px">Salario básico</th><th style="width:70px">Cant.</th>
+              <th style="width:70px">Días</th><th style="width:110px">Factor prest.</th>
+              <th style="width:130px">Costo total</th><th style="width:50px"></th>
+            </tr></thead>
+            <tbody id="apu-mo-body"></tbody>
+            <tfoot>
+              <tr style="border-top:1px solid var(--border2)">
+                <td colspan="5" style="text-align:right;font-weight:600;padding:8px 12px;color:var(--text2)">Subtotal mano de obra</td>
+                <td style="padding:8px 12px;font-weight:700;color:var(--accent);font-family:var(--mono)" id="apu-mo-total">$0</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 3 — EQUIPOS -->
+      <div class="card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>3. Equipos y Herramientas</span>
+          <button class="btn btn-ghost btn-sm" onclick="apu_agregarEquipo()">+ Agregar equipo</button>
+        </div>
+        <div class="table-wrap" style="margin-top:10px">
+          <table class="data-table" id="apu-eq-table">
+            <thead><tr>
+              <th>Equipo / Herramienta</th><th style="width:130px">Costo/día</th>
+              <th style="width:80px">Días</th><th style="width:130px">Total</th><th style="width:50px"></th>
+            </tr></thead>
+            <tbody id="apu-eq-body"></tbody>
+            <tfoot>
+              <tr style="border-top:1px solid var(--border2)">
+                <td colspan="3" style="text-align:right;font-weight:600;padding:8px 12px;color:var(--text2)">Subtotal equipos</td>
+                <td style="padding:8px 12px;font-weight:700;color:var(--accent);font-family:var(--mono)" id="apu-eq-total">$0</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 4 — AIU -->
+      <div class="card">
+        <div class="card-title">4. AIU — Administración, Imprevistos y Utilidad</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:10px">
+          <div>
+            <label style="display:block;font-size:.82rem;color:var(--text2);margin-bottom:6px">Administración %</label>
+            <input type="number" id="apu-admin" class="apu-pct-input" value="12" min="8" max="20" step="0.5"
+                   oninput="apu_calcularLocal()" />
+            <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Recomendado: 10–15%</div>
+          </div>
+          <div>
+            <label style="display:block;font-size:.82rem;color:var(--text2);margin-bottom:6px">Imprevistos %</label>
+            <input type="number" id="apu-imprev" class="apu-pct-input" value="3" min="1" max="5" step="0.5"
+                   oninput="apu_calcularLocal()" />
+            <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Recomendado: 2–5%</div>
+          </div>
+          <div>
+            <label style="display:block;font-size:.82rem;color:var(--text2);margin-bottom:6px">Utilidad %</label>
+            <input type="number" id="apu-util" class="apu-pct-input" value="8" min="5" max="15" step="0.5"
+                   oninput="apu_calcularLocal()" />
+            <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Recomendado: 6–10%</div>
+          </div>
+        </div>
+        <!-- Valores AIU en tiempo real -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px;background:var(--bg3);border-radius:var(--r-sm);padding:12px">
+          <div style="text-align:center">
+            <div style="font-size:.75rem;color:var(--muted)">Administración</div>
+            <div style="font-family:var(--mono);font-weight:700;color:var(--text)" id="apu-admin-val">$0</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:.75rem;color:var(--muted)">Imprevistos</div>
+            <div style="font-family:var(--mono);font-weight:700;color:var(--text)" id="apu-imprev-val">$0</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:.75rem;color:var(--muted)">Utilidad</div>
+            <div style="font-family:var(--mono);font-weight:700;color:var(--ok)" id="apu-util-val">$0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 5 — PRESUPUESTO OFICIAL -->
+      <div class="card">
+        <div class="card-title">5. Presupuesto Oficial (opcional)</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>¿Conoce el presupuesto oficial del contrato?</label>
+            <input type="number" id="apu-presupuesto" placeholder="Ej: 450000000"
+                   step="1000000" min="0" oninput="apu_calcularLocal()" />
+          </div>
+          <div class="form-group">
+            <label>Plazo de ejecución (meses)</label>
+            <input type="number" id="apu-plazo" value="6" min="1" max="60" oninput="apu_calcularLocal()" />
+          </div>
+          <div class="form-group" style="flex:0 0 220px;display:flex;align-items:flex-end;padding-bottom:4px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="apu-polizas" checked onchange="apu_calcularLocal()"
+                     style="width:16px;height:16px;accent-color:var(--accent)" />
+              <span>Incluir estimado pólizas</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 6 — RESULTADOS -->
+      <div id="apu-resultados" style="display:none">
+
+        <!-- Tarjeta principal -->
+        <div class="card" style="border:1px solid var(--accent);background:var(--bg2)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+            <div>
+              <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Precio mínimo</div>
+              <div style="font-size:1.6rem;font-family:var(--mono);font-weight:700;color:var(--danger);margin:4px 0"
+                   id="apu-res-minimo">$0</div>
+              <div style="font-size:.75rem;color:var(--muted)">Por debajo de esto pierde dinero</div>
+            </div>
+            <div>
+              <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Precio sugerido</div>
+              <div style="font-size:1.6rem;font-family:var(--mono);font-weight:700;color:var(--accent);margin:4px 0"
+                   id="apu-res-sugerido">$0</div>
+              <div style="font-size:.75rem;color:var(--muted)">Incluye margen de seguridad 5%</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:24px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <div>
+              <div style="font-size:.72rem;color:var(--muted)">Utilidad proyectada</div>
+              <div style="font-family:var(--mono);font-weight:600;color:var(--ok)" id="apu-res-utilidad">$0</div>
+            </div>
+            <div>
+              <div style="font-size:.72rem;color:var(--muted)">Margen</div>
+              <div style="font-family:var(--mono);font-weight:600;color:var(--ok)" id="apu-res-margen">0%</div>
+            </div>
+          </div>
+
+          <!-- Desglose -->
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <div style="font-size:.75rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Desglose</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.84rem" id="apu-res-desglose"></div>
+          </div>
+        </div>
+
+        <!-- Viabilidad -->
+        <div class="card" id="apu-viabilidad-card" style="display:none">
+          <div class="card-title">Análisis de Viabilidad</div>
+          <div id="apu-viabilidad-content"></div>
+        </div>
+
+      </div><!-- /apu-resultados -->
+
+      <!-- Botón calcular -->
+      <div style="margin-top:4px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="apu_calcularServidor()" id="btn-apu-calcular">
+          🧮 Calcular oferta completa
+        </button>
+        <div id="apu-calc-status" style="font-size:.82rem;color:var(--muted)"></div>
+      </div>
+
+      <!-- SECCIÓN 7 — FLUJO DE CAJA -->
+      <div class="card" style="margin-top:20px" id="apu-flujo-card" style="display:none">
+        <div class="card-title">7. Flujo de Caja Proyectado</div>
+        <div class="form-row" style="margin-bottom:14px">
+          <div class="form-group" style="flex:0 0 180px">
+            <label>Anticipo (%)</label>
+            <input type="number" id="apu-anticipo" value="30" min="0" max="50" step="5" />
+          </div>
+          <div class="form-group" style="flex:0 0 220px;display:flex;align-items:flex-end">
+            <button class="btn btn-ghost btn-sm" onclick="apu_calcularFlujo()">📊 Generar flujo de caja</button>
+          </div>
+        </div>
+        <div id="apu-flujo-alertas" style="margin-bottom:10px"></div>
+        <div id="apu-flujo-resumen" style="font-size:.82rem;color:var(--muted);margin-bottom:8px"></div>
+        <div class="table-wrap" id="apu-flujo-tabla" style="display:none">
+          <table class="data-table">
+            <thead><tr>
+              <th style="text-align:center">Mes</th>
+              <th style="text-align:right">Acta bruta</th>
+              <th style="text-align:right">Amort. anticipo</th>
+              <th style="text-align:right">Egresos</th>
+              <th style="text-align:right">Flujo neto</th>
+              <th style="text-align:right">Saldo acum.</th>
+            </tr></thead>
+            <tbody id="apu-flujo-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Botones de exportación -->
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap" id="apu-export-btns" style="display:none">
+        <button class="btn btn-secondary" onclick="apu_exportarExcel()">📊 Exportar a Excel</button>
+        <button class="btn btn-ghost" onclick="apu_exportarPDF()">📄 Exportar resumen PDF</button>
+      </div>
+
+      <!-- DOCUMENTOS DE OFERTA -->
+      <div id="apu-docs-section" style="display:none;margin-top:24px">
+        <div class="card" style="border:1px solid #444">
+          <div class="card-title">📄 Documentos de Oferta (Word)</div>
+          <div style="background:#2a1a00;border:1px solid #8b5e00;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:.84rem;color:#ffcc66">
+            ⚠️ Estos documentos son borradores generados automáticamente. Revise, complete y firme cada uno antes de presentar en SECOP II. SIACO no se responsabiliza por errores en la oferta final.
+          </div>
+          <div class="form-row" style="margin-bottom:14px">
+            <div class="form-group" style="flex:1;max-width:360px">
+              <label>ID del proceso SECOP II</label>
+              <input type="text" id="apu-docs-proceso" placeholder="Ej: SEDS-LO-123-2026" />
+            </div>
+            <div class="form-group" style="flex:0 0 auto;display:flex;align-items:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="apu_docs_prefill()">↖ Usar proceso precargado</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <button class="btn btn-secondary btn-sm" onclick="apu_generarDoc('carta-presentacion')">📄 Carta de presentación</button>
+            <button class="btn btn-secondary btn-sm" onclick="apu_generarDoc('formulario-economico')">📊 Formulario económico</button>
+            <button class="btn btn-secondary btn-sm" onclick="apu_generarDoc('formato-experiencia')">📋 Formulario experiencia</button>
+            <button class="btn btn-secondary btn-sm" onclick="apu_generarDoc('capacidad-residual')">📐 Capacidad residual</button>
+            <button class="btn btn-primary btn-sm" onclick="apu_generarDoc('paquete-completo')">📦 Paquete completo (ZIP)</button>
+          </div>
+          <div id="apu-docs-status" style="font-size:.82rem;color:var(--muted)"></div>
+        </div>
+      </div>
+
+    </div><!-- /page-calculadora -->
 
   </main>
 </div>

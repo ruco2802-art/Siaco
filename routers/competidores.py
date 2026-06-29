@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Router de inteligencia competitiva — SIACO v3.0 (Plan Premium)"""
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import competidor as comp
 
@@ -93,3 +94,59 @@ def inteligencia_competidor(nit: str, authorization: str = Header(None)):
     if not perfil:
         raise HTTPException(status_code=404, detail=f"Sin datos históricos para NIT {nit}")
     return perfil
+
+
+class EstrategiaPrecioBody(BaseModel):
+    cliente_id:            str
+    proceso_id:            str
+    precio_minimo_cliente: float = Field(..., gt=0)
+    presupuesto_oficial:   float = Field(..., gt=0)
+    metodo_calificacion:   str   = "media_aritmetica"
+    n_proponentes:         int   = Field(3, ge=1, le=20)
+
+
+@router.post("/competidores/estrategia-precio")
+def estrategia_precio(body: EstrategiaPrecioBody, authorization: str = Header(None)):
+    """
+    Modelo matemático de decisión de precio con simulación Monte Carlo.
+    Calcula precio óptimo para maximizar probabilidad de adjudicación.
+    Solo plan premium.
+    """
+    from routers.auth import require_auth
+    sesion = require_auth(authorization)
+    _check_premium(sesion)
+
+    if body.metodo_calificacion not in comp.METODOS_CALIFICACION:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Método '{body.metodo_calificacion}' no válido. "
+                   f"Opciones: {list(comp.METODOS_CALIFICACION.keys())}",
+        )
+
+    # Recopilar historial de precios de competidores en el proceso
+    competidores_proceso = comp.listar_competidores_proceso(body.proceso_id)
+    precios_historicos   = [
+        c.get("precio_ofertado") for c in competidores_proceso
+        if c.get("precio_ofertado") and float(c.get("precio_ofertado", 0)) > 0
+    ]
+
+    # Complementar con historial global de la inteligencia acumulada
+    intel_global = comp.cargar_inteligencia_competidor("")  # vacío → no existe
+    for c in competidores_proceso:
+        nit = c.get("nit", "")
+        if nit:
+            intel = comp.cargar_inteligencia_competidor(nit)
+            precios_historicos += intel.get("historial_precios", [])
+
+    try:
+        resultado = comp.modelo_precio_optimo(
+            precio_minimo_cliente = body.precio_minimo_cliente,
+            presupuesto_oficial   = body.presupuesto_oficial,
+            precios_historicos    = precios_historicos,
+            metodo_calificacion   = body.metodo_calificacion,
+            n_proponentes         = body.n_proponentes,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return resultado

@@ -750,3 +750,54 @@ tr.urgente  { background: rgba(248,81,73,.03); }
 .badge-admin-b { background: rgba(248,81,73,.12); color: var(--danger); }
 .dias-restantes { font-size: .8rem; color: var(--muted); }
 .dias-critico   { font-size: .8rem; color: var(--danger); font-weight: 600; }
+
+/* ─── CALCULADORA APU ────────────────────────────── */
+.apu-pct-input {
+  width: 100%; padding: 8px 12px;
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: var(--r-sm); color: var(--text);
+  font-size: .95rem; font-family: var(--mono);
+}
+.apu-pct-input:focus { outline: none; border-color: var(--accent); }
+
+/* Inputs inline de tablas APU */
+.apu-td-input {
+  width: 100%; padding: 5px 8px;
+  background: var(--bg4); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); font-size: .82rem;
+}
+.apu-td-input:focus { outline: none; border-color: var(--accent); }
+
+/* Celda de total calculada automáticamente */
+.apu-td-total {
+  font-family: var(--mono); font-size: .82rem;
+  font-weight: 600; color: var(--accent); padding: 6px 12px;
+}
+
+/* Botón quitar fila */
+.apu-btn-del {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: .9rem; padding: 4px 6px;
+  border-radius: 4px; transition: color .15s;
+}
+.apu-btn-del:hover { color: var(--danger); }
+
+/* Tarjeta viabilidad */
+.viab-viable   { border-left: 4px solid var(--ok); }
+.viab-ajustado { border-left: 4px solid var(--warn); }
+.viab-inviable { border-left: 4px solid var(--danger); }
+
+.viab-concepto {
+  font-size: 1.1rem; font-weight: 700; margin-bottom: 8px;
+}
+.viab-concepto.ok     { color: var(--ok); }
+.viab-concepto.warn   { color: var(--warn); }
+.viab-concepto.danger { color: var(--danger); }
+
+/* Flujo de caja — fila negativa */
+.flujo-negativo td { color: var(--danger); }
+.flujo-alerta {
+  background: rgba(248,81,73,.1); border: 1px solid var(--danger);
+  border-radius: var(--r-sm); padding: 8px 12px; margin-bottom: 6px;
+  font-size: .82rem; color: var(--danger);
+}

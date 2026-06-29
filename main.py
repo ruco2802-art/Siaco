@@ -21,7 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from routers import auth, busqueda, auditoria, expedientes, perfil, competidores, reportes, chat, observaciones
+from routers import auth, busqueda, auditoria, expedientes, perfil, competidores, reportes, chat, observaciones, calculadora, generador_oferta
 
 app = FastAPI(
     title="SIACO v3.0",
@@ -38,6 +38,8 @@ app.include_router(competidores.router, prefix="/api")
 app.include_router(reportes.router,     prefix="/api")
 app.include_router(chat.router,         prefix="/api")
 app.include_router(observaciones.router, prefix="/api")
+app.include_router(calculadora.router,      prefix="/api")
+app.include_router(generador_oferta.router, prefix="/api")
 
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")

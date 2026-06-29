@@ -1,0 +1,29 @@
+FORMULARIO 2 – EXPERIENCIA DEL PROPONENTE
+Proceso No.: {codigo_proceso}
+Entidad contratante: {nombre_entidad}
+Proponente: {razon_social}   NIT: {nit}
+Fecha: {fecha}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONTRATOS EJECUTADOS EN EL OBJETO O ACTIVIDAD DEL PROCESO
+
+Nota: Relacione los contratos que acreditan la experiencia requerida en el pliego de condiciones.
+Los valores deben expresarse en SMMLV vigente al momento de la ejecución.
+Adjunte certificado de cada contrato expedido por la entidad contratante.
+
+{tabla_experiencia}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DECLARACIÓN
+
+Yo, {nombre_representante}, identificado con C.C. No. {cedula_representante}, actuando en calidad de Representante Legal de {razon_social}, declaro bajo la gravedad del juramento que la información aquí consignada es veraz y que los contratos relacionados fueron efectivamente ejecutados en los porcentajes indicados.
+
+Firma:  _______________________________
+{nombre_representante}
+{cargo_representante}   C.C. {cedula_representante}
+Representante Legal — {razon_social}
+
+⚠️ BORRADOR — Revise y complete todos los campos antes de firmar y cargar en SECOP II.
+    Adjunte los certificados de cada contrato relacionado.

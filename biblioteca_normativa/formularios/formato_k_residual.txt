@@ -1,0 +1,47 @@
+FORMATO – CAPACIDAD RESIDUAL DE CONTRATACIÓN (FACTOR K)
+Proceso No.: {codigo_proceso}
+Entidad contratante: {nombre_entidad}
+Proponente: {razon_social}   NIT: {nit}
+Fecha: {fecha}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FÓRMULA: K = 0.8 × Patrimonio Líquido − Σ (Valor contrato en ejecución × % pendiente por ejecutar)
+
+PATRIMONIO LÍQUIDO (según RUP):
+
+  Patrimonio líquido RUP (último año certificado):  $ {patrimonio_liquido}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONTRATOS EN EJECUCIÓN A LA FECHA DE PRESENTACIÓN DE LA OFERTA
+
+{tabla_contratos_ejecucion}
+
+TOTAL COMPROMISOS VIGENTES:                        $ {total_compromisos}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CÁLCULO DEL FACTOR K RESIDUAL
+
+  0.8 × $ {patrimonio_liquido}  =  $ {ochenta_pct_patrimonio}
+  − Compromisos vigentes          − $ {total_compromisos}
+  ─────────────────────────────────────────────────────────
+  K RESIDUAL DISPONIBLE:            $ {k_residual}
+
+K REQUERIDO EN EL PLIEGO:           $ {k_requerido}
+RESULTADO:                          {resultado_k}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DECLARACIÓN
+
+Yo, {nombre_representante}, identificado con C.C. No. {cedula_representante}, actuando en calidad de Representante Legal de {razon_social}, declaro bajo la gravedad del juramento que la información aquí consignada es veraz y que los contratos relacionados son los únicos que se encuentran en ejecución a la fecha de presentación de la oferta.
+
+Firma:  _______________________________
+{nombre_representante}
+{cargo_representante}   C.C. {cedula_representante}
+Representante Legal — {razon_social}
+
+⚠️ BORRADOR — Verifique el valor del patrimonio líquido en su RUP actualizado
+    y confirme todos los contratos en ejecución antes de firmar.
