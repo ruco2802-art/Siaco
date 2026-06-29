@@ -48,7 +48,7 @@ def sb_upload(path: str, data: bytes, content_type: str = "application/octet-str
     Usa PUT /storage/v1/object/{bucket}/{path}?upsert=true
     """
     url = f"{_base_url()}/{path}"
-    resp = requests.put(
+    resp = requests.post(           # Supabase Storage usa POST, no PUT
         url,
         data=data,
         headers=_headers({"Content-Type": content_type, "x-upsert": "true"}),
