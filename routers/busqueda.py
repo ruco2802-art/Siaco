@@ -24,7 +24,8 @@ FASES_EXCLUIDAS = [
     "suspendido", "cancelado",
 ]
 
-SECOP_URL = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
+SECOP_URL   = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
+SECOP_URL_2 = "https://www.datos.gov.co/resource/rpmr-utcd.json"
 
 
 def _parse_dt(valor: str) -> Optional[datetime]:
@@ -52,6 +53,49 @@ def _fmt_descartado(lic: dict, razon: str) -> dict:
     }
 
 
+def _fetch_secop(url: str, params: dict) -> list[dict]:
+    """Fetch con retry desde un endpoint SECOP II. Retorna lista vacía en fallo silencioso."""
+    for intento in range(3):
+        try:
+            resp   = requests.get(url, params=params, timeout=30)
+            parsed = resp.json()
+            if isinstance(parsed, list):
+                return [x for x in parsed if isinstance(x, dict)]
+            return []
+        except Exception:
+            if intento < 2:
+                time.sleep(3)
+    return []
+
+
+def _fusionar(lista1: list[dict], lista2: list[dict]) -> list[dict]:
+    """Une dos listas de SECOP deduplicando por id_del_proceso."""
+    visto: set[str] = set()
+    resultado: list[dict] = []
+    for item in lista1 + lista2:
+        pid = item.get("id_del_proceso") or item.get("referencia_del_proceso", "")
+        if pid and pid in visto:
+            continue
+        if pid:
+            visto.add(pid)
+        resultado.append(item)
+    return resultado
+
+
+def _keywords_where(keywords: str) -> str:
+    """
+    SoQL case-insensitive por palabras clave usando upper() LIKE.
+    "mejoramiento vivienda" → cada palabra con AND implícito.
+    """
+    palabras = [w.strip() for w in keywords.split() if w.strip()]
+    if not palabras:
+        return ""
+    return " AND ".join(
+        f"upper(nombre_del_procedimiento) LIKE upper('%{_safe(p)}%')"
+        for p in palabras
+    )
+
+
 # ── GET /api/contratos ────────────────────────────
 @router.get("/contratos")
 def buscar_contratos(
@@ -65,36 +109,29 @@ def buscar_contratos(
     from routers.auth import require_auth
     sesion = require_auth(authorization)
 
-    # ── SECOP II fetch ────────────────────────────────────────────────────
+    # ── SECOP II fetch — ambas fuentes ───────────────────────────────────
     where = f"fecha_de_publicacion > '{fecha_desde}T00:00:00'"
     if departamento:
-        where += f" AND departamento_entidad = '{departamento}'"
+        where += f" AND departamento_entidad = '{_safe(departamento)}'"
 
-    lics_raw: list[dict] = []
-    for intento in range(3):
-        try:
-            resp = requests.get(
-                SECOP_URL,
-                params={
-                    "$where": where,
-                    "$limit": str(min(max_resultados, 200)),
-                    "$order": "fecha_de_publicacion DESC",
-                },
-                timeout=30,
-            )
-            parsed = resp.json()
-            if isinstance(parsed, list):
-                lics_raw = [x for x in parsed if isinstance(x, dict)]
-                break
-            raise ValueError("Respuesta inesperada")
-        except Exception:
-            if intento < 2:
-                time.sleep(3)
-            else:
-                raise HTTPException(
-                    status_code=503,
-                    detail="No se pudo conectar con SECOP II. Intente en unos segundos.",
-                )
+    params_base = {
+        "$where": where,
+        "$limit": str(min(max_resultados, 200)),
+        "$order": "fecha_de_publicacion DESC",
+    }
+
+    fuente1 = _fetch_secop(SECOP_URL,   params_base)
+    fuente2 = _fetch_secop(SECOP_URL_2, params_base)
+
+    if not fuente1 and not fuente2:
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar con SECOP II. Intente en unos segundos.",
+        )
+
+    lics_raw = _fusionar(fuente1, fuente2)
+    logger.info("[CONTRATOS] fuente1=%d fuente2=%d fusionados=%d",
+                len(fuente1), len(fuente2), len(lics_raw))
 
     # ── Hard filters ──────────────────────────────────────────────────────
     now = datetime.now()
@@ -409,7 +446,9 @@ def busqueda_avanzada(
         if fecha_hasta:
             clausulas.append(f"fecha_de_publicacion <= '{_safe(fecha_hasta)}T23:59:59'")
         if keywords:
-            clausulas.append(f"nombre_del_procedimiento like '%{_safe(keywords.strip())}%'")
+            kw_clause = _keywords_where(keywords.strip())
+            if kw_clause:
+                clausulas.append(kw_clause)
         if unspsc:
             clausulas.append(f"unspsc_bienes_y_servicios like '%{_safe(unspsc.strip())}%'")
 
@@ -420,32 +459,24 @@ def busqueda_avanzada(
         )
 
     where = " AND ".join(clausulas)
-    resultados: list[dict] = []
+    params_av = {
+        "$where": where,
+        "$limit": "50",
+        "$order": "fecha_de_publicacion DESC",
+    }
 
-    for intento in range(3):
-        try:
-            resp = requests.get(
-                SECOP_URL,
-                params={
-                    "$where": where,
-                    "$limit": "50",
-                    "$order": "fecha_de_publicacion DESC",
-                },
-                timeout=30,
-            )
-            parsed = resp.json()
-            if isinstance(parsed, list):
-                resultados = [x for x in parsed if isinstance(x, dict)]
-                break
-            raise ValueError("Respuesta inesperada de SECOP II")
-        except Exception:
-            if intento < 2:
-                time.sleep(3)
-            else:
-                raise HTTPException(
-                    status_code=503,
-                    detail="No se pudo conectar con SECOP II. Intente en unos segundos.",
-                )
+    fuente1 = _fetch_secop(SECOP_URL,   params_av)
+    fuente2 = _fetch_secop(SECOP_URL_2, params_av)
+
+    if not fuente1 and not fuente2 and not busqueda_exacta:
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar con SECOP II. Intente en unos segundos.",
+        )
+
+    resultados = _fusionar(fuente1, fuente2)
+    logger.info("[BUSQ-AVZ] fuente1=%d fuente2=%d fusionados=%d where=%s",
+                len(fuente1), len(fuente2), len(resultados), where[:120])
 
     # Advertencia si búsqueda exacta y proceso ya está cerrado
     advertencia: Optional[str] = None
@@ -496,6 +527,11 @@ def busqueda_avanzada(
         "total":           len(resultados),
         "advertencia":     advertencia,
         "busqueda_exacta": busqueda_exacta,
+        "fuentes": {
+            "endpoint_1": len(fuente1),
+            "endpoint_2": len(fuente2),
+            "total_fusionados": len(resultados),
+        },
     }
 
 
