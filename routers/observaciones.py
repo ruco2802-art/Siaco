@@ -9,6 +9,7 @@ from typing import Optional
 import logging
 
 import anthropic
+import numpy as np
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -22,6 +23,53 @@ from routers.utils import parsear_json_claude
 logger = logging.getLogger("siaco")
 
 router = APIRouter(tags=["observaciones"])
+
+
+# ── RAG sobre el texto del pliego ─────────────────────────────────────────────
+
+_CONSULTA_RAG_PLIEGO = (
+    "índices financieros liquidez endeudamiento RCI solvencia experiencia habilitante "
+    "número contratos valor garantías plazos publicación UNSPSC códigos requisito "
+    "restricción certificación inhabilidad inhabilidades"
+)
+
+
+def _extraer_fragmentos_pliego(texto: str, top_k: int = 7, chunk_size: int = 600) -> str:
+    """
+    Aplica RAG sobre el texto crudo del pliego: chunking + embedding search.
+    Retorna solo los fragmentos más relevantes para detección de irregularidades,
+    reduciendo el contexto enviado a Claude de ~12 000 chars a ~4 000 chars.
+    """
+    from analizador import _obtener_modelo_embeddings
+
+    # Chunking con overlap de 100 chars
+    chunks: list[str] = []
+    inicio, overlap = 0, 100
+    while inicio < len(texto):
+        chunk = texto[inicio: inicio + chunk_size].strip()
+        if len(chunk) > 60:
+            chunks.append(chunk)
+        inicio += chunk_size - overlap
+
+    # Si hay pocos chunks, devolver directamente (sin overhead de embeddings)
+    if len(chunks) <= top_k:
+        return texto[:4000]
+
+    try:
+        modelo = _obtener_modelo_embeddings()
+        embs   = modelo.encode(chunks, convert_to_numpy=True, show_progress_bar=False)
+        emb_q  = modelo.encode([_CONSULTA_RAG_PLIEGO], convert_to_numpy=True, show_progress_bar=False)[0]
+
+        normas = np.linalg.norm(embs, axis=1, keepdims=True)
+        normas[normas == 0] = 1
+        sims   = (embs / normas) @ (emb_q / (np.linalg.norm(emb_q) or 1))
+
+        # Mantener orden documental para que Claude lea en contexto
+        top_idx = sorted(np.argsort(sims)[::-1][:top_k].tolist())
+        return "\n---\n".join(chunks[i] for i in top_idx)
+    except Exception as exc:
+        logger.warning("[OBSERVACIONES] RAG pliego falló, usando texto crudo: %s", exc)
+        return texto[:4000]
 
 
 # ── Utilidad PDF ──────────────────────────────────────────────────────────────
@@ -105,7 +153,11 @@ def generar_observaciones(body: ObservacionesBody, authorization: str = Header(N
         f"Codigos UNSPSC: {exp.get('codigos_unspsc', '—')}"
     )
 
-    # 3. Contexto normativo vía RAG (biblioteca Documentos Tipo CCE)
+    # 3a. RAG sobre el pliego: extraer solo fragmentos relevantes (~4 000 chars)
+    #     en lugar de enviar 12 000 chars crudos que causan el 502 por timeout.
+    fragmentos_pliego = _extraer_fragmentos_pliego(texto_pliego, top_k=7)
+
+    # 3b. Contexto normativo vía RAG (biblioteca Documentos Tipo CCE)
     consulta_rag = (
         "indicadores financieros liquidez endeudamiento experiencia habilitante "
         "pliegos tipo documentos tipo requisitos restriccion irregularidad sastre"
@@ -113,13 +165,13 @@ def generar_observaciones(body: ObservacionesBody, authorization: str = Header(N
     try:
         contexto_normativo = obtener_contexto_legal(
             "infraestructura_obra_publica", "institucional",
-            consulta=consulta_rag, top_k=8,
+            consulta=consulta_rag, top_k=6,
         )
     except Exception:
         contexto_normativo = "Biblioteca normativa no disponible para esta consulta."
 
-    # 4. Llamado único a Claude
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), timeout=120.0, max_retries=2)
+    # 4. Llamado a Claude — timeout 27 s (Railway corta a ~30 s)
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), timeout=27.0, max_retries=0)
 
     system_prompt = (
         f"{SKILL_JURIDICO}\n"
@@ -129,28 +181,27 @@ def generar_observaciones(body: ObservacionesBody, authorization: str = Header(N
         "pliegos sastre o condiciones ilegalmente restrictivas."
     )
 
-    user_prompt = f"""Analiza este pliego de condiciones y compáralo con los Documentos Tipo CCE y la normativa vigente.
+    user_prompt = f"""Analiza los extractos del pliego y compáralos con los Documentos Tipo CCE.
 
-PLIEGO DE CONDICIONES:
-{texto_pliego[:12000]}
+EXTRACTOS RELEVANTES DEL PLIEGO (secciones de habilitación, requisitos y condiciones):
+{fragmentos_pliego}
 
 NORMATIVA DE REFERENCIA (Biblioteca CCE — fragmentos más relevantes):
-{contexto_normativo[:6000]}
+{contexto_normativo[:5000]}
 
 PERFIL DE LA EMPRESA PROPONENTE:
 {perfil_str}
 
-Identifica TODAS las discrepancias donde el pliego exija condiciones MÁS RESTRICTIVAS que las permitidas por los Documentos Tipo CCE o la normativa vigente.
+Identifica las 5 discrepancias MÁS GRAVES donde el pliego exija condiciones más restrictivas que las permitidas por los Documentos Tipo CCE o la normativa vigente.
 
 Busca especialmente:
-- Índices financieros (IDL, NDE, RCI) superiores a los matrices CCE
+- Índices financieros (IDL, NDE, RCI) superiores a las matrices CCE
 - Experiencia exigida mayor al estándar normativo (valor, número de contratos, objetos demasiado específicos)
 - Plazos de publicación inferiores al mínimo legal (Decreto 1082/2015)
 - Combinación de códigos UNSPSC inusuales que limiten participación
 - Requisitos que solo una empresa podría cumplir (pliego sastre — Ley 1882/2018)
 - Garantías superiores a las permitidas por la ley
 - Certificaciones no previstas en Documentos Tipo
-- Número de contratos de experiencia excesivo para el tamaño del contrato
 
 RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del JSON:
 {{
@@ -176,7 +227,7 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
     try:
         resp = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=4096,
+            max_tokens=2500,
             temperature=0.0,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
@@ -197,6 +248,15 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
             )
     except HTTPException:
         raise
+    except anthropic.APITimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "El análisis con IA tardó demasiado. "
+                "El pliego puede ser muy extenso o la IA está bajo alta demanda. "
+                "Espera unos segundos e inténtalo de nuevo."
+            ),
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al analizar con IA: {str(e)[:200]}")
 

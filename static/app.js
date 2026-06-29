@@ -984,8 +984,17 @@ async function generarObservaciones(event) {
     </div>`;
     toast(`${data.total_discrepancias} observacion(es) generadas`, 'success');
   } catch (err) {
-    resDiv.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
-    toast(`Error: ${err.message}`, 'error');
+    const msg = err.message || '';
+    const isGatewayError = /^Error (502|503|504)$/.test(msg) || /fetch|network/i.test(msg);
+    if (isGatewayError) {
+      resDiv.innerHTML = alertHtml('warn',
+        'El servidor está procesando la solicitud con IA. ' +
+        'Por favor, espera un momento e inténtalo de nuevo.');
+      toast('Tiempo de espera agotado — reintenta en unos segundos', 'warn');
+    } else {
+      resDiv.innerHTML = `<div class="alert alert-error">${msg}</div>`;
+      toast(`Error: ${msg}`, 'error');
+    }
   } finally {
     btn.disabled = false; btn.textContent = '📋 Generar Observaciones al Pliego';
   }
