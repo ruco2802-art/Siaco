@@ -939,75 +939,115 @@ async function _descargarPDFImpl(btn) {
   finally { btn.disabled = false; btn.textContent = '⬇ Descargar PDF Ejecutivo'; }
 }
 
+function _renderObsResult(data, resDiv) {
+  if (!data.tiene_discrepancias || !data.discrepancias?.length) {
+    resDiv.innerHTML = `<div class="card" style="border-left:4px solid #4caf50">
+      <div class="card-title">Pliego conforme a Documentos Tipo CCE</div>
+      <p>No se encontraron discrepancias que justifiquen observaciones formales.</p>
+    </div>`;
+    return;
+  }
+  const filas = data.discrepancias.map(d => `
+    <tr>
+      <td style="font-weight:700;white-space:nowrap">Obs. ${d.numero}</td>
+      <td>${d.titulo||'—'}</td>
+      <td style="font-size:0.82em;color:#aaa">${d.seccion_pliego||'—'}</td>
+      <td style="font-size:0.82em;color:#e57373">${d.norma_vulnerada||'—'}</td>
+    </tr>`).join('');
+  const descBtn = data.pdf_disponible && data.pdf_filename
+    ? `<button class="btn btn-secondary" style="margin-top:12px"
+         onclick="descargarObservaciones('${data.pdf_filename}')">
+         Descargar PDF de Observaciones
+       </button>`
+    : '';
+  resDiv.innerHTML = `<div class="card" style="border-left:4px solid #C6F24E">
+    <div class="card-title">${data.total_discrepancias} discrepancia(s) identificada(s) — ${data.entidad||'Entidad'}</div>
+    <div class="table-wrap"><table class="req-table">
+      <thead><tr><th>#</th><th>Título</th><th>Sección</th><th>Norma vulnerada</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table></div>
+    ${descBtn}
+  </div>`;
+  toast(`${data.total_discrepancias} observacion(es) generadas`, 'success');
+}
+
 async function generarObservaciones(event) {
   const btn = event.target;
   const resDiv = document.getElementById('obs-result');
   if (!CLIENTE_ID) { toast('Inicia sesión primero', 'warn'); return; }
 
-  // Usar el cliente_id que fue confirmado cuando el análisis de pliego terminó con éxito.
-  // Si no existe en sessionStorage, el usuario no completó el análisis — avisar antes
-  // de hacer la llamada API para evitar el 422 "No hay pliego en sesión".
   const _pliegoCid = sessionStorage.getItem('siaco_pliego_sesion_cid');
   if (!_pliegoCid) {
     if (resDiv) resDiv.innerHTML = alertHtml('warn',
-      '⚠ No hay pliego en sesión. Ve a la pestaña <b>Auditoría</b>, ' +
+      'No hay pliego en sesión. Ve a la pestaña <b>Auditoría</b>, ' +
       'sube el PDF del pliego y haz clic en <b>Analizar con IA</b> primero.');
     toast('Primero analiza el pliego en Auditoría', 'warn');
     return;
   }
 
-  btn.disabled = true; btn.textContent = '⏳ Analizando pliego...';
-  if (resDiv) resDiv.innerHTML = '<div class="loading">Comparando con Documentos Tipo CCE…</div>';
+  btn.disabled = true; btn.textContent = '⏳ Procesando...';
+  if (resDiv) resDiv.innerHTML = `<div class="loading">
+    Analizando pliego con IA — esto puede tardar hasta 90 segundos...
+  </div>`;
+
+  let jobId = null;
   try {
     const procesoId = val('a-codigo-proceso') || val('a-objeto') || `obs_${Date.now()}`;
-    const data = await apiJson('/api/observaciones/generar', {
+    const launch = await apiJson('/api/observaciones/generar', {
       method: 'POST',
       body: JSON.stringify({ cliente_id: _pliegoCid, proceso_id: procesoId }),
     });
-    if (!data.tiene_discrepancias || !data.discrepancias?.length) {
-      resDiv.innerHTML = `<div class="card" style="border-left:4px solid #4caf50">
-        <div class="card-title">✅ Pliego conforme a Documentos Tipo CCE</div>
-        <p>No se encontraron discrepancias que justifiquen observaciones formales.</p>
-      </div>`;
+    jobId = launch.job_id;
+  } catch (err) {
+    resDiv.innerHTML = `<div class="alert alert-error">${err.message||'Error al iniciar análisis'}</div>`;
+    toast(`Error: ${err.message}`, 'error');
+    btn.disabled = false; btn.textContent = '📋 Generar Observaciones al Pliego';
+    return;
+  }
+
+  // Polling: consultar estado cada 3s durante max 3 minutos
+  const MAX_MS = 3 * 60 * 1000;
+  const POLL_MS = 3000;
+  const started = Date.now();
+  let elapsed = 0;
+
+  const poll = async () => {
+    elapsed = Date.now() - started;
+    if (elapsed > MAX_MS) {
+      resDiv.innerHTML = alertHtml('warn',
+        'El análisis tardó más de 3 minutos. Intenta de nuevo o con un pliego más corto.');
+      toast('Tiempo de análisis agotado', 'warn');
+      btn.disabled = false; btn.textContent = '📋 Generar Observaciones al Pliego';
       return;
     }
-    const filas = data.discrepancias.map(d => `
-      <tr>
-        <td style="font-weight:700;white-space:nowrap">Obs. ${d.numero}</td>
-        <td>${d.titulo||'—'}</td>
-        <td style="font-size:0.82em;color:#aaa">${d.seccion_pliego||'—'}</td>
-        <td style="font-size:0.82em;color:#e57373">${d.norma_vulnerada||'—'}</td>
-      </tr>`).join('');
-    const descBtn = data.pdf_disponible && data.pdf_filename
-      ? `<button class="btn btn-secondary" style="margin-top:12px"
-           onclick="descargarObservaciones('${data.pdf_filename}')">
-           ⬇ Descargar PDF de Observaciones
-         </button>`
-      : '';
-    resDiv.innerHTML = `<div class="card" style="border-left:4px solid #C6F24E">
-      <div class="card-title">⚠ ${data.total_discrepancias} discrepancia(s) identificada(s) — ${data.entidad||'Entidad'}</div>
-      <div class="table-wrap"><table class="req-table">
-        <thead><tr><th>#</th><th>Título</th><th>Sección</th><th>Norma vulnerada</th></tr></thead>
-        <tbody>${filas}</tbody>
-      </table></div>
-      ${descBtn}
+
+    const seg = Math.round(elapsed / 1000);
+    resDiv.innerHTML = `<div class="loading">
+      Analizando con IA... ${seg}s — puede tardar hasta 90s
     </div>`;
-    toast(`${data.total_discrepancias} observacion(es) generadas`, 'success');
-  } catch (err) {
-    const msg = err.message || '';
-    const isGatewayError = /^Error (502|503|504)$/.test(msg) || /fetch|network/i.test(msg);
-    if (isGatewayError) {
-      resDiv.innerHTML = alertHtml('warn',
-        'El servidor está procesando la solicitud con IA. ' +
-        'Por favor, espera un momento e inténtalo de nuevo.');
-      toast('Tiempo de espera agotado — reintenta en unos segundos', 'warn');
-    } else {
-      resDiv.innerHTML = `<div class="alert alert-error">${msg}</div>`;
-      toast(`Error: ${msg}`, 'error');
+
+    try {
+      const estado = await apiJson(`/api/observaciones/estado/${jobId}`, { method: 'GET' });
+      if (estado.estado === 'completo') {
+        _renderObsResult(estado.datos, resDiv);
+        btn.disabled = false; btn.textContent = '📋 Generar Observaciones al Pliego';
+        return;
+      }
+      if (estado.estado === 'error') {
+        resDiv.innerHTML = `<div class="alert alert-error">${estado.mensaje||'Error en el análisis'}</div>`;
+        toast(`Error: ${estado.mensaje}`, 'error');
+        btn.disabled = false; btn.textContent = '📋 Generar Observaciones al Pliego';
+        return;
+      }
+      // estado === 'procesando' → seguir haciendo polling
+      setTimeout(poll, POLL_MS);
+    } catch (err) {
+      // error de red al consultar estado → reintentar
+      setTimeout(poll, POLL_MS);
     }
-  } finally {
-    btn.disabled = false; btn.textContent = '📋 Generar Observaciones al Pliego';
-  }
+  };
+
+  setTimeout(poll, POLL_MS);
 }
 
 function descargarObservaciones(filename) {

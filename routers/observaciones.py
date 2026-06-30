@@ -1,27 +1,72 @@
 # -*- coding: utf-8 -*-
-"""Router de Redactor de Observaciones al Pliego — SIACO v3.0"""
+"""Router de Redactor de Observaciones al Pliego — SIACO v3.1
+
+Patrón de ejecución:
+  POST /api/observaciones/generar  → lanza job en background, responde inmediatamente
+  GET  /api/observaciones/estado/{job_id} → frontend consulta cada 3s hasta "completo"
+
+Esto evita el 504 Gateway Timeout de Railway causado por la suma de:
+  chunking/embeddings (si caché fría) + llamada a Claude (~30-90s).
+"""
 import json
 import re
+import threading
+import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import logging
-
 import anthropic
 import numpy as np
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 import os
 from prompts import SKILL_JURIDICO, SKILL_ESTRATEGIA
-
-API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 from routers.utils import parsear_json_claude
 
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 logger = logging.getLogger("siaco")
 
 router = APIRouter(tags=["observaciones"])
+
+
+# ── Almacén de jobs ───────────────────────────────────────────────────────────
+
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
+
+
+def _job_path(job_id: str) -> Path:
+    return Path(f"/tmp/siaco/jobs/{job_id}.json")
+
+
+def _guardar_job(job_id: str, data: dict) -> None:
+    with _jobs_lock:
+        _jobs[job_id] = data
+    try:
+        p = _job_path(job_id)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _leer_job(job_id: str) -> dict | None:
+    with _jobs_lock:
+        if job_id in _jobs:
+            return dict(_jobs[job_id])
+    try:
+        p = _job_path(job_id)
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
 
 
 # ── RAG sobre el texto del pliego ─────────────────────────────────────────────
@@ -39,7 +84,6 @@ def _extraer_fragmentos_pliego(texto: str, top_k: int = 7, chunk_size: int = 600
     Si se pasa cliente_id, reutiliza embeddings cacheados en sesión (más rápido).
     Fallback: chunking + embeddings fresh sobre el texto recibido.
     """
-    # Camino rápido: usar caché de embeddings si el cliente ya analizó el pliego
     if cliente_id:
         try:
             from analizador import buscar_chunks_pliego_cacheados
@@ -50,7 +94,6 @@ def _extraer_fragmentos_pliego(texto: str, top_k: int = 7, chunk_size: int = 600
         except Exception as exc:
             logger.warning("[OBSERVACIONES] RAG caché falló, usando texto directo: %s", exc)
 
-    # Fallback: procesar el texto recibido directamente (sin cliente_id o si el caché falló)
     from analizador import _obtener_modelo_embeddings
 
     chunks: list[str] = []
@@ -94,9 +137,9 @@ def _limpiar_pdf(texto: str) -> str:
         ("❌", "[NO]"), ("✗", "[NO]"), ("✘", "[NO]"),
         ("⚠️", "[!]"), ("⚠", "[!]"),
         ("•", "-"), ("·", "-"),
-        (" ", " "),   # non-breaking space → normal
+        (" ", " "),
         ("…", "..."),
-        (""", '"'), (""", '"'), ("'", "'"), ("'", "'"),
+        ("“", '"'), ("”", '"'), ("‘", "'"), ("’", "'"),
         ("°", " grados"),
         ("©", "(c)"), ("®", "(R)"), ("™", "(TM)"),
     ]
@@ -112,84 +155,35 @@ class ObservacionesBody(BaseModel):
     proceso_id: Optional[str] = ""
 
 
-# ── POST /api/observaciones/generar ──────────────────────────────────────────
+# ── Procesamiento real (corre en background) ──────────────────────────────────
 
-@router.post("/observaciones/generar")
-def generar_observaciones(body: ObservacionesBody, authorization: str = Header(None)):
+def _procesar_observaciones_bg(
+    job_id: str,
+    cliente_id: str,
+    proceso_id: str,
+    fragmentos_pliego: str,
+    contexto_normativo: str,
+    perfil_str: str,
+    nombre_empresa: str,
+    nit_empresa: str,
+) -> None:
     """
-    Identifica discrepancias entre el pliego (en sesión) y los Documentos Tipo CCE.
-    Genera PDF de observaciones listo para presentar en SECOP II.
+    Llama a Claude, construye el PDF y lo sube a Supabase.
+    Guarda el resultado (o el error) en el almacén de jobs para que
+    el frontend pueda recuperarlo via GET /api/observaciones/estado/{job_id}.
+    Se ejecuta en background DESPUÉS de que la respuesta HTTP ya fue enviada,
+    por lo que el timeout del gateway de Railway no aplica aquí.
     """
-    from routers.auth import require_auth
-    from routers.perfil import _load_perfil
-    from contexto_sesion import obtener_contexto_sesion
-    from analizador import obtener_contexto_legal
-
-    sesion = require_auth(authorization)
-
-    # 1. Texto del pliego desde sesión de auditoría.
-    # Fallback igual al router de chat: si body.cliente_id no tiene pliego guardado,
-    # intenta con el id del token de sesión. Esto cubre desajustes entre el cliente_id
-    # del formulario y el key usado por auditoria al guardar el contexto.
-    cid_token = sesion.get("cliente_id") or sesion.get("id") or ""
-    ctx = obtener_contexto_sesion(body.cliente_id) or obtener_contexto_sesion(cid_token)
-    texto_pliego = ctx.get("texto_pliego", "")
-    if not texto_pliego or len(texto_pliego.strip()) < 200:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "No hay pliego en sesión. "
-                "Sube el PDF del pliego en Auditoría de Pliegos y analízalo primero."
-            ),
-        )
-
-    # 2. Perfil del cliente
-    perfil = _load_perfil(body.cliente_id) or {}
-    nombre_empresa = perfil.get("nombre", "Empresa Cliente")
-    nit_empresa    = perfil.get("nit", "")
-    fin = perfil.get("financiero",  {})
-    exp = perfil.get("experiencia", {})
-    perfil_str = (
-        f"Empresa: {nombre_empresa} | NIT: {nit_empresa}\n"
-        f"Sector: {perfil.get('sector', '')}\n"
-        f"Indice de Liquidez (IDL): {fin.get('indice_liquidez', '—')}\n"
-        f"Indice de Endeudamiento (NDE): {fin.get('indice_endeudamiento', '—')}\n"
-        f"Patrimonio Liquido: COP {fin.get('patrimonio_liquido', '—')}\n"
-        f"Experiencia acumulada (3 años): COP {exp.get('valor_acumulado', '—')}\n"
-        f"Valor contrato individual maximo: COP {exp.get('valor_individual_max', '—')}\n"
-        f"Objeto similar: {exp.get('objeto_similar', '—')}\n"
-        f"Codigos UNSPSC: {exp.get('codigos_unspsc', '—')}"
-    )
-
-    # 3a. RAG sobre el pliego: extraer solo fragmentos relevantes (~4 000 chars)
-    #     en lugar de enviar 12 000 chars crudos que causan el 502 por timeout.
-    fragmentos_pliego = _extraer_fragmentos_pliego(texto_pliego, top_k=7, cliente_id=body.cliente_id)
-
-    # 3b. Contexto normativo vía RAG (biblioteca Documentos Tipo CCE)
-    consulta_rag = (
-        "indicadores financieros liquidez endeudamiento experiencia habilitante "
-        "pliegos tipo documentos tipo requisitos restriccion irregularidad sastre"
-    )
     try:
-        contexto_normativo = obtener_contexto_legal(
-            "infraestructura_obra_publica", "institucional",
-            consulta=consulta_rag, top_k=6,
+        system_prompt = (
+            f"{SKILL_JURIDICO}\n"
+            f"{SKILL_ESTRATEGIA}\n\n"
+            "Eres un abogado experto en contratación pública colombiana especializado en "
+            "Documentos Tipo de Colombia Compra Eficiente (CCE) y en la detección de "
+            "pliegos sastre o condiciones ilegalmente restrictivas."
         )
-    except Exception:
-        contexto_normativo = "Biblioteca normativa no disponible para esta consulta."
 
-    # 4. Llamado a Claude — timeout 27 s (Railway corta a ~30 s)
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""), timeout=27.0, max_retries=0)
-
-    system_prompt = (
-        f"{SKILL_JURIDICO}\n"
-        f"{SKILL_ESTRATEGIA}\n\n"
-        "Eres un abogado experto en contratación pública colombiana especializado en "
-        "Documentos Tipo de Colombia Compra Eficiente (CCE) y en la detección de "
-        "pliegos sastre o condiciones ilegalmente restrictivas."
-    )
-
-    user_prompt = f"""Analiza los extractos del pliego y compáralos con los Documentos Tipo CCE.
+        user_prompt = f"""Analiza los extractos del pliego y compáralos con los Documentos Tipo CCE.
 
 EXTRACTOS RELEVANTES DEL PLIEGO (secciones de habilitación, requisitos y condiciones):
 {fragmentos_pliego}
@@ -232,10 +226,14 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
   ]
 }}"""
 
-    try:
+        client = anthropic.Anthropic(
+            api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+            timeout=90.0,
+            max_retries=1,
+        )
         resp = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2500,
+            max_tokens=3500,
             temperature=0.0,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
@@ -243,95 +241,187 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
         raw = resp.content[0].text
         resultado = parsear_json_claude(raw)
         if resultado is None:
-            logger.error(
-                "[OBSERVACIONES] parsear_json_claude retornó None. Respuesta cruda (primeros 1000 chars):\n%s",
-                raw[:1000],
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    "Claude no devolvió JSON válido al analizar el pliego. "
-                    "Intenta nuevamente; si persiste, el pliego puede ser demasiado corto o ilegible."
+            _guardar_job(job_id, {
+                "estado": "error",
+                "mensaje": (
+                    "Claude no devolvió JSON válido. "
+                    "El pliego puede ser demasiado corto o ilegible."
                 ),
-            )
-    except HTTPException:
-        raise
+            })
+            return
+
+        discrepancias = resultado.get("discrepancias") or []
+        tiene_disc    = bool(discrepancias) or bool(resultado.get("tiene_discrepancias"))
+        resultado["tiene_discrepancias"] = tiene_disc
+        resultado["total_discrepancias"] = len(discrepancias)
+
+        pdf_bytes    = None
+        pdf_filename = None
+
+        if tiene_disc and discrepancias:
+            try:
+                pdf_bytes = _build_pdf_observaciones(resultado, nombre_empresa, nit_empresa)
+            except Exception as e:
+                logger.warning("[OBSERVACIONES] PDF falló (job=%s): %s", job_id, e)
+
+            if pdf_bytes:
+                proceso_id_safe = re.sub(r"[^\w\-]", "_", proceso_id or "proceso")[:40]
+                pdf_filename    = f"{proceso_id_safe}_observaciones.pdf"
+                sb_prefix       = f"clientes/{cliente_id}/observaciones"
+
+                try:
+                    from supabase_client import sb_upload
+                    sb_upload(f"{sb_prefix}/{pdf_filename}", pdf_bytes, "application/pdf")
+                except Exception as exc:
+                    logger.error("[OBSERVACIONES] No se pudo subir PDF (job=%s): %s", job_id, exc)
+                    pdf_bytes    = None
+                    pdf_filename = None
+
+                if pdf_filename:
+                    meta = {
+                        "proceso_id":          proceso_id,
+                        "proceso":             resultado.get("proceso", ""),
+                        "entidad":             resultado.get("entidad", ""),
+                        "total_discrepancias": len(discrepancias),
+                        "fecha_generacion":    datetime.now().isoformat(),
+                        "pdf_filename":        pdf_filename,
+                    }
+                    try:
+                        from supabase_client import sb_upload
+                        sb_upload(
+                            f"{sb_prefix}/{proceso_id_safe}_meta.json",
+                            json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8"),
+                            "application/json",
+                        )
+                    except Exception:
+                        pass
+
+        _guardar_job(job_id, {
+            "estado": "completo",
+            "datos": {
+                "tiene_discrepancias":        tiene_disc,
+                "total_discrepancias":        len(discrepancias),
+                "proceso":                    resultado.get("proceso", ""),
+                "entidad":                    resultado.get("entidad", ""),
+                "fecha_cierre_observaciones": resultado.get("fecha_cierre_observaciones"),
+                "discrepancias":              discrepancias,
+                "pdf_disponible":             pdf_bytes is not None,
+                "pdf_filename":               pdf_filename,
+            },
+        })
+        logger.info("[OBSERVACIONES] Job %s completado: %d discrepancias", job_id, len(discrepancias))
+
     except anthropic.APITimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail=(
+        _guardar_job(job_id, {
+            "estado": "error",
+            "mensaje": (
                 "El análisis con IA tardó demasiado. "
-                "El pliego puede ser muy extenso o la IA está bajo alta demanda. "
-                "Espera unos segundos e inténtalo de nuevo."
+                "El pliego puede ser muy extenso. "
+                "Intenta de nuevo."
+            ),
+        })
+    except Exception as e:
+        logger.error("[OBSERVACIONES] Error en job %s: %s", job_id, e)
+        _guardar_job(job_id, {"estado": "error", "mensaje": str(e)[:300]})
+
+
+# ── POST /api/observaciones/generar ──────────────────────────────────────────
+
+@router.post("/observaciones/generar")
+def generar_observaciones(
+    body: ObservacionesBody,
+    background_tasks: BackgroundTasks,
+    authorization: str = Header(None),
+):
+    """
+    Valida la sesión, prepara el contexto (rápido, usa caché del pliego) y
+    lanza el análisis Claude en background. Responde en <1s con job_id para
+    que el frontend haga polling — evita el 504 de Railway.
+    """
+    from routers.auth import require_auth
+    from routers.perfil import _load_perfil
+    from contexto_sesion import obtener_contexto_sesion
+    from analizador import obtener_contexto_legal
+
+    sesion = require_auth(authorization)
+
+    cid_token = sesion.get("cliente_id") or sesion.get("id") or ""
+    ctx = obtener_contexto_sesion(body.cliente_id) or obtener_contexto_sesion(cid_token)
+    texto_pliego = ctx.get("texto_pliego", "")
+    if not texto_pliego or len(texto_pliego.strip()) < 200:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "No hay pliego en sesión. "
+                "Sube el PDF del pliego en Auditoría de Pliegos y analízalo primero."
             ),
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al analizar con IA: {str(e)[:200]}")
 
-    # Normalizar campos
-    discrepancias = resultado.get("discrepancias") or []
-    tiene_disc    = bool(discrepancias) or bool(resultado.get("tiene_discrepancias"))
-    resultado["tiene_discrepancias"]  = tiene_disc
-    resultado["total_discrepancias"]  = len(discrepancias)
+    perfil         = _load_perfil(body.cliente_id) or {}
+    nombre_empresa = perfil.get("nombre", "Empresa Cliente")
+    nit_empresa    = perfil.get("nit", "")
+    fin            = perfil.get("financiero",  {})
+    exp            = perfil.get("experiencia", {})
+    perfil_str = (
+        f"Empresa: {nombre_empresa} | NIT: {nit_empresa}\n"
+        f"Sector: {perfil.get('sector', '')}\n"
+        f"Indice de Liquidez (IDL): {fin.get('indice_liquidez', '—')}\n"
+        f"Indice de Endeudamiento (NDE): {fin.get('indice_endeudamiento', '—')}\n"
+        f"Patrimonio Liquido: COP {fin.get('patrimonio_liquido', '—')}\n"
+        f"Experiencia acumulada (3 años): COP {exp.get('valor_acumulado', '—')}\n"
+        f"Valor contrato individual maximo: COP {exp.get('valor_individual_max', '—')}\n"
+        f"Objeto similar: {exp.get('objeto_similar', '—')}\n"
+        f"Codigos UNSPSC: {exp.get('codigos_unspsc', '—')}"
+    )
 
-    # 5. Generar PDF si hay discrepancias
-    pdf_bytes   = None
-    pdf_filename = None
+    # RAG sobre el pliego (usa caché si ya analizó en Auditoría — instantáneo)
+    fragmentos_pliego = _extraer_fragmentos_pliego(
+        texto_pliego, top_k=7, cliente_id=body.cliente_id
+    )
 
-    if tiene_disc and discrepancias:
-        try:
-            pdf_bytes = _build_pdf_observaciones(resultado, nombre_empresa, nit_empresa)
-        except ImportError:
-            raise HTTPException(
-                status_code=503,
-                detail="fpdf2 no está instalado. Ejecuta: pip install fpdf2",
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error generando PDF: {str(e)[:200]}")
+    consulta_rag = (
+        "indicadores financieros liquidez endeudamiento experiencia habilitante "
+        "pliegos tipo documentos tipo requisitos restriccion irregularidad sastre"
+    )
+    try:
+        contexto_normativo = obtener_contexto_legal(
+            "infraestructura_obra_publica", "institucional",
+            consulta=consulta_rag, top_k=6,
+        )
+    except Exception:
+        contexto_normativo = "Biblioteca normativa no disponible para esta consulta."
 
-        # 6. Subir PDF + metadata a Supabase Storage
-        proceso_id_safe = re.sub(r"[^\w\-]", "_", body.proceso_id or "proceso")[:40]
-        pdf_filename    = f"{proceso_id_safe}_observaciones.pdf"
-        sb_prefix       = f"clientes/{body.cliente_id}/observaciones"
+    job_id = uuid.uuid4().hex[:16]
+    _guardar_job(job_id, {"estado": "procesando"})
 
-        try:
-            from supabase_client import sb_upload
-            sb_upload(f"{sb_prefix}/{pdf_filename}", pdf_bytes, "application/pdf")
-        except Exception as exc:
-            logger.error("[OBSERVACIONES] No se pudo subir PDF a Supabase: %s", exc)
-            raise HTTPException(
-                status_code=500,
-                detail="Error al guardar el documento en la nube.",
-            )
+    background_tasks.add_task(
+        _procesar_observaciones_bg,
+        job_id,
+        body.cliente_id,
+        body.proceso_id or "",
+        fragmentos_pliego,
+        contexto_normativo,
+        perfil_str,
+        nombre_empresa,
+        nit_empresa,
+    )
 
-        meta = {
-            "proceso_id":          body.proceso_id,
-            "proceso":             resultado.get("proceso", ""),
-            "entidad":             resultado.get("entidad", ""),
-            "total_discrepancias": len(discrepancias),
-            "fecha_generacion":    datetime.now().isoformat(),
-            "pdf_filename":        pdf_filename,
-        }
-        try:
-            from supabase_client import sb_upload
-            sb_upload(
-                f"{sb_prefix}/{proceso_id_safe}_meta.json",
-                json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8"),
-                "application/json",
-            )
-        except Exception:
-            pass  # metadata es no crítica
+    logger.info("[OBSERVACIONES] Job %s lanzado para cliente %s", job_id, body.cliente_id)
+    return {"job_id": job_id, "estado": "procesando"}
 
-    return {
-        "tiene_discrepancias":         tiene_disc,
-        "total_discrepancias":         len(discrepancias),
-        "proceso":                     resultado.get("proceso", ""),
-        "entidad":                     resultado.get("entidad", ""),
-        "fecha_cierre_observaciones":  resultado.get("fecha_cierre_observaciones"),
-        "discrepancias":               discrepancias,
-        "pdf_disponible":              pdf_bytes is not None,
-        "pdf_filename":                pdf_filename,
-    }
+
+# ── GET /api/observaciones/estado/{job_id} ────────────────────────────────────
+
+@router.get("/observaciones/estado/{job_id}")
+def estado_observaciones(job_id: str, authorization: str = Header(None)):
+    """Polling endpoint: devuelve {estado: 'procesando'} o {estado: 'completo', datos: {...}}."""
+    from routers.auth import require_auth
+    require_auth(authorization)
+
+    job = _leer_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job no encontrado o expirado")
+    return job
 
 
 # ── GET /api/observaciones/pdf/{cliente_id}/{filename} ────────────────────────
@@ -383,15 +473,13 @@ def _build_pdf_observaciones(resultado: dict, nombre_empresa: str, nit: str) -> 
     discrepancias = resultado.get("discrepancias", [])
     fecha_hoy     = datetime.now().strftime("%d/%m/%Y")
 
-    # fpdf2 >= 2.5 no resetea X al margen izquierdo tras multi_cell por defecto;
-    # se debe pasar new_x/new_y explícitamente en cada llamada.
-    NL  = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}   # salto de línea + volver al margen
-    NR  = {"new_x": XPos.RIGHT,   "new_y": YPos.TOP}    # continuar en la misma línea
+    NL  = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
+    NR  = {"new_x": XPos.RIGHT,   "new_y": YPos.TOP}
 
     class _PDF(FPDF):
         def __init__(self):
             super().__init__()
-            self.set_margins(15, 15, 15)  # izquierda, arriba, derecha (mm)
+            self.set_margins(15, 15, 15)
 
         def footer(self):
             self.set_y(-18)
@@ -407,10 +495,7 @@ def _build_pdf_observaciones(resultado: dict, nombre_empresa: str, nit: str) -> 
     pdf = _PDF()
     pdf.set_auto_page_break(auto=True, margin=22)
 
-    # ══ PORTADA ══════════════════════════════════════════════════════════════
     pdf.add_page()
-
-    # Banda superior oscura (cubre todo el ancho de página)
     pdf.set_fill_color(10, 10, 10)
     pdf.rect(0, 0, 210, 48, "F")
     pdf.set_y(10)
@@ -430,7 +515,6 @@ def _build_pdf_observaciones(resultado: dict, nombre_empresa: str, nit: str) -> 
     pdf.line(15, pdf.get_y(), 195, pdf.get_y())
     pdf.ln(5)
 
-    # Datos del proceso — etiqueta fija 48 mm + valor en el ancho restante
     def _campo(etiqueta: str, valor: str):
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(50, 50, 50)
@@ -449,8 +533,6 @@ def _build_pdf_observaciones(resultado: dict, nombre_empresa: str, nit: str) -> 
         _campo("Cierre de observaciones", fecha_cierre)
 
     pdf.ln(5)
-
-    # Recuadro total de observaciones
     pdf.set_fill_color(215, 245, 225)
     pdf.set_draw_color(0, 163, 122)
     pdf.set_line_width(0.5)
@@ -469,11 +551,8 @@ def _build_pdf_observaciones(resultado: dict, nombre_empresa: str, nit: str) -> 
         align="C", **NL,
     )
 
-    # ══ CUERPO — una página por discrepancia ═════════════════════════════════
     for d in discrepancias:
         pdf.add_page()
-
-        # Cabecera de la observación
         pdf.set_fill_color(0, 100, 80)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Helvetica", "B", 12)
@@ -498,7 +577,6 @@ def _build_pdf_observaciones(resultado: dict, nombre_empresa: str, nit: str) -> 
         _bloque("Texto de la norma:",      d.get("texto_norma",    ""))
         _bloque("Argumentacion juridica:", d.get("argumento",      ""))
 
-        # Recuadro especial: texto formal de la observación
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(0, 70, 130)
         pdf.cell(0, 6, "Texto de la observacion (listo para presentar en SECOP II):", **NL)
@@ -514,7 +592,6 @@ def _build_pdf_observaciones(resultado: dict, nombre_empresa: str, nit: str) -> 
         )
         pdf.ln(3)
 
-        # Separador
         pdf.set_draw_color(200, 200, 200)
         pdf.set_line_width(0.3)
         pdf.line(15, pdf.get_y(), 195, pdf.get_y())
