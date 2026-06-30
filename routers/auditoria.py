@@ -214,13 +214,16 @@ async def extraer_pliego(
         extraidos = parsear_json_claude(raw_resp) or {}
         if not extraidos:
             logger.warning("[AUDITORIA/extraer] parsear_json_claude retornó None. Respuesta cruda:\n%s", raw_resp[:800])
-    except Exception:
-        pass
+    except anthropic.APITimeoutError:
+        logger.warning("[AUDITORIA/extraer] Timeout en Claude API al extraer campos del pliego")
+    except Exception as exc:
+        logger.warning("[AUDITORIA/extraer] Error en Claude API: %s", exc)
 
     return {
         "texto_chars": len(texto),
         "paginas_extraidas": texto.count("--- EXTRACTO PÁGINA"),
         "formato_detectado": formato_label,
+        "extraccion_ok": bool(extraidos),
         "entidad":   extraidos.get("entidad", ""),
         "objeto":    extraidos.get("objeto", ""),
         "valor":     extraidos.get("valor"),
@@ -277,6 +280,7 @@ async def analizar_pliego(
     # ── Extraer texto del pliego (obligatorio) ────────
     archivo_pliego = pliego or pdf
     texto_pliego = ""
+    raw_pliego = b""
     if archivo_pliego and archivo_pliego.filename:
         raw_pliego = await archivo_pliego.read()
         if raw_pliego:

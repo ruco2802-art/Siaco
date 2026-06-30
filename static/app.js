@@ -746,6 +746,10 @@ setupUploadMini('anexo-upload-area',    'anexo-file',    'anexo-filename');
 setupUploadMini('adenda-upload-area',   'adenda-file',   'adenda-filename');
 document.getElementById('btn-extraer').addEventListener('click', extraerPliego);
 document.getElementById('btn-analizar-pliego').addEventListener('click', analizarPliego);
+// Auto-extraer cuando el usuario selecciona el archivo del pliego
+document.getElementById('pliego-file').addEventListener('change', function() {
+  if (this.files[0]) setTimeout(extraerPliego, 120);
+});
 
 async function extraerPliego() {
   const file = document.getElementById('pliego-file').files[0];
@@ -764,7 +768,11 @@ async function extraerPliego() {
     if (d.modalidad) setVal('a-modalidad', d.modalidad);
     if (d.sector)    setVal('a-sector',    d.sector);
     const fmt = d.formato_detectado ? ` desde ${d.formato_detectado}` : '';
-    stEl.innerHTML = alertHtml('success', `✓ ${(d.texto_chars||0).toLocaleString()} caracteres extraídos${fmt}. Campos prellenados.`);
+    if (d.extraccion_ok) {
+      stEl.innerHTML = alertHtml('success', `✓ ${(d.texto_chars||0).toLocaleString()} caracteres extraídos${fmt}. Campos prellenados automáticamente.`);
+    } else {
+      stEl.innerHTML = alertHtml('warn', `✓ ${(d.texto_chars||0).toLocaleString()} caracteres extraídos${fmt}. No se pudieron extraer campos automáticamente — completa los parámetros manualmente.`);
+    }
   } catch (err) {
     stEl.innerHTML = alertHtml('error', err.message);
   } finally { btn.disabled = false; btn.textContent = '⚡ Extraer datos automáticamente'; }
