@@ -1193,6 +1193,15 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
 }}
 """
 
+    # DIAGNÓSTICO: imprimir prompt antes de enviar
+    print(
+        f"\n[LEGAL-DIAG] ══ INICIO LLAMADA ══ | "
+        f"pliego={len(texto_pliego or '')} chars | "
+        f"biblioteca={len(contexto_biblioteca)} chars | "
+        f"prompt_total={len(prompt)} chars"
+    )
+    print(f"[LEGAL-DIAG] Prompt preview (500 chars):\n{prompt[:500]}\n[/preview]")
+
     t0 = _time.time()
     respuesta = api_client.messages.create(
         model="claude-sonnet-4-6",
@@ -1201,6 +1210,24 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
         messages=[{"role": "user", "content": prompt}],
     )
     elapsed = _time.time() - t0
+
+    raw_text   = respuesta.content[0].text
+    stop_reason = respuesta.stop_reason
+    uso        = respuesta.usage
+
+    # DIAGNÓSTICO: métricas de respuesta
+    print(
+        f"[LEGAL-DIAG] Tiempo={elapsed:.1f}s | stop_reason={stop_reason} | "
+        f"input_tokens={uso.input_tokens} | output_tokens={uso.output_tokens}"
+    )
+    print(f"[LEGAL-DIAG] Respuesta cruda (primeros 500 chars):\n{raw_text[:500]}\n[/cruda]")
+
+    if stop_reason == "max_tokens":
+        print(
+            f"[LEGAL-DIAG] ⚠️  TRUNCACIÓN — respuesta cortada a {uso.output_tokens} tokens. "
+            f"JSON probablemente incompleto. Respuesta completa ({len(raw_text)} chars):\n{raw_text}"
+        )
+
     if elapsed > 10:
         try:
             from logger import setup_logger
@@ -1208,7 +1235,22 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
         except Exception:
             pass
 
-    resultado = _extraer_json(respuesta.content[0].text)
+    try:
+        resultado = _extraer_json(raw_text)
+    except json.JSONDecodeError as exc:
+        print(
+            f"[LEGAL-DIAG] ❌ PARSE FALLÓ (json.JSONDecodeError) — "
+            f"texto completo que no pudo parsearse ({len(raw_text)} chars):\n{raw_text}"
+        )
+        raise
+
+    # DIAGNÓSTICO: JSON parseado pero score ausente o cero
+    score_j = resultado.get("score_juridico")
+    if score_j is None or score_j == 0:
+        print(
+            f"[LEGAL-DIAG] ⚠️  score_juridico={score_j} en JSON parseado. "
+            f"JSON completo recibido:\n{json.dumps(resultado, ensure_ascii=False, indent=2)}"
+        )
 
     # Retrocompatibilidad
     if "viable_juridico" not in resultado:
@@ -1266,6 +1308,10 @@ def analizar_cliente_vs_licitacion_paralelo(licitacion, cliente, modalidad, sect
                 texto_pliego, cliente_id=cliente_id,
             )
         except Exception as e:
+            print(
+                f"[LEGAL-DIAG] ❌ EXCEPCIÓN capturada en _run_legal — "
+                f"{type(e).__name__}: {e}"
+            )
             return {**_ERR_LEG, "riesgos_legales": f"Error agente legal: {e}"}
 
     with ThreadPoolExecutor(max_workers=2) as executor:
