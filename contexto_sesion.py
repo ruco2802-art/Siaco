@@ -33,6 +33,7 @@ def guardar_contexto_sesion(
     cliente_id: str,
     texto_pliego: str,
     textos_adicionales: str = "",
+    parametros_proceso: dict | None = None,
 ) -> None:
     """Guarda el contexto en memoria + /tmp + Supabase Storage."""
     datos = {
@@ -40,6 +41,8 @@ def guardar_contexto_sesion(
         "textos_adicionales": textos_adicionales[:5_000],
         "fecha":              datetime.now().isoformat(),
     }
+    if parametros_proceso:
+        datos["parametros_proceso"] = parametros_proceso
     # 1. Memoria
     contextos_sesion[cliente_id] = datos
 

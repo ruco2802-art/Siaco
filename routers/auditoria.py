@@ -343,6 +343,13 @@ async def analizar_pliego(
         cid,
         texto_pliego,
         "\n\n".join(textos_extra),
+        parametros_proceso={
+            "entidad":   entidad,
+            "objeto":    objeto,
+            "valor":     valor_num,
+            "modalidad": modalidad,
+            "sector":    sector,
+        },
     )
 
     # ── Combinar y aplicar RAG si es necesario ────────

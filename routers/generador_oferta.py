@@ -100,17 +100,28 @@ def _fmt_fecha() -> str:
 
 
 def _cargar_perfil(cliente_id: str) -> dict:
-    ruta = CLIENTES_DIR / cliente_id / "perfil.json"
-    if not ruta.exists():
-        return {}
+    """Carga perfil del cliente: /tmp → Supabase (mismo patrón que routers/perfil.py)."""
+    cache = Path(f"/tmp/siaco/{cliente_id}/perfil.json")
+    if cache.exists():
+        try:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        except Exception:
+            pass
     try:
-        return json.loads(ruta.read_text(encoding="utf-8"))
+        from supabase_client import sb_download
+        data = sb_download(f"clientes/{cliente_id}/perfil.json")
+        if data:
+            perfil = json.loads(data.decode("utf-8"))
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_bytes(data)
+            return perfil
     except Exception:
-        return {}
+        pass
+    return {}
 
 
 def _cargar_proceso(cliente_id: str, proceso_id: str) -> dict:
-    """Busca datos del proceso en expedientes e historial del cliente."""
+    """Busca datos del proceso en expedientes e historial (fallback disco local)."""
     candidatos = [
         CLIENTES_DIR / cliente_id / "expedientes.json",
         CLIENTES_DIR / cliente_id / "historial" / "licitaciones.json",
@@ -131,30 +142,51 @@ def _cargar_proceso(cliente_id: str, proceso_id: str) -> dict:
     return {}
 
 
+def _cargar_params_sesion(cliente_id: str) -> dict:
+    """Lee los parámetros del proceso guardados en sesión por analizar_pliego."""
+    try:
+        from contexto_sesion import obtener_contexto_sesion
+        ctx = obtener_contexto_sesion(cliente_id)
+        return ctx.get("parametros_proceso", {})
+    except Exception:
+        return {}
+
+
 def _vars_base(cliente_id: str, proceso_id: str) -> dict:
     """Arma diccionario de sustitución con datos del cliente y proceso."""
     perfil  = _cargar_perfil(cliente_id)
     proceso = _cargar_proceso(cliente_id, proceso_id)
+    sesion  = _cargar_params_sesion(cliente_id)   # parámetros guardados por analizar_pliego
+
+    fin = perfil.get("financiero", {})
+    patr = float(fin.get("patrimonio_liquido", perfil.get("patrimonio_liquido", 0)))
+
+    # Para entidad y objeto: sesión (más reciente) > expedientes/historial > placeholder
+    nombre_entidad = (proceso.get("nombre_entidad_compradora")
+                      or proceso.get("entidad")
+                      or sesion.get("entidad", "[ENTIDAD CONTRATANTE]"))
+    objeto_proceso = (proceso.get("nombre_del_procedimiento")
+                      or proceso.get("objeto")
+                      or sesion.get("objeto", "[OBJETO DEL CONTRATO]"))
+    plazo = str(proceso.get("plazo_meses", sesion.get("plazo_meses", "[PLAZO]")))
 
     return {
-        "razon_social":        perfil.get("nombre", perfil.get("razon_social", "[RAZÓN SOCIAL]")),
-        "nit":                 perfil.get("nit", "[NIT]"),
-        "nombre_representante":perfil.get("representante_legal", "[REPRESENTANTE LEGAL]"),
-        "cargo_representante": perfil.get("cargo_representante", "Representante Legal"),
-        "cedula_representante":perfil.get("cedula_representante", "[C.C.]"),
-        "direccion":           perfil.get("direccion", "[DIRECCIÓN]"),
-        "telefono":            perfil.get("telefono", perfil.get("contacto_whatsapp", "[TELÉFONO]")),
-        "correo":              perfil.get("correo", perfil.get("contacto_email", "[CORREO]")),
-        "ciudad":              perfil.get("ciudad", "Bogotá D.C."),
-        "fecha":               _fmt_fecha(),
-        "codigo_proceso":      proceso_id or "[CÓDIGO PROCESO]",
-        "nombre_entidad":      (proceso.get("nombre_entidad_compradora")
-                                or proceso.get("entidad", "[ENTIDAD CONTRATANTE]")),
-        "objeto_proceso":      (proceso.get("nombre_del_procedimiento")
-                                or proceso.get("objeto", "[OBJETO DEL CONTRATO]")),
-        "plazo_meses":         str(proceso.get("plazo_meses", "[PLAZO]")),
-        "plazo_meses_num":     str(proceso.get("plazo_meses", "[PLAZO]")),
-        "patrimonio_liquido":  _fmt_cop(float(perfil.get("patrimonio_liquido", 0))),
+        "razon_social":         perfil.get("nombre", perfil.get("razon_social", "[RAZÓN SOCIAL]")),
+        "nit":                  perfil.get("nit", "[NIT]"),
+        "nombre_representante": perfil.get("representante_legal", "[REPRESENTANTE LEGAL]"),
+        "cargo_representante":  perfil.get("cargo_representante", "Representante Legal"),
+        "cedula_representante": perfil.get("cedula_representante", "[C.C.]"),
+        "direccion":            perfil.get("direccion", "[DIRECCIÓN]"),
+        "telefono":             perfil.get("telefono", perfil.get("contacto_whatsapp", "[TELÉFONO]")),
+        "correo":               perfil.get("correo", perfil.get("contacto_email", "[CORREO]")),
+        "ciudad":               perfil.get("ciudad", "Bogotá D.C."),
+        "fecha":                _fmt_fecha(),
+        "codigo_proceso":       proceso_id or "[CÓDIGO PROCESO]",
+        "nombre_entidad":       nombre_entidad,
+        "objeto_proceso":       objeto_proceso,
+        "plazo_meses":          plazo,
+        "plazo_meses_num":      plazo,
+        "patrimonio_liquido":   _fmt_cop(patr),
     }
 
 
@@ -332,10 +364,13 @@ def formato_experiencia(body: DocRequest, authorization: str = Header(None)):
 
     vars_   = _vars_base(body.cliente_id, body.proceso_id)
     perfil  = _cargar_perfil(body.cliente_id)
-    experiencias = perfil.get("experiencia", perfil.get("contratos_experiencia", []))
+    experiencias = perfil.get("contratos_experiencia",
+                              perfil.get("experiencia_contratos", []))
+    exp_agg = perfil.get("experiencia", {})
 
     # Construir tabla de texto
-    if experiencias:
+    if isinstance(experiencias, list) and experiencias:
+        # Lista de contratos individuales (si el perfil los tiene)
         filas = ["  No. | Entidad/Cliente             | Objeto (resumen)           | Valor COP      | Inicio     | Fin        | % Part."]
         filas.append("  " + "-" * 120)
         for i, c in enumerate(experiencias, 1):
@@ -343,14 +378,31 @@ def formato_experiencia(body: DocRequest, authorization: str = Header(None)):
             obj   = str(c.get("objeto", ""))[:27]
             val   = _fmt_cop(float(c.get("valor", 0)))
             ini   = str(c.get("fecha_inicio", c.get("inicio", "")))[:10]
-            fin   = str(c.get("fecha_fin", c.get("fin", "")))[:10]
+            fin_c = str(c.get("fecha_fin", c.get("fin", "")))[:10]
             part  = str(c.get("porcentaje_participacion", c.get("participacion", 100)))
-            filas.append(f"  {i:>3}  | {ent:<28} | {obj:<27} | {val:>14} | {ini:<10} | {fin:<10} | {part}%")
+            filas.append(f"  {i:>3}  | {ent:<28} | {obj:<27} | {val:>14} | {ini:<10} | {fin_c:<10} | {part}%")
         tabla_exp = "\n".join(filas)
+    elif isinstance(exp_agg, dict) and exp_agg.get("valor_acumulado"):
+        # Datos agregados del perfil (ExperienciaModel)
+        val_acum = float(exp_agg.get("valor_acumulado", 0))
+        val_max  = float(exp_agg.get("valor_individual_max", 0))
+        obj_sim  = exp_agg.get("objeto_similar", "")
+        codigos  = exp_agg.get("codigos_unspsc", "")
+        tabla_exp = (
+            f"  EXPERIENCIA ACREDITADA (datos del perfil SIACO):\n"
+            f"  Valor acumulado en contratos similares : {_fmt_cop(val_acum)}\n"
+            f"  Contrato de mayor cuantía ejecutado   : {_fmt_cop(val_max)}\n"
+            f"  Objeto similar declarado              : {obj_sim or '[pendiente]'}\n"
+            f"  Códigos UNSPSC                        : {codigos or '[pendiente]'}\n"
+            f"\n"
+            f"  ⚠️  Complete la tabla individual con los contratos que acreditan la experiencia.\n"
+            f"      Adjunte certificados de contratos o actas de liquidación como soporte."
+        )
     else:
         tabla_exp = (
             "  [Sin contratos de experiencia registrados en el perfil]\n"
-            "  Complete esta tabla con los contratos que acreditan la experiencia requerida."
+            "  Complete esta tabla con los contratos que acreditan la experiencia requerida.\n"
+            "  Adjunte certificados de contratos o actas de liquidación como soporte."
         )
 
     vars_["tabla_experiencia"] = tabla_exp
