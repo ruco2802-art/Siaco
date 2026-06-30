@@ -1111,6 +1111,9 @@ def agente_legal_rag(licitacion, contexto_biblioteca, experiencia_cliente=None, 
     """
     import anthropic
     import time as _time
+    import uuid as _uuid
+
+    call_id = _uuid.uuid4().hex[:8]
 
     try:
         from prompts import SKILL_JURIDICO as _SKILL_JUR, SKILL_ESTRATEGIA as _SKILL_EST
@@ -1193,19 +1196,19 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
 }}
 """
 
-    # DIAGNÓSTICO: imprimir prompt antes de enviar
+    # DIAGNÓSTICO: imprimir prompt antes de enviar (call_id permite filtrar
+    # las líneas de una sola invocación cuando hay llamadas concurrentes)
     print(
-        f"\n[LEGAL-DIAG] ══ INICIO LLAMADA ══ | "
+        f"[LEGAL-DIAG #{call_id}] INICIO | "
         f"pliego={len(texto_pliego or '')} chars | "
         f"biblioteca={len(contexto_biblioteca)} chars | "
         f"prompt_total={len(prompt)} chars"
     )
-    print(f"[LEGAL-DIAG] Prompt preview (500 chars):\n{prompt[:500]}\n[/preview]")
 
     t0 = _time.time()
     respuesta = api_client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.0,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -1217,15 +1220,14 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
 
     # DIAGNÓSTICO: métricas de respuesta
     print(
-        f"[LEGAL-DIAG] Tiempo={elapsed:.1f}s | stop_reason={stop_reason} | "
+        f"[LEGAL-DIAG #{call_id}] FIN | Tiempo={elapsed:.1f}s | stop_reason={stop_reason} | "
         f"input_tokens={uso.input_tokens} | output_tokens={uso.output_tokens}"
     )
-    print(f"[LEGAL-DIAG] Respuesta cruda (primeros 500 chars):\n{raw_text[:500]}\n[/cruda]")
 
     if stop_reason == "max_tokens":
         print(
-            f"[LEGAL-DIAG] ⚠️  TRUNCACIÓN — respuesta cortada a {uso.output_tokens} tokens. "
-            f"JSON probablemente incompleto. Respuesta completa ({len(raw_text)} chars):\n{raw_text}"
+            f"[LEGAL-DIAG #{call_id}] TRUNCACIÓN — respuesta cortada a {uso.output_tokens} "
+            f"tokens. JSON probablemente incompleto."
         )
 
     if elapsed > 10:
@@ -1239,18 +1241,15 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
         resultado = _extraer_json(raw_text)
     except json.JSONDecodeError as exc:
         print(
-            f"[LEGAL-DIAG] ❌ PARSE FALLÓ (json.JSONDecodeError) — "
-            f"texto completo que no pudo parsearse ({len(raw_text)} chars):\n{raw_text}"
+            f"[LEGAL-DIAG #{call_id}] PARSE FALLÓ ({len(raw_text)} chars) | "
+            f"inicio: {raw_text[:300]!r} | fin: {raw_text[-300:]!r}"
         )
         raise
 
     # DIAGNÓSTICO: JSON parseado pero score ausente o cero
     score_j = resultado.get("score_juridico")
     if score_j is None or score_j == 0:
-        print(
-            f"[LEGAL-DIAG] ⚠️  score_juridico={score_j} en JSON parseado. "
-            f"JSON completo recibido:\n{json.dumps(resultado, ensure_ascii=False, indent=2)}"
-        )
+        print(f"[LEGAL-DIAG #{call_id}] score_juridico={score_j} en JSON parseado correctamente")
 
     # Retrocompatibilidad
     if "viable_juridico" not in resultado:
@@ -1308,11 +1307,11 @@ def analizar_cliente_vs_licitacion_paralelo(licitacion, cliente, modalidad, sect
                 texto_pliego, cliente_id=cliente_id,
             )
         except Exception as e:
-            print(
-                f"[LEGAL-DIAG] ❌ EXCEPCIÓN capturada en _run_legal — "
-                f"{type(e).__name__}: {e}"
-            )
-            return {**_ERR_LEG, "riesgos_legales": f"Error agente legal: {e}"}
+            # El detalle (texto crudo, stop_reason, tokens) ya quedó impreso
+            # dentro de agente_legal_rag bajo el mismo call_id — aquí solo
+            # confirmamos que _run_legal capturó la excepción y devolvió el fallback.
+            print(f"[LEGAL-DIAG] _run_legal capturó {type(e).__name__} — devolviendo score=0")
+            return {**_ERR_LEG, "riesgos_legales": f"Error agente legal: {type(e).__name__}"}
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         fut_fin = executor.submit(_run_financiero)
