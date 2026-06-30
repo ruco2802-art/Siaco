@@ -133,10 +133,22 @@ def buscar_contratos(
         "$order": "fecha_de_publicacion DESC",
     }
 
+    fuente1: list[dict] = []
+    fuente2: list[dict] = []
+    t1_ok = True
+    t2_ok = True
+
     try:
         fuente1 = _fetch_secop(SECOP_URL,   params_base)
+    except requests.exceptions.Timeout:
+        t1_ok = False
+
+    try:
         fuente2 = _fetch_secop(SECOP_URL_2, params_base)
     except requests.exceptions.Timeout:
+        t2_ok = False
+
+    if not t1_ok and not t2_ok:
         raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
 
     if not fuente1 and not fuente2:
@@ -481,10 +493,29 @@ def busqueda_avanzada(
         "$order": "fecha_de_publicacion DESC",
     }
 
+    # Cada fuente se intenta de forma independiente: un timeout en la primera
+    # NO impide que la segunda responda (Railway puede enrutar a distinto CDN).
+    # Solo devolvemos 504 si AMBAS fuentes fallan o hacen timeout.
+    logger.info("[BUSQ-AVZ] $where completo: %s", where)
+
+    fuente1: list[dict] = []
+    fuente2: list[dict] = []
+    timeout1 = False
+    timeout2 = False
+
     try:
-        fuente1 = _fetch_secop(SECOP_URL,   params_av)
+        fuente1 = _fetch_secop(SECOP_URL, params_av)
+    except requests.exceptions.Timeout:
+        timeout1 = True
+        logger.warning("[BUSQ-AVZ] Timeout en fuente1 (%s)", SECOP_URL)
+
+    try:
         fuente2 = _fetch_secop(SECOP_URL_2, params_av)
     except requests.exceptions.Timeout:
+        timeout2 = True
+        logger.warning("[BUSQ-AVZ] Timeout en fuente2 (%s)", SECOP_URL_2)
+
+    if timeout1 and timeout2:
         raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
 
     if not fuente1 and not fuente2 and not busqueda_exacta:
@@ -494,8 +525,8 @@ def busqueda_avanzada(
         )
 
     resultados = _fusionar(fuente1, fuente2)
-    logger.info("[BUSQ-AVZ] fuente1=%d fuente2=%d fusionados=%d where=%s",
-                len(fuente1), len(fuente2), len(resultados), where[:120])
+    logger.info("[BUSQ-AVZ] fuente1=%d fuente2=%d fusionados=%d",
+                len(fuente1), len(fuente2), len(resultados))
 
     # Advertencia si búsqueda exacta y proceso ya está cerrado
     advertencia: Optional[str] = None
