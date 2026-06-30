@@ -628,11 +628,10 @@ def chunking_rag_pliego(texto: str, query: str = "", top_k_por_query: int = 5) -
 
     # ── Embedding + recuperación ───────────────────
     try:
-        from sentence_transformers import SentenceTransformer
         import numpy as np
 
         print("[RAG] Generando embeddings...")
-        model  = SentenceTransformer("all-MiniLM-L6-v2")
+        model  = _obtener_modelo_embeddings()
         texts  = [c[1] for c in chunks]
         c_embs = model.encode(texts, show_progress_bar=False)
 
@@ -659,6 +658,126 @@ def chunking_rag_pliego(texto: str, query: str = "", top_k_por_query: int = 5) -
         textos   = [c[1] for c in chunks]
         fallback = textos[:mid] + textos[-(top_k_por_query - mid):]
         return "\n\n[...]\n\n".join(fallback)[:MAX_CHARS]
+
+
+def _procesar_y_cachear_pliego(cliente_id: str, texto: str) -> tuple:
+    """
+    Chunking + embedding del texto completo del pliego y persistencia en sesión.
+    Retorna (chunks: list[str], embeddings: np.ndarray).
+    Llamar una sola vez por pliego; las búsquedas posteriores reutilizan el caché.
+    """
+    import hashlib
+    import numpy as np
+    from contexto_sesion import guardar_pliego_procesado
+
+    CHUNK_SIZE = 800
+    OVERLAP    = 150
+    chunks: list[str] = []
+    pos = 0
+    while pos < len(texto):
+        chunk = texto[pos: pos + CHUNK_SIZE].strip()
+        if len(chunk) > 60:
+            chunks.append(chunk)
+        pos += CHUNK_SIZE - OVERLAP
+
+    if not chunks:
+        return [], np.array([])
+
+    print(f"[RAG-CACHE] Procesando {len(chunks)} chunks — cliente {cliente_id}")
+    modelo     = _obtener_modelo_embeddings()
+    embeddings = modelo.encode(chunks, show_progress_bar=False)
+
+    hash_cont = hashlib.md5(texto.encode("utf-8")).hexdigest()
+    guardar_pliego_procesado(cliente_id, chunks, embeddings.tolist(), hash_cont)
+    print(f"[RAG-CACHE] {len(chunks)} chunks cacheados — hash {hash_cont[:8]}")
+    return chunks, embeddings
+
+
+def buscar_chunks_pliego_cacheados(cliente_id: str, query: str, top_k: int = 5) -> list:
+    """
+    Busca los top_k chunks más relevantes del pliego usando embeddings cacheados.
+    Si el caché no existe o el texto cambió (hash distinto), lo reprocesa.
+    Solo codifica la query — no vuelve a codificar el documento.
+    """
+    import hashlib
+    import numpy as np
+    from contexto_sesion import obtener_contexto_sesion
+
+    ctx         = obtener_contexto_sesion(cliente_id)
+    texto       = ctx.get("texto_pliego", "")
+    if not texto:
+        return []
+
+    chunks      = ctx.get("chunks_pliego", [])
+    emb_list    = ctx.get("embeddings_pliego", [])
+    hash_guard  = ctx.get("hash_contenido", "")
+    hash_actual = hashlib.md5(texto.encode("utf-8")).hexdigest()
+
+    if chunks and emb_list and hash_guard == hash_actual:
+        embeddings = np.array(emb_list)
+    else:
+        chunks, embeddings = _procesar_y_cachear_pliego(cliente_id, texto)
+        if not chunks:
+            return [texto[:2000]]
+
+    modelo = _obtener_modelo_embeddings()
+    q_emb  = modelo.encode([query], show_progress_bar=False)[0]
+
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1
+    q_norm = q_emb / (np.linalg.norm(q_emb) or 1)
+    sims   = (embeddings / norms) @ q_norm
+
+    top_idx = np.argsort(sims)[::-1][:top_k].tolist()
+    return [chunks[i] for i in top_idx]
+
+
+def rag_pliego_con_cache(cliente_id: str, texto: str, query: str = "", top_k_por_query: int = 5) -> str:
+    """
+    RAG multi-query con caché de embeddings.
+    Reemplaza chunking_rag_pliego() cuando se tiene cliente_id disponible.
+    Primera llamada: procesa y cachea chunks+embeddings en sesión.
+    Llamadas siguientes: reutiliza el caché, solo codifica las queries.
+    Invalida el caché si el texto del pliego cambió (hash MD5 distinto).
+    """
+    import hashlib
+    import numpy as np
+    from contexto_sesion import obtener_contexto_sesion
+
+    MAX_CHARS = 5000
+
+    ctx          = obtener_contexto_sesion(cliente_id)
+    hash_nuevo   = hashlib.md5(texto.encode("utf-8")).hexdigest()
+    hash_guard   = ctx.get("hash_contenido", "")
+    chunks_cache = ctx.get("chunks_pliego", [])
+    emb_cache    = ctx.get("embeddings_pliego", [])
+
+    if chunks_cache and emb_cache and hash_guard == hash_nuevo:
+        chunks     = chunks_cache
+        embeddings = np.array(emb_cache)
+        print(f"[RAG-CACHE] Reutilizando {len(chunks)} chunks cacheados")
+    else:
+        chunks, embeddings = _procesar_y_cachear_pliego(cliente_id, texto)
+        if not chunks:
+            return texto[:MAX_CHARS]
+
+    queries  = ([query] if query else []) + _RAG_QUERIES
+    selected: set[int] = set()
+    modelo   = _obtener_modelo_embeddings()
+
+    for q in queries:
+        q_emb  = modelo.encode([q], show_progress_bar=False)[0]
+        norms  = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms[norms == 0] = 1
+        q_norm = q_emb / (np.linalg.norm(q_emb) or 1)
+        sims   = (embeddings / norms) @ q_norm
+        top_ix = np.argsort(sims)[::-1][:top_k_por_query].tolist()
+        selected.update(top_ix)
+
+    sorted_idx = sorted(selected, key=lambda i: i)
+    seleccion  = "\n\n[...]\n\n".join(chunks[i] for i in sorted_idx)
+    print(f"[RAG-CACHE] {len(selected)} chunks de {len(chunks)} → {len(seleccion)} chars")
+    return seleccion[:MAX_CHARS]
 
 
 def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -> list:

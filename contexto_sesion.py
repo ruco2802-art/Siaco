@@ -67,6 +67,53 @@ def guardar_contexto_sesion(
         logger.warning("[SESION] No se pudo persistir contexto en Supabase: %s", exc)
 
 
+def guardar_pliego_procesado(
+    cliente_id: str,
+    chunks: list,
+    embeddings_list: list,
+    hash_contenido: str,
+) -> None:
+    """
+    Añade chunks y embeddings del pliego al contexto de sesión existente.
+    No sobreescribe texto_pliego ni parametros_proceso — solo suma los campos de caché.
+    Se guarda en memoria + /tmp + Supabase igual que el resto del contexto.
+    """
+    ctx = dict(contextos_sesion.get(cliente_id, {}))
+    if not ctx:
+        cache = _cache_path(cliente_id)
+        if cache.exists():
+            try:
+                with open(cache, "r", encoding="utf-8") as f:
+                    ctx = json.load(f)
+            except Exception:
+                ctx = {}
+
+    ctx["chunks_pliego"]      = chunks
+    ctx["embeddings_pliego"]  = embeddings_list
+    ctx["hash_contenido"]     = hash_contenido
+    ctx["fecha_procesado"]    = datetime.now().isoformat()
+
+    contextos_sesion[cliente_id] = ctx
+
+    try:
+        cache = _cache_path(cliente_id)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache, "w", encoding="utf-8") as f:
+            json.dump(ctx, f, ensure_ascii=False)
+    except Exception as exc:
+        logger.warning("[SESION] No se pudo escribir caché /tmp (chunks): %s", exc)
+
+    try:
+        from supabase_client import sb_upload
+        sb_upload(
+            _sb_path(cliente_id),
+            json.dumps(ctx, ensure_ascii=False).encode("utf-8"),
+            "application/json",
+        )
+    except Exception as exc:
+        logger.warning("[SESION] No se pudo persistir chunks en Supabase: %s", exc)
+
+
 def obtener_contexto_sesion(cliente_id: str) -> dict:
     """
     Retorna el contexto del pliego para el cliente.
@@ -131,8 +178,9 @@ def contexto_para_chat(cliente_id: str, query: str) -> str:
         fragmento = texto
     else:
         try:
-            from analizador import chunking_rag_pliego
-            fragmento = chunking_rag_pliego(texto, query=query, top_k_por_query=2)
+            from analizador import buscar_chunks_pliego_cacheados
+            chunks = buscar_chunks_pliego_cacheados(cliente_id, query, top_k=10)
+            fragmento = "\n\n[...]\n\n".join(chunks) if chunks else texto[:_CHAT_RAG_THRESHOLD]
         except Exception:
             fragmento = texto[:_CHAT_RAG_THRESHOLD]
 

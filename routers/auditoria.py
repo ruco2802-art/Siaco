@@ -15,6 +15,7 @@ from analizador import (
     extraer_texto_completo_pdf,
     extraer_texto_documento,
     chunking_rag_pliego,
+    rag_pliego_con_cache,
     analizar_cliente_vs_licitacion_paralelo,
     guardar_analisis_historial,
     SCANNED_PDF_MARKER,
@@ -363,7 +364,7 @@ async def analizar_pliego(
 
     if rag_activado:
         print(f"[AUDITORIA] Modo RAG activado ({len(contexto_completo)} chars > {RAG_THRESHOLD})")
-        contexto_docs = chunking_rag_pliego(contexto_completo, query=query_rag)
+        contexto_docs = rag_pliego_con_cache(cid, contexto_completo, query=query_rag)
     else:
         contexto_docs = contexto_completo
 

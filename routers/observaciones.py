@@ -33,15 +33,26 @@ _CONSULTA_RAG_PLIEGO = (
 )
 
 
-def _extraer_fragmentos_pliego(texto: str, top_k: int = 7, chunk_size: int = 600) -> str:
+def _extraer_fragmentos_pliego(texto: str, top_k: int = 7, chunk_size: int = 600, cliente_id: str = "") -> str:
     """
-    Aplica RAG sobre el texto crudo del pliego: chunking + embedding search.
-    Retorna solo los fragmentos más relevantes para detección de irregularidades,
-    reduciendo el contexto enviado a Claude de ~12 000 chars a ~4 000 chars.
+    Aplica RAG sobre el texto del pliego para extraer fragmentos relevantes.
+    Si se pasa cliente_id, reutiliza embeddings cacheados en sesión (más rápido).
+    Fallback: chunking + embeddings fresh sobre el texto recibido.
     """
+    # Camino rápido: usar caché de embeddings si el cliente ya analizó el pliego
+    if cliente_id:
+        try:
+            from analizador import buscar_chunks_pliego_cacheados
+            chunks = buscar_chunks_pliego_cacheados(cliente_id, _CONSULTA_RAG_PLIEGO, top_k=top_k)
+            if chunks:
+                logger.debug("[OBSERVACIONES] RAG caché: %d chunks para cliente %s", len(chunks), cliente_id)
+                return "\n---\n".join(chunks)
+        except Exception as exc:
+            logger.warning("[OBSERVACIONES] RAG caché falló, usando texto directo: %s", exc)
+
+    # Fallback: procesar el texto recibido directamente (sin cliente_id o si el caché falló)
     from analizador import _obtener_modelo_embeddings
 
-    # Chunking con overlap de 100 chars
     chunks: list[str] = []
     inicio, overlap = 0, 100
     while inicio < len(texto):
@@ -50,7 +61,6 @@ def _extraer_fragmentos_pliego(texto: str, top_k: int = 7, chunk_size: int = 600
             chunks.append(chunk)
         inicio += chunk_size - overlap
 
-    # Si hay pocos chunks, devolver directamente (sin overhead de embeddings)
     if len(chunks) <= top_k:
         return texto[:4000]
 
@@ -63,7 +73,6 @@ def _extraer_fragmentos_pliego(texto: str, top_k: int = 7, chunk_size: int = 600
         normas[normas == 0] = 1
         sims   = (embs / normas) @ (emb_q / (np.linalg.norm(emb_q) or 1))
 
-        # Mantener orden documental para que Claude lea en contexto
         top_idx = sorted(np.argsort(sims)[::-1][:top_k].tolist())
         return "\n---\n".join(chunks[i] for i in top_idx)
     except Exception as exc:
@@ -154,7 +163,7 @@ def generar_observaciones(body: ObservacionesBody, authorization: str = Header(N
 
     # 3a. RAG sobre el pliego: extraer solo fragmentos relevantes (~4 000 chars)
     #     en lugar de enviar 12 000 chars crudos que causan el 502 por timeout.
-    fragmentos_pliego = _extraer_fragmentos_pliego(texto_pliego, top_k=7)
+    fragmentos_pliego = _extraer_fragmentos_pliego(texto_pliego, top_k=7, cliente_id=body.cliente_id)
 
     # 3b. Contexto normativo vía RAG (biblioteca Documentos Tipo CCE)
     consulta_rag = (

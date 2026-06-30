@@ -176,6 +176,7 @@ function _doNavigate(page) {
   if (page === 'expedientes')  loadExpedientes();
   if (page === 'auditoria')    checkPrecargadoBusqueda();
   if (page === 'competidores') checkPrecargadoCompetidores();
+  if (page === 'oferta')       oferta_prefill();
 }
 
 // ════════════ GATE TESTER ════════════
@@ -906,6 +907,7 @@ function renderAuditResult(r) {
     <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="descargarPDF(event)">⬇ Descargar PDF Ejecutivo</button>
       <button id="btn-obs-pliego" class="btn btn-primary" onclick="generarObservaciones(event)">📋 Generar Observaciones al Pliego</button>
+      <button class="btn btn-secondary" onclick="navigateTo('oferta')">📄 Generar documentos de oferta</button>
     </div>
     <div id="obs-result" style="margin-top:16px"></div>
   </div>`;
@@ -1963,6 +1965,82 @@ function apu_exportarPDF() {
   if (!_apuLastResult) { toast('Calcule la oferta primero', 'warn'); return; }
   toast('Abriendo diálogo de impresión...', 'info');
   setTimeout(() => window.print(), 300);
+}
+
+// ════════════ GENERADOR DE OFERTA (página independiente) ════════════
+
+function oferta_prefill() {
+  const auditEntidad = val('a-entidad');
+  const auditObjeto  = val('a-objeto');
+  const auditPid     = val('a-codigo-proceso') || sessionStorage.getItem('siaco_precarg_pid') || '';
+  const banner       = document.getElementById('oferta-precargado-banner');
+
+  if (auditEntidad || auditObjeto || auditPid) {
+    if (auditEntidad && !val('oferta-entidad'))    setVal('oferta-entidad', auditEntidad);
+    if (auditObjeto  && !val('oferta-objeto'))     setVal('oferta-objeto',  auditObjeto);
+    if (auditPid     && !val('oferta-proceso-id')) setVal('oferta-proceso-id', auditPid);
+    if (banner && (auditEntidad || auditObjeto)) {
+      banner.innerHTML    = alertHtml('info', '↖ Datos precargados automáticamente desde la última auditoría.');
+      banner.style.display = '';
+    }
+  }
+}
+
+async function oferta_generarDoc(tipo) {
+  const pid   = val('oferta-proceso-id').trim();
+  if (!pid) { toast('Ingresa el ID del proceso SECOP II', 'warn'); return; }
+  const stEl  = document.getElementById('oferta-docs-status');
+  if (stEl) stEl.textContent = `⏳ Generando ${tipo}...`;
+  const clienteId = CLIENTE_ID || '';
+
+  try {
+    let endpoint, body, filename, mime;
+
+    if (tipo === 'carta-presentacion') {
+      endpoint = '/api/oferta/carta-presentacion';
+      body     = { cliente_id: clienteId, proceso_id: pid };
+      filename = `Carta_Presentacion_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (tipo === 'formulario-economico') {
+      endpoint = '/api/oferta/formulario-economico';
+      body     = { cliente_id: clienteId, proceso_id: pid, datos_apu: _apuLastResult || {} };
+      filename = `Formulario_Economico_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (tipo === 'formato-experiencia') {
+      endpoint = '/api/oferta/formato-experiencia';
+      body     = { cliente_id: clienteId, proceso_id: pid };
+      filename = `Formulario_Experiencia_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (tipo === 'capacidad-residual') {
+      endpoint = '/api/oferta/capacidad-residual';
+      body     = { cliente_id: clienteId, proceso_id: pid, k_requerido: 0, contratos_vigentes: [] };
+      filename = `Capacidad_Residual_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (tipo === 'paquete-completo') {
+      endpoint = '/api/oferta/paquete-completo';
+      body     = { cliente_id: clienteId, proceso_id: pid, datos_apu: _apuLastResult || {}, k_requerido: 0, contratos_vigentes: [] };
+      filename = `SIACO_Oferta_${pid}_${new Date().toISOString().slice(0,10)}.zip`;
+      mime     = 'application/zip';
+    } else {
+      toast('Tipo de documento no reconocido', 'error'); return;
+    }
+
+    const res = await api(endpoint, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+      throw new Error(err.detail || `Error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+    if (stEl) stEl.textContent = `✓ ${filename} descargado`;
+    toast('Documento generado', 'ok');
+  } catch (err) {
+    if (stEl) stEl.textContent = `Error: ${err.message}`;
+    toast(err.message, 'error');
+  }
 }
 
 // ════════════ GENERADOR DE DOCUMENTOS DE OFERTA ════════════
