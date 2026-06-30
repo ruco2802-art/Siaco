@@ -63,6 +63,7 @@ def guardar_contexto_sesion(
             json.dumps(datos, ensure_ascii=False).encode("utf-8"),
             "application/json",
         )
+        print(f"[SESION] Contexto de '{cliente_id}' guardado en Supabase ({_sb_path(cliente_id)})")
     except Exception as exc:
         logger.warning("[SESION] No se pudo persistir contexto en Supabase: %s", exc)
 
@@ -110,6 +111,10 @@ def guardar_pliego_procesado(
             json.dumps(ctx, ensure_ascii=False).encode("utf-8"),
             "application/json",
         )
+        print(
+            f"[SESION] Pliego procesado de '{cliente_id}' guardado en Supabase "
+            f"({len(chunks)} chunks, hash={hash_contenido[:8]})"
+        )
     except Exception as exc:
         logger.warning("[SESION] No se pudo persistir chunks en Supabase: %s", exc)
 
@@ -124,6 +129,7 @@ def obtener_contexto_sesion(cliente_id: str) -> dict:
 
     # 1. Memoria (mismo proceso, más rápido)
     if cliente_id in contextos_sesion:
+        print(f"[SESION] Contexto de '{cliente_id}' servido desde memoria")
         return contextos_sesion[cliente_id]
 
     # 2. Caché /tmp (mismo contenedor, entre requests)
@@ -133,6 +139,7 @@ def obtener_contexto_sesion(cliente_id: str) -> dict:
             with open(cache, "r", encoding="utf-8") as f:
                 datos = json.load(f)
             contextos_sesion[cliente_id] = datos   # repoblar memoria
+            print(f"[SESION] Contexto de '{cliente_id}' servido desde /tmp")
             return datos
         except Exception:
             pass
@@ -149,10 +156,12 @@ def obtener_contexto_sesion(cliente_id: str) -> dict:
                 cache.write_bytes(raw)
             except Exception:
                 pass
+            print(f"[SESION] Contexto de '{cliente_id}' servido desde Supabase (redeploy)")
             return datos
     except Exception as exc:
         logger.warning("[SESION] No se pudo recuperar contexto de Supabase: %s", exc)
 
+    print(f"[SESION] Sin contexto para '{cliente_id}' en ninguna capa (memoria/tmp/Supabase)")
     return {}
 
 

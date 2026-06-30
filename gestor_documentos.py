@@ -103,6 +103,11 @@ def _cargar_indice(cliente_id: str) -> list:
     1. Busca en caché local /tmp (mismo contenedor — rápido).
     2. Si no existe, descarga desde Supabase (después de un redeploy).
     """
+    if not cliente_id or cliente_id == "admin":
+        # El usuario admin no tiene carpeta de documentos propia — evita
+        # ruido de errores 400 de Supabase al intentar descargar algo que no existe.
+        return []
+
     cache_meta = _cache_meta(cliente_id)
     cache_emb  = _cache_emb(cliente_id)
 
