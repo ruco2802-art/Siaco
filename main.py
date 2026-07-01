@@ -21,7 +21,21 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+import threading
+
 from routers import auth, busqueda, auditoria, expedientes, perfil, competidores, reportes, chat, observaciones, calculadora, generador_oferta
+
+
+def _preload_embeddings():
+    try:
+        from analizador import _obtener_modelo_embeddings
+        modelo = _obtener_modelo_embeddings()
+        print(f"[STARTUP] Modelo embeddings precargado OK — {type(modelo).__name__}")
+    except Exception as exc:
+        print(f"[STARTUP] Error precargando modelo embeddings: {exc}")
+
+
+threading.Thread(target=_preload_embeddings, daemon=True).start()
 
 app = FastAPI(
     title="SIACO v3.0",

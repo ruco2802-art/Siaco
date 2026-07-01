@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 
@@ -138,15 +139,17 @@ def buscar_contratos(
     t1_ok = True
     t2_ok = True
 
-    try:
-        fuente1 = _fetch_secop(SECOP_URL,   params_base)
-    except requests.exceptions.Timeout:
-        t1_ok = False
-
-    try:
-        fuente2 = _fetch_secop(SECOP_URL_2, params_base)
-    except requests.exceptions.Timeout:
-        t2_ok = False
+    with ThreadPoolExecutor(max_workers=2) as _pool:
+        _f1 = _pool.submit(_fetch_secop, SECOP_URL,   params_base)
+        _f2 = _pool.submit(_fetch_secop, SECOP_URL_2, params_base)
+        try:
+            fuente1 = _f1.result()
+        except requests.exceptions.Timeout:
+            t1_ok = False
+        try:
+            fuente2 = _f2.result()
+        except requests.exceptions.Timeout:
+            t2_ok = False
 
     if not t1_ok and not t2_ok:
         raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
@@ -503,17 +506,19 @@ def busqueda_avanzada(
     timeout1 = False
     timeout2 = False
 
-    try:
-        fuente1 = _fetch_secop(SECOP_URL, params_av)
-    except requests.exceptions.Timeout:
-        timeout1 = True
-        logger.warning("[BUSQ-AVZ] Timeout en fuente1 (%s)", SECOP_URL)
-
-    try:
-        fuente2 = _fetch_secop(SECOP_URL_2, params_av)
-    except requests.exceptions.Timeout:
-        timeout2 = True
-        logger.warning("[BUSQ-AVZ] Timeout en fuente2 (%s)", SECOP_URL_2)
+    with ThreadPoolExecutor(max_workers=2) as _pool:
+        _f1 = _pool.submit(_fetch_secop, SECOP_URL,   params_av)
+        _f2 = _pool.submit(_fetch_secop, SECOP_URL_2, params_av)
+        try:
+            fuente1 = _f1.result()
+        except requests.exceptions.Timeout:
+            timeout1 = True
+            logger.warning("[BUSQ-AVZ] Timeout en fuente1 (%s)", SECOP_URL)
+        try:
+            fuente2 = _f2.result()
+        except requests.exceptions.Timeout:
+            timeout2 = True
+            logger.warning("[BUSQ-AVZ] Timeout en fuente2 (%s)", SECOP_URL_2)
 
     if timeout1 and timeout2:
         raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
