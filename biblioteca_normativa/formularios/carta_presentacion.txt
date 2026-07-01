@@ -1,62 +1,96 @@
 {ciudad}, {fecha}
 
-Señores
+Doctor(a)
+[NOMBRE DEL ORDENADOR DEL GASTO / JEFE ÁREA CONTRATACIÓN]
+Cargo: [CARGO DEL DESTINATARIO]
 {nombre_entidad}
 Ciudad
 
-Asunto: Presentación de Oferta – Proceso No. {codigo_proceso}
+Referencia: Proceso de Selección No. {codigo_proceso}
+Objeto    : {objeto_proceso}
 
-Respetados señores:
+Respetado(a) Doctor(a):
 
-En respuesta al proceso de selección No. {codigo_proceso}, cuyo objeto es "{objeto_proceso}", nos permitimos presentar oferta formal por parte de {razon_social}, identificada con NIT {nit}.
+En nombre de {razon_social}, con NIT No. {nit}, actuando con plenas
+facultades legales y estatutarias, me permito presentar formalmente
+nuestra oferta para el proceso de selección de la referencia, en los
+términos del pliego de condiciones, sus adendas y la normativa vigente.
 
-DECLARACIONES DEL PROPONENTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-El suscrito representante legal, actuando en nombre y representación de {razon_social}, bajo la gravedad del juramento, declara:
+VALOR DE LA OFERTA
 
-1. Que conoce íntegramente el pliego de condiciones del proceso No. {codigo_proceso} y todas sus adendas, y acepta en su totalidad los requisitos y condiciones allí establecidos.
+  En letras : {valor_letras}
+  En números: {valor_numeros}
 
-2. Que la empresa {razon_social} con NIT {nit} no se encuentra incursa en ninguna causal de inhabilidad e incompatibilidad establecida en la Constitución Política, la Ley 80 de 1993, la Ley 1150 de 2007 y demás normas concordantes.
+Plazo de ejecución: {plazo_meses} meses calendario
+Lugar de ejecución: [MUNICIPIO Y DEPARTAMENTO SEGÚN PLIEGO]
+Vigencia de la oferta: Hasta la fecha de adjudicación del proceso
 
-3. Que toda la información, datos y documentos suministrados en la presente oferta son veraces, auténticos y verificables, y que la empresa asume plena responsabilidad por su contenido.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-4. Que acepta íntegramente las condiciones económicas, técnicas y jurídicas del proceso de selección, y se compromete a ejecutar el objeto contractual en las condiciones, plazos y valores ofertados.
+DECLARACIONES BAJO LA GRAVEDAD DEL JURAMENTO
+(Art. 283 C.P.C. — declaración con plena validez jurídica)
 
-5. Que la empresa y su representante legal se comprometen a cumplir con todas las obligaciones legales, tributarias, laborales y de seguridad social durante la ejecución del contrato.
+1. ACEPTACIÓN DEL PLIEGO DE CONDICIONES
+   He leído y analizado integralmente el pliego de condiciones y sus
+   adendas, y acepto todos sus términos y condiciones sin reserva alguna.
+   Fundamento: Ley 80/1993, art. 23 — Principio de Transparencia.
 
-PROPUESTA ECONÓMICA
+2. AUSENCIA DE INHABILIDADES E INCOMPATIBILIDADES
+   No me encuentro incurso en ninguna de las causales de inhabilidad e
+   incompatibilidad previstas en los artículos 8 y 9 de la Ley 80 de 1993,
+   el artículo 18 de la Ley 1150 de 2007 y sus normas concordantes.
 
-El valor total de la oferta presentada asciende a la suma de:
+3. NO INCURSO EN CAUSAL DE DISOLUCIÓN NI INSOLVENCIA
+   La sociedad que represento no se encuentra en proceso de liquidación,
+   concordato, reestructuración, intervención estatal ni en ninguna otra
+   situación que afecte su capacidad jurídica para contratar.
+   Fundamento: Ley 1116/2006 — Régimen de Insolvencia Empresarial.
 
-{valor_letras}
-(${valor_numeros})
+4. PAZ Y SALVO PARAFISCALES Y SEGURIDAD SOCIAL
+   Me encuentro al día en el pago de aportes parafiscales al SENA, al
+   ICBF y a las Cajas de Compensación Familiar, así como en los aportes
+   al Sistema de Seguridad Social Integral (Salud, Pensión y ARL) de
+   todos mis empleados vinculados al momento de la oferta.
+   Fundamento: Ley 789/2002, art. 50.
 
-Valor que incluye todos los costos directos, AIU, pólizas y cualquier otro costo necesario para la correcta ejecución del objeto contractual. El valor ofertado NO incluye IVA, de conformidad con lo establecido en el pliego de condiciones.
+5. AUSENCIA DE SANCIONES EN LOS ÚLTIMOS TRES AÑOS
+   No he sido objeto de sanciones disciplinarias, fiscales ni penales
+   durante los últimos tres (3) años que estén relacionadas con el objeto
+   del presente proceso. No me encuentro inhabilitado para contratar con
+   el Estado colombiano.
+   Fundamento: Ley 80/1993, art. 8, num. 1, lit. d.
 
-PLAZO DE EJECUCIÓN
+6. INTEGRALIDAD E INDEPENDENCIA DE LA OFERTA ECONÓMICA
+   El valor de mi propuesta económica incluye todos los costos, gastos,
+   impuestos, tasas, contribuciones, derechos, seguros y utilidades
+   requeridos para la cabal, oportuna y completa ejecución del objeto
+   contractual. Esta oferta fue elaborada de manera independiente, sin
+   acuerdos con otros oferentes.
+   Fundamento: Decreto 1082/2015, art. 2.2.1.1.2.3.1; Ley 1340/2009.
 
-El plazo propuesto para la ejecución del contrato es de {plazo_meses} ({plazo_meses_num}) meses calendario, contados a partir de la suscripción del acta de inicio.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DOCUMENTOS ADJUNTOS
 
-Se adjuntan a la presente oferta los documentos habilitantes y de calificación requeridos en el pliego de condiciones, incluyendo:
-- Formulario 1: Propuesta Económica
-- Formulario 2: Experiencia del Proponente
-- Capacidad Residual de Contratación (Factor K)
-- [Demás documentos habilitantes según pliego]
+Los documentos que integran la presente oferta se relacionan en el
+Índice de Documentos (Folio 1) e incluyen todos los requisitos
+habilitantes, jurídicos, financieros, de experiencia, técnicos y la
+propuesta económica exigidos en el pliego de condiciones.
 
-En fe de lo anterior, firma el representante legal de {razon_social}:
+Atentamente,
 
 
-_______________________________
-{nombre_representante}
-{cargo_representante}
-C.C. No. {cedula_representante}
-Representante Legal
-{razon_social}
-NIT: {nit}
+Firma:  _________________________________
+Nombre: {nombre_representante}
+Cargo:  {cargo_representante}
+C.C.:   {cedula_representante}
+Empresa: {razon_social}
+NIT:     {nit}
 Dirección: {direccion}
-Teléfono: {telefono}
-Correo electrónico: {correo}
+Teléfono:  {telefono}
+Correo:    {correo}
 
-⚠️ BORRADOR — Revise y complete antes de firmar y cargar en SECOP II
+⚠️ BORRADOR — Complete los campos entre [CORCHETES] antes de firmar.
+    Firma manuscrita autenticada o digital según lo exija el pliego.

@@ -954,10 +954,16 @@ function _renderObsResult(data, resDiv) {
       <td style="font-size:0.82em;color:#aaa">${d.seccion_pliego||'—'}</td>
       <td style="font-size:0.82em;color:#e57373">${d.norma_vulnerada||'—'}</td>
     </tr>`).join('');
-  const descBtn = data.pdf_disponible && data.pdf_filename
+  const descPdfBtn = data.pdf_disponible && data.pdf_filename
     ? `<button class="btn btn-secondary" style="margin-top:12px"
          onclick="descargarObservaciones('${data.pdf_filename}')">
-         Descargar PDF de Observaciones
+         📄 Descargar PDF de Observaciones
+       </button>`
+    : '';
+  const descDocxBtn = data.docx_filename
+    ? `<button class="btn btn-secondary" style="margin-top:12px;margin-left:8px"
+         onclick="descargarObservaciones('${data.docx_filename}')">
+         📝 Descargar Word (.docx)
        </button>`
     : '';
   resDiv.innerHTML = `<div class="card" style="border-left:4px solid #C6F24E">
@@ -966,7 +972,7 @@ function _renderObsResult(data, resDiv) {
       <thead><tr><th>#</th><th>Título</th><th>Sección</th><th>Norma vulnerada</th></tr></thead>
       <tbody>${filas}</tbody>
     </table></div>
-    ${descBtn}
+    <div style="display:flex;flex-wrap:wrap;gap:4px">${descPdfBtn}${descDocxBtn}</div>
   </div>`;
   toast(`${data.total_discrepancias} observacion(es) generadas`, 'success');
 }
@@ -2055,6 +2061,16 @@ async function oferta_generarDoc(tipo) {
       endpoint = '/api/oferta/capacidad-residual';
       body     = { cliente_id: clienteId, proceso_id: pid, k_requerido: 0, contratos_vigentes: [] };
       filename = `Capacidad_Residual_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (tipo === 'paz-y-salvos') {
+      endpoint = '/api/oferta/paz-y-salvos';
+      body     = { cliente_id: clienteId, proceso_id: pid };
+      filename = `05_Paz_Y_Salvos_${pid}.docx`;
+      mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    } else if (tipo === 'checklist') {
+      endpoint = '/api/oferta/checklist';
+      body     = { cliente_id: clienteId, proceso_id: pid };
+      filename = `00_Checklist_Anti_Rechazo_${pid}.docx`;
       mime     = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     } else if (tipo === 'paquete-completo') {
       endpoint = '/api/oferta/paquete-completo';

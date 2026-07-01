@@ -8,6 +8,7 @@ Patrón de ejecución:
 Esto evita el 504 Gateway Timeout de Railway causado por la suma de:
   chunking/embeddings (si caché fría) + llamada a Claude (~30-90s).
 """
+import io
 import json
 import re
 import threading
@@ -257,8 +258,17 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
 
         pdf_bytes    = None
         pdf_filename = None
+        docx_filename = None
+        perfil_data   = {}
 
         if tiene_disc and discrepancias:
+            # Cargar perfil para el Word
+            try:
+                from routers.perfil import _load_perfil
+                perfil_data = _load_perfil(cliente_id) or {}
+            except Exception:
+                perfil_data = {"nombre": nombre_empresa, "nit": nit_empresa}
+
             try:
                 pdf_bytes = _build_pdf_observaciones(resultado, nombre_empresa, nit_empresa)
             except Exception as e:
@@ -296,6 +306,19 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
                     except Exception:
                         pass
 
+            # Generar DOCX Word
+            try:
+                proceso_id_safe = re.sub(r"[^\w\-]", "_", proceso_id or "proceso")[:40]
+                sb_prefix       = f"clientes/{cliente_id}/observaciones"
+                docx_bytes      = _build_docx_observaciones(resultado, perfil_data, proceso_id or "")
+                docx_filename   = f"{proceso_id_safe}_observaciones.docx"
+                from supabase_client import sb_upload
+                sb_upload(f"{sb_prefix}/{docx_filename}", docx_bytes,
+                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            except Exception as exc:
+                logger.warning("[OBSERVACIONES] DOCX falló (job=%s): %s", job_id, exc)
+                docx_filename = None
+
         _guardar_job(job_id, {
             "estado": "completo",
             "datos": {
@@ -307,6 +330,7 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
                 "discrepancias":              discrepancias,
                 "pdf_disponible":             pdf_bytes is not None,
                 "pdf_filename":               pdf_filename,
+                "docx_filename":              docx_filename,
             },
         })
         logger.info("[OBSERVACIONES] Job %s completado: %d discrepancias", job_id, len(discrepancias))
@@ -427,12 +451,12 @@ def estado_observaciones(job_id: str, authorization: str = Header(None)):
 # ── GET /api/observaciones/pdf/{cliente_id}/{filename} ────────────────────────
 
 @router.get("/observaciones/pdf/{cliente_id}/{filename}")
-def descargar_pdf_observaciones(
+def descargar_documento_observaciones(
     cliente_id: str,
     filename:   str,
     authorization: str = Header(None),
 ):
-    """Descarga el PDF de observaciones previamente generado desde Supabase Storage."""
+    """Descarga PDF o DOCX de observaciones desde Supabase Storage."""
     from routers.auth import require_auth
     require_auth(authorization)
 
@@ -441,24 +465,222 @@ def descargar_pdf_observaciones(
 
     try:
         from supabase_client import sb_download
-        pdf_bytes = sb_download(f"clientes/{cliente_id}/observaciones/{filename}")
+        file_bytes = sb_download(f"clientes/{cliente_id}/observaciones/{filename}")
     except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Error al acceder al almacenamiento en la nube: {str(exc)[:200]}",
         )
 
-    if not pdf_bytes:
-        raise HTTPException(
-            status_code=404,
-            detail="PDF no encontrado. Genera las observaciones primero.",
-        )
+    if not file_bytes:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+
+    if filename.endswith(".docx"):
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        media_type = "application/pdf"
 
     return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
+        content=file_bytes,
+        media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Generador Word ────────────────────────────────────────────────────────────
+
+def _build_docx_observaciones(resultado: dict, perfil_data: dict, proceso_id: str) -> bytes:
+    """
+    Genera Word profesional de Observaciones al Pliego:
+    TNR 12pt, 1.5 interlineado, justificado, encabezado/pie, citas en cursiva.
+    """
+    try:
+        from docx import Document
+        from docx.shared import Pt, Cm, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+    except ImportError:
+        raise RuntimeError("python-docx no disponible")
+
+    proceso       = resultado.get("proceso", proceso_id)
+    entidad       = resultado.get("entidad", "Entidad Estatal")
+    fecha_cierre  = resultado.get("fecha_cierre_observaciones") or ""
+    discrepancias = resultado.get("discrepancias", [])
+
+    nombre_empresa = perfil_data.get("nombre", "Empresa")
+    nit_empresa    = perfil_data.get("nit", "")
+    rep_legal      = perfil_data.get("representante_legal", "[REPRESENTANTE LEGAL]")
+    cargo_rep      = perfil_data.get("cargo_representante", "Representante Legal")
+    cedula_rep     = perfil_data.get("cedula_representante", "[C.C.]")
+    ciudad         = perfil_data.get("ciudad", "Bogotá D.C.")
+    fecha_hoy      = datetime.now().strftime("%d/%m/%Y")
+
+    doc = Document()
+    for sec in doc.sections:
+        sec.top_margin    = Cm(2.5)
+        sec.bottom_margin = Cm(2.5)
+        sec.left_margin   = Cm(2.5)
+        sec.right_margin  = Cm(2.5)
+
+    # Estilo base
+    normal = doc.styles['Normal']
+    normal.font.name = 'Times New Roman'
+    normal.font.size = Pt(12)
+    pf = normal.paragraph_format
+    pf.alignment         = WD_ALIGN_PARAGRAPH.JUSTIFY
+    pf.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+    pf.space_after       = Pt(0)
+
+    # Encabezado
+    hdr = doc.sections[0].header
+    hp  = hdr.paragraphs[0] if hdr.paragraphs else hdr.add_paragraph()
+    hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    hp.clear()
+
+    def _hr(text: str):
+        r = hp.add_run(text)
+        r.font.name = 'Times New Roman'; r.font.size = Pt(9)
+        r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+
+    def _field(code: str):
+        r = hp.add_run()
+        r.font.name = 'Times New Roman'; r.font.size = Pt(9)
+        fc1 = OxmlElement('w:fldChar'); fc1.set(qn('w:fldCharType'), 'begin')
+        it  = OxmlElement('w:instrText')
+        it.text = f' {code} '; it.set(qn('xml:space'), 'preserve')
+        fc2 = OxmlElement('w:fldChar'); fc2.set(qn('w:fldCharType'), 'end')
+        r._r.extend([fc1, it, fc2])
+
+    _hr(f"{nombre_empresa[:30]}  |  {proceso_id[:30]}  |  Pág. ")
+    _field("PAGE"); _hr(" de "); _field("NUMPAGES")
+
+    # Pie de página
+    ftr = doc.sections[0].footer
+    fp  = ftr.paragraphs[0] if ftr.paragraphs else ftr.add_paragraph()
+    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER; fp.clear()
+    fr = fp.add_run(
+        "SIACO — Borrador generado con IA. Verifique con asesor jurídico antes de presentar en SECOP II."
+    )
+    fr.font.name = 'Times New Roman'; fr.font.size = Pt(8)
+    fr.font.italic = True; fr.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+
+    def _body(text: str, indent: float = 0):
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Cm(indent)
+        r = p.add_run(str(text or "—"))
+        r.font.name = 'Times New Roman'; r.font.size = Pt(12)
+        return p
+
+    def _label(label: str, value: str):
+        p = doc.add_paragraph()
+        r1 = p.add_run(label + ": ")
+        r1.font.name = 'Times New Roman'; r1.font.size = Pt(12); r1.font.bold = True
+        r2 = p.add_run(str(value or "—"))
+        r2.font.name = 'Times New Roman'; r2.font.size = Pt(12)
+        return p
+
+    def _italic_quote(text: str, indent: float = 1.0):
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Cm(indent)
+        r = p.add_run(f'"{text}"')
+        r.font.name = 'Times New Roman'; r.font.size = Pt(11); r.font.italic = True
+        return p
+
+    def _section_heading(text: str):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(6)
+        r = p.add_run(text)
+        r.font.name = 'Times New Roman'; r.font.size = Pt(12)
+        r.font.bold = True; r.font.color.rgb = RGBColor(0x00, 0x64, 0x50)
+        return p
+
+    # ── TÍTULO
+    t = doc.add_heading("OBSERVACIONES AL PLIEGO DE CONDICIONES", level=1)
+    t.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in t.runs:
+        run.font.name = 'Times New Roman'; run.font.size = Pt(16)
+        run.font.bold = True; run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+    doc.add_paragraph()
+
+    # ── CABECERA
+    _body(f"{ciudad}, {fecha_hoy}")
+    doc.add_paragraph()
+    _body(f"Señores")
+    _body(entidad)
+    doc.add_paragraph()
+    _label("Proceso", proceso_id)
+    _label("Objeto", proceso)
+    if fecha_cierre:
+        _label("Fecha cierre de observaciones", fecha_cierre)
+    doc.add_paragraph()
+
+    # ── APERTURA LEGAL
+    _body(
+        f"En nombre de {nombre_empresa} (NIT {nit_empresa}), y en ejercicio del derecho "
+        "establecido en el artículo 30 de la Ley 80 de 1993, el artículo 4 de la Ley 1150 "
+        "de 2007 y el artículo 2.2.1.1.2.1.4 del Decreto 1082 de 2015, que reconocen el "
+        "derecho de los interesados a formular observaciones al pliego de condiciones durante "
+        "la etapa de publicación, presento las siguientes observaciones:"
+    )
+    doc.add_paragraph()
+
+    # ── OBSERVACIONES
+    for d in discrepancias:
+        num    = d.get('numero', '?')
+        titulo = d.get('titulo', 'Observación')
+
+        p_titulo = doc.add_paragraph()
+        p_titulo.paragraph_format.space_before = Pt(10)
+        r_t = p_titulo.add_run(f"OBSERVACIÓN No. {num} — {titulo.upper()}")
+        r_t.font.name = 'Times New Roman'; r_t.font.size = Pt(13)
+        r_t.font.bold = True; r_t.font.color.rgb = RGBColor(0x00, 0x64, 0x50)
+        doc.add_paragraph()
+
+        _label("Sección del pliego", d.get("seccion_pliego", "—"))
+        _section_heading("Texto del pliego:")
+        _italic_quote(d.get("texto_pliego", "—"))
+        _label("Norma vulnerada", d.get("norma_vulnerada", "—"))
+        if d.get("texto_norma"):
+            _italic_quote(d.get("texto_norma", ""))
+        _section_heading("Argumentación jurídica:")
+        _body(d.get("argumento", "—"))
+
+        p_sol_lbl = doc.add_paragraph()
+        p_sol_lbl.paragraph_format.space_before = Pt(4)
+        r_sl = p_sol_lbl.add_run("Solicitud formal (listo para copiar en SECOP II):")
+        r_sl.font.name = 'Times New Roman'; r_sl.font.size = Pt(12)
+        r_sl.font.bold = True; r_sl.font.color.rgb = RGBColor(0x00, 0x50, 0xA0)
+        _body(d.get("observacion_sugerida", "—"), indent=0.5)
+
+        doc.add_paragraph()
+        p_hr = doc.add_paragraph()
+        r_hr = p_hr.add_run("─" * 72)
+        r_hr.font.name = 'Times New Roman'; r_hr.font.size = Pt(10)
+        p_hr.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        doc.add_paragraph()
+
+    # ── CIERRE
+    _section_heading("CIERRE")
+    doc.add_paragraph()
+    _body(
+        "Las observaciones anteriores se formulan dentro del término establecido en el "
+        "cronograma del proceso, en ejercicio del derecho reconocido por la normativa "
+        "vigente de contratación pública colombiana."
+    )
+    doc.add_paragraph()
+    doc.add_paragraph()
+    _body("Firma: _________________________________")
+    _label("Nombre", rep_legal)
+    _label("Cargo", cargo_rep)
+    _label("C.C. No.", cedula_rep)
+    _label("Empresa", nombre_empresa)
+    _label("NIT", nit_empresa)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 # ── Generador PDF ─────────────────────────────────────────────────────────────

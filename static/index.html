@@ -1110,10 +1110,89 @@
           <button class="btn btn-secondary btn-sm" onclick="oferta_generarDoc('carta-presentacion')">📄 Carta de presentación</button>
           <button class="btn btn-secondary btn-sm" onclick="oferta_generarDoc('formulario-economico')">📊 Formulario económico</button>
           <button class="btn btn-secondary btn-sm" onclick="oferta_generarDoc('formato-experiencia')">📋 Formulario experiencia</button>
-          <button class="btn btn-secondary btn-sm" onclick="oferta_generarDoc('capacidad-residual')">📐 Capacidad residual</button>
-          <button class="btn btn-primary btn-sm" onclick="oferta_generarDoc('paquete-completo')">📦 Paquete completo (ZIP)</button>
+          <button class="btn btn-secondary btn-sm" onclick="oferta_generarDoc('capacidad-residual')">📐 Capacidad residual K</button>
+          <button class="btn btn-secondary btn-sm" onclick="oferta_generarDoc('paz-y-salvos')">📑 Paz y salvos</button>
+          <button class="btn btn-secondary btn-sm" onclick="oferta_generarDoc('checklist')">✅ Checklist anti-rechazo</button>
         </div>
-        <div id="oferta-docs-status" style="font-size:.82rem;color:var(--muted)"></div>
+        <div style="margin-top:8px">
+          <button class="btn btn-primary" onclick="oferta_generarDoc('paquete-completo')" style="width:100%;padding:12px;font-size:1rem">
+            📦 Descargar paquete completo (ZIP con carpetas)
+          </button>
+        </div>
+        <div id="oferta-docs-status" style="font-size:.82rem;color:var(--muted);margin-top:8px"></div>
+      </div>
+
+      <!-- CHECKLIST DE DOCUMENTOS -->
+      <div class="card" style="border:1px solid #333;margin-top:16px">
+        <div class="card-title">📋 Checklist de documentos de la oferta</div>
+        <div style="font-size:.83rem;color:var(--muted);margin-bottom:12px">
+          Verifique que tiene todos los documentos antes de presentar en SECOP II.
+          Genere los de SIACO arriba y prepare los propios con anticipación.
+        </div>
+
+        <div style="margin-bottom:16px">
+          <div style="font-size:.88rem;font-weight:700;color:#C6F24E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Documentos SIACO (generados automáticamente)</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px">
+            <div class="oferta-doc-item siaco">
+              <span class="oferta-doc-icon">📄</span>
+              <div><div class="oferta-doc-name">01 Carta de Presentación</div>
+              <div class="oferta-doc-sub">6 declaraciones juramentadas · Ley 80/1993</div></div>
+            </div>
+            <div class="oferta-doc-item siaco">
+              <span class="oferta-doc-icon">📊</span>
+              <div><div class="oferta-doc-name">02 Formulario Económico</div>
+              <div class="oferta-doc-sub">Costos directos + AIU · Estructura CCE</div></div>
+            </div>
+            <div class="oferta-doc-item siaco">
+              <span class="oferta-doc-icon">📋</span>
+              <div><div class="oferta-doc-name">03 Formulario Experiencia</div>
+              <div class="oferta-doc-sub">Con código UNSPSC y Certificado No.</div></div>
+            </div>
+            <div class="oferta-doc-item siaco">
+              <span class="oferta-doc-icon">📐</span>
+              <div><div class="oferta-doc-name">04 Capacidad Residual K</div>
+              <div class="oferta-doc-sub">K = 0.80 × PL − contratos en ejecución</div></div>
+            </div>
+            <div class="oferta-doc-item siaco">
+              <span class="oferta-doc-icon">📑</span>
+              <div><div class="oferta-doc-name">05 Instrucciones Paz y Salvos</div>
+              <div class="oferta-doc-sub">SENA · ICBF · Caja · Planilla PILA</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:.88rem;font-weight:700;color:#aaa;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Documentos a su cargo (gestione con anticipación)</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px">
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">📄</span>
+              <div><div class="oferta-doc-name">RUT actualizado</div>
+              <div class="oferta-doc-sub">dian.gov.co · Gratuito · Inmediato</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">🏢</span>
+              <div><div class="oferta-doc-name">Cámara de Comercio</div>
+              <div class="oferta-doc-sub">Máx. 30 días de expedición al cierre</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">🪪</span>
+              <div><div class="oferta-doc-name">Cédula Representante Legal</div>
+              <div class="oferta-doc-sub">El mismo que aparece en el RUP vigente</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">📝</span>
+              <div><div class="oferta-doc-name">Antecedentes Disciplinarios</div>
+              <div class="oferta-doc-sub">procuraduria.gov.co</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">📝</span>
+              <div><div class="oferta-doc-name">Antecedentes Fiscales</div>
+              <div class="oferta-doc-sub">contraloria.gov.co</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">📝</span>
+              <div><div class="oferta-doc-name">Antecedentes Penales</div>
+              <div class="oferta-doc-sub">policia.gov.co · Del representante legal</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">✅</span>
+              <div><div class="oferta-doc-name">Paz y Salvos + Planilla PILA</div>
+              <div class="oferta-doc-sub">SENA · ICBF · Caja · Máx. 30 días</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">🔒</span>
+              <div><div class="oferta-doc-name">Garantía de Seriedad</div>
+              <div class="oferta-doc-sub">NO es subsanable — línea roja</div></div></div>
+            <div class="oferta-doc-item user"><span class="oferta-doc-icon">📜</span>
+              <div><div class="oferta-doc-name">Certificados de Experiencia</div>
+              <div class="oferta-doc-sub">Uno por cada contrato del formulario</div></div></div>
+          </div>
+        </div>
       </div>
     </div><!-- /page-oferta -->
 

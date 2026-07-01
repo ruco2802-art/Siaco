@@ -1,4 +1,4 @@
-FORMULARIO 1 – PROPUESTA ECONÓMICA
+FORMULARIO 1 – PROPUESTA ECONÓMICA (OFERTA DE PRECIO)
 Proceso No.: {codigo_proceso}
 Entidad contratante: {nombre_entidad}
 Proponente: {razon_social}   NIT: {nit}
@@ -6,35 +6,54 @@ Fecha: {fecha}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ÍTEMS DE LA PROPUESTA ECONÓMICA
+SECCIÓN A — COSTOS DIRECTOS
 
+  No.   Descripción del ítem           Und    Cantidad      Precio unitario      Total
+  ─────────────────────────────────────────────────────────────────────────────────────
 {tabla_items}
+  ─────────────────────────────────────────────────────────────────────────────────────
+  SUBTOTAL COSTOS DIRECTOS:                                             {subtotal_directos}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-RESUMEN DE COSTOS
+SECCIÓN B — ADMINISTRACIÓN, IMPREVISTOS Y UTILIDAD (AIU)
+(Porcentajes calculados sobre el subtotal de costos directos)
 
-SUBTOTAL COSTOS DIRECTOS:                          $ {subtotal_directos}
-A. ADMINISTRACIÓN ({admin_pct}%):                  $ {valor_admin}
-I. IMPREVISTOS ({imprev_pct}%):                    $ {valor_imprev}
-U. UTILIDAD ({util_pct}%):                         $ {valor_util}
-SUBTOTAL AIU:                                      $ {subtotal_aiu}
-VALOR TOTAL OFERTA (sin IVA):                      $ {valor_total}
-IVA (si aplica 0%):                                $ {valor_iva}
-VALOR TOTAL DEFINITIVO DE LA OFERTA:               $ {valor_total_definitivo}
+  A. Administración     {admin_pct}%  x  Costos Directos  =  {valor_admin}
+  I. Imprevistos        {imprev_pct}%  x  Costos Directos  =  {valor_imprev}
+  U. Utilidad           {util_pct}%  x  Costos Directos  =  {valor_util}
+                                                           ────────────────────
+  SUBTOTAL AIU:                                               {subtotal_aiu}
 
-VALOR EN LETRAS:
-{valor_letras}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SECCIÓN C — VALOR TOTAL DE LA OFERTA
+
+  Subtotal costos directos (A):                     {subtotal_directos}
+  Subtotal AIU (B):                                 {subtotal_aiu}
+                                                   ────────────────────
+  Valor total sin IVA:                              {valor_total}
+  IVA (si aplica):                                  {valor_iva}
+                                                   ────────────────────
+  VALOR TOTAL DEFINITIVO DE LA OFERTA:              {valor_total_definitivo}
+
+  VALOR EN LETRAS: {valor_letras}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DECLARACIÓN
 
-El proponente declara que el valor ofertado incluye todos los costos directos e indirectos necesarios para la correcta ejecución del objeto contractual, así como las obligaciones laborales, prestacionales, tributarias y de cualquier otra naturaleza que se deriven del contrato.
+Yo, {nombre_representante}, identificado con C.C. No. {cedula_representante},
+actuando en calidad de Representante Legal de {razon_social}, declaro bajo la
+gravedad del juramento que los precios unitarios aquí relacionados incluyen
+todos los costos, impuestos, seguros y gastos necesarios para ejecutar el
+objeto contractual, y que el valor total en letras coincide exactamente con
+el valor en números.
 
 Firma:  _______________________________
 {nombre_representante}
 {cargo_representante}   C.C. {cedula_representante}
 Representante Legal — {razon_social}
 
-⚠️ BORRADOR — Revise y complete antes de firmar y cargar en SECOP II
+⚠️ BORRADOR — Verifique que el total en letras coincide exactamente con el
+    valor numérico antes de firmar. Una diferencia es causal de rechazo.

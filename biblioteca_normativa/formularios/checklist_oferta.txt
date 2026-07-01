@@ -1,0 +1,125 @@
+CHECKLIST ANTI-RECHAZO — PAQUETE DE OFERTA
+Proceso No.: {codigo_proceso}
+Entidad contratante: {nombre_entidad}
+Proponente: {razon_social}   NIT: {nit}
+Fecha de verificación: {fecha}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+REGLAS ANTI-RECHAZO CRÍTICAS (verifique ANTES de cargar en SECOP II)
+
+  [ ] El valor de mi oferta es MENOR O IGUAL al presupuesto oficial
+      Si supera el presupuesto oficial: RECHAZO AUTOMÁTICO sin excepción.
+      (Ley 80/1993, art. 30 num. 8; pliegos tipo CCE)
+
+  [ ] El valor en letras coincide EXACTAMENTE con el valor en números
+      Cualquier diferencia entre letras y números: RECHAZO.
+
+  [ ] La garantía de seriedad cubre el valor correcto y vigencia exacta
+      del pliego (habitualmente hasta 3 meses después de adjudicación).
+      Póliza de seriedad NO es subsanable — es línea roja.
+
+  [ ] La carta de presentación está firmada por el representante legal
+      que aparece VIGENTE en el RUP a la fecha de cierre.
+
+  [ ] El RUP NO vence antes de la fecha de cierre del proceso.
+      Si vence antes: causal de rechazo insubsanable.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BLOQUE 1 — DOCUMENTOS GENERADOS POR SIACO
+
+  [ ] 01_Carta_Presentacion.docx
+        Campos [CORCHETES] completados — firmada por representante legal
+        Valor en letras y números revisados y coincidentes
+
+  [ ] 02_Formulario_Economico.docx
+        Ítems y cantidades verificados contra el APU del pliego
+        Porcentajes AIU dentro de los rangos del mercado
+        Total del formulario coincide con el valor de la carta
+
+  [ ] 03_Formulario_Experiencia.docx
+        Contratos relacionados alcanzan el mínimo exigido en el pliego
+        Cada contrato tiene código UNSPSC y número de certificado
+        Certificados adjuntos en folios referenciados
+
+  [ ] 04_Capacidad_Residual.docx
+        K residual calculado es MAYOR O IGUAL al K exigido en el pliego
+        Contratos en ejecución declarados correctamente
+
+  [ ] 05_Paz_Y_Salvos_Instrucciones.docx
+        Paz y salvos obtenidos con menos de 30 días de expedición
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BLOQUE 2 — DOCUMENTOS QUE USTED DEBE APORTAR
+
+  [ ] RUT actualizado
+        Portal: dian.gov.co — Gratuito, descarga inmediata
+
+  [ ] Certificado de Existencia y Representación Legal
+        Cámara de Comercio — expedición máx. 30 días antes del cierre
+        Portal: ccb.org.co o la cámara de su ciudad
+
+  [ ] Cédula del Representante Legal
+        Fotocopia clara de la cédula de quien aparece en el RUP
+
+  [ ] Certificado de Antecedentes Disciplinarios
+        Portal: procuraduria.gov.co — Consulta Antecedentes
+
+  [ ] Certificado de Antecedentes Fiscales (Boletín de Responsables)
+        Portal: contraloria.gov.co — Boletín de Responsables Fiscales
+
+  [ ] Certificado de Antecedentes Penales (Representante Legal)
+        Portal: policia.gov.co — Certificado de Antecedentes Judiciales
+
+  [ ] Paz y salvo SENA
+  [ ] Paz y salvo ICBF
+  [ ] Paz y salvo Caja de Compensación Familiar
+  [ ] Planilla PILA último mes pagado
+
+  [ ] Garantía de Seriedad de la Oferta
+        Aseguradora: solicite póliza de seriedad con los siguientes datos:
+        - Valor: [% del pliego] del presupuesto oficial = $[calcular]
+        - Vigencia: desde cierre hasta [fecha adjudicación + 3 meses]
+        - Tomador: {razon_social} NIT {nit}
+        - Beneficiario: {nombre_entidad}
+        - Ampara: Seriedad de la oferta proceso {codigo_proceso}
+
+  [ ] Certificados de Contratos (experiencia)
+        Uno por cada contrato relacionado en el Formulario de Experiencia
+        Expedidos por la entidad contratante o contratista principal
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NOMBRES DE ARCHIVO PARA CARGA EN SECOP II (sin espacios ni tildes)
+
+  01_Carta_Presentacion.pdf
+  02_RUT.pdf
+  03_Camara_Comercio.pdf
+  04_Cedula_Representante.pdf
+  05_Antecedentes_Disciplinarios.pdf
+  06_Antecedentes_Fiscales.pdf
+  07_Antecedentes_Penales.pdf
+  08_Formulario_Economico.pdf
+  09_Formulario_Experiencia.pdf
+  10_Capacidad_Residual.pdf
+  11_Paz_Salvo_SENA.pdf
+  12_Paz_Salvo_ICBF.pdf
+  13_Paz_Salvo_Caja.pdf
+  14_Planilla_PILA.pdf
+  15_Garantia_Seriedad.pdf
+  16_Certificados_Experiencia.pdf
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INSTRUCCIÓN FINAL
+
+Presente su oferta en SECOP II con MÍNIMO 2 HORAS de anticipación al
+cierre. Si la plataforma presenta errores técnicos, tome captura de
+pantalla como evidencia y comuníquese con la Mesa de Ayuda CCE:
+  Teléfono: (601) 795-6600
+  Correo  : servicioalcliente@colombiacompra.gov.co
+
+⚠️ BORRADOR — Verifique en el pliego si se exigen documentos adicionales
+    específicos del objeto (fichas técnicas, licencias, hojas de vida, etc.)

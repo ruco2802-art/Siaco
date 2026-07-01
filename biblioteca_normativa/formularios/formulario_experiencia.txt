@@ -8,22 +8,34 @@ Fecha: {fecha}
 
 CONTRATOS EJECUTADOS EN EL OBJETO O ACTIVIDAD DEL PROCESO
 
-Nota: Relacione los contratos que acreditan la experiencia requerida en el pliego de condiciones.
-Los valores deben expresarse en SMMLV vigente al momento de la ejecución.
-Adjunte certificado de cada contrato expedido por la entidad contratante.
+Nota: Relacione todos los contratos que acreditan la experiencia exigida
+en el pliego de condiciones. Para cada contrato indique el código UNSPSC
+correspondiente (ver clasificación CCE) y el número del certificado
+expedido por la entidad contratante o contratista principal.
 
 {tabla_experiencia}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+Los certificados de los contratos relacionados se adjuntan como Folios
+[INSERTAR RANGO] de la presente oferta, de conformidad con los pliegos
+tipo CCE y el artículo 2.2.1.1.1.7.4 del Decreto 1082 de 2015.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 DECLARACIÓN
 
-Yo, {nombre_representante}, identificado con C.C. No. {cedula_representante}, actuando en calidad de Representante Legal de {razon_social}, declaro bajo la gravedad del juramento que la información aquí consignada es veraz y que los contratos relacionados fueron efectivamente ejecutados en los porcentajes indicados.
+Yo, {nombre_representante}, identificado con C.C. No. {cedula_representante},
+actuando en calidad de Representante Legal de {razon_social}, declaro bajo la
+gravedad del juramento que la información aquí consignada es veraz y que los
+contratos relacionados fueron efectivamente ejecutados en los porcentajes
+indicados. Los certificados adjuntos son auténticos y provienen de las
+entidades contratantes mencionadas.
 
 Firma:  _______________________________
 {nombre_representante}
 {cargo_representante}   C.C. {cedula_representante}
 Representante Legal — {razon_social}
 
-⚠️ BORRADOR — Revise y complete todos los campos antes de firmar y cargar en SECOP II.
-    Adjunte los certificados de cada contrato relacionado.
+⚠️ BORRADOR — Complete un bloque por cada contrato que acredita la experiencia.
+    Adjunte los certificados originales o con firma digital de cada entidad.

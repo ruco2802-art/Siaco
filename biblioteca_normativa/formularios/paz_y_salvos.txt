@@ -1,0 +1,81 @@
+INSTRUCCIONES PARA OBTENCIÓN DE PAZ Y SALVOS PARAFISCALES
+Proceso No.: {codigo_proceso}
+Entidad contratante: {nombre_entidad}
+Proponente: {razon_social}   NIT: {nit}
+Fecha de elaboración: {fecha}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IMPORTANTE: Los paz y salvos deben tener máximo 30 días de expedición
+a la fecha de cierre del proceso. Tramítelos con anticipación suficiente.
+Fundamento: Ley 789/2002, art. 50; Decreto 1772/1994.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. PAZ Y SALVO SENA
+
+   Fundamento legal: Ley 119/1994; Ley 1429/2010, art. 4
+   Portal           : https://mifondoempresarial.sena.edu.co
+   Cómo obtenerlo   :
+     - Ingrese con usuario y contraseña de la empresa en el portal SENA
+     - Seleccione la opción "Paz y Salvo" o "Certificado de Aportes"
+     - Descargue el PDF con código de verificación QR
+   Tiempo promedio  : Inmediato en línea; hasta 3 días hábiles presencial
+   Costo            : Gratuito
+   NIT SENA         : 899.999.281-1
+
+2. PAZ Y SALVO ICBF
+
+   Fundamento legal: Decreto 1108/1994; Ley 789/2002, art. 17
+   Portal           : https://www.icbf.gov.co/servicios/certificado-paz-y-salvo
+   Cómo obtenerlo   :
+     - Ingrese al portal con NIT de la empresa
+     - Solicite el certificado de paz y salvo en la sección "Aportes"
+     - Si hay inconvenientes, diríjase a la Regional ICBF más cercana
+   Tiempo promedio  : 1 a 3 días hábiles
+   Costo            : Gratuito
+   NIT ICBF         : 899.999.134-5
+
+3. PAZ Y SALVO CAJA DE COMPENSACIÓN FAMILIAR
+
+   Fundamento legal: Ley 21/1982; Decreto 341/1988
+   Cómo obtenerlo   :
+     - Contacte la Caja a la que está afiliada su empresa
+     - Cajas principales: Compensar, Cafam, Colsubsidio, Comfenalco,
+       Comfandi, Cajacopi, Cajamag, Comfamiliar Risaralda, entre otras
+     - Solicite certificado de paz y salvo con su NIT empresarial
+   Tiempo promedio  : 1 a 2 días hábiles
+   Costo            : Gratuito para empresas afiliadas al día
+
+4. PLANILLA PILA — PAGO INTEGRADO DE APORTES (MES ANTERIOR)
+
+   Fundamento legal: Ley 100/1993; Decreto 780/2016
+   Cómo obtenerlo   :
+     - Descargue la planilla del operador PILA que usa su empresa:
+       Aportes en Línea, Mi Planilla, SOI, SIMPLE, ASOPAGOS, Enlace
+     - Debe corresponder al mes inmediatamente anterior al cierre
+     - La planilla incluye: Salud (EPS), Pensión (AFP), ARL,
+       Caja de Compensación, SENA e ICBF de todos los empleados
+   Tiempo promedio  : Descarga inmediata
+   Costo            : Gratuito
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+VERIFICACIÓN ANTES DE PRESENTAR
+
+  [ ] Paz y salvo SENA — expedición: máx. 30 días antes del cierre
+  [ ] Paz y salvo ICBF — expedición: máx. 30 días antes del cierre
+  [ ] Paz y salvo Caja de Compensación — máx. 30 días antes del cierre
+  [ ] Planilla PILA del mes anterior al cierre — verificar que incluye
+      todos los empleados activos durante ese período
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Firma:  _______________________________
+{nombre_representante}
+{cargo_representante}   C.C. {cedula_representante}
+Representante Legal — {razon_social}
+
+⚠️ BORRADOR — Verifique en el pliego si se exigen paz y salvos adicionales
+    o si la Planilla PILA puede reemplazarlos como prueba integrada.
+    Algunos pliegos aceptan únicamente la Planilla PILA integrada.
