@@ -37,3 +37,11 @@ Crea el archivo CLAUDE.md en la raíz del proyecto con el siguiente contenido:
 - NUNCA hardcodear API keys
 - Toda credencial via os.environ.get()
 - .env y config.py en .gitignore
+
+## Skills especializadas
+- Consultar .claude/skills/skill_anti_rechazo.md antes
+  de implementar cualquier lógica del generador de
+  documentos de oferta (routers/generador_oferta.py)
+  y del módulo de observaciones (routers/observaciones.py).
+  Esta skill define la estructura, orden de foliación y
+  constraints de calidad de todos los documentos generados.
