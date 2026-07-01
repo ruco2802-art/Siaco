@@ -60,11 +60,12 @@ _SECOP_TIMEOUT_MSG = (
 )
 
 
-def _fetch_secop(url: str, params: dict) -> list[dict]:
+def _fetch_secop(url: str, params: dict) -> list[dict] | None:
     """Fetch con un solo reintento desde un endpoint SECOP II.
     - timeout=15s por intento.
     - Propaga requests.exceptions.Timeout sin reintentar (el caller lanza 504).
-    - Retorna [] en cualquier otro fallo de red.
+    - Retorna None si SECOP no es alcanzable tras 2 intentos (fallo de red).
+    - Retorna [] si SECOP responde pero sin datos o con formato inesperado.
     """
     for intento in range(2):
         try:
@@ -72,14 +73,16 @@ def _fetch_secop(url: str, params: dict) -> list[dict]:
             parsed = resp.json()
             if isinstance(parsed, list):
                 return [x for x in parsed if isinstance(x, dict)]
-            return []
+            logger.warning("[SECOP] Respuesta no-lista de %s (HTTP %d): %s",
+                           url, resp.status_code, str(parsed)[:300])
+            return []  # SECOP alcanzable pero formato inesperado (ej: SoQL error)
         except requests.exceptions.Timeout:
-            raise  # propagar inmediatamente; el caller decide el HTTP status
+            raise
         except Exception as e:
             logger.warning("[SECOP] Intento %d/%s falló: %s", intento + 1, url, e)
             if intento == 0:
                 time.sleep(2)
-    return []
+    return None  # No alcanzable tras 2 intentos
 
 
 def _fusionar(lista1: list[dict], lista2: list[dict]) -> list[dict]:
@@ -134,8 +137,8 @@ def buscar_contratos(
         "$order": "fecha_de_publicacion DESC",
     }
 
-    fuente1: list[dict] = []
-    fuente2: list[dict] = []
+    fuente1: list[dict] | None = None
+    fuente2: list[dict] | None = None
     t1_ok = True
     t2_ok = True
 
@@ -154,15 +157,19 @@ def buscar_contratos(
     if not t1_ok and not t2_ok:
         raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
 
-    if not fuente1 and not fuente2:
+    # None = SECOP no alcanzable (fallo de red); [] = alcanzable pero sin datos
+    secop_ok = (t1_ok and fuente1 is not None) or (t2_ok and fuente2 is not None)
+    if not secop_ok:
         raise HTTPException(
             status_code=503,
             detail="No se pudo conectar con SECOP II. Intente en unos segundos.",
         )
 
-    lics_raw = _fusionar(fuente1, fuente2)
+    f1 = fuente1 or []
+    f2 = fuente2 or []
+    lics_raw = _fusionar(f1, f2)
     logger.info("[CONTRATOS] fuente1=%d fuente2=%d fusionados=%d",
-                len(fuente1), len(fuente2), len(lics_raw))
+                len(f1), len(f2), len(lics_raw))
 
     # ── Hard filters ──────────────────────────────────────────────────────
     now = datetime.now()
@@ -467,7 +474,7 @@ def busqueda_avanzada(
         if departamento:
             clausulas.append(f"departamento_entidad like '%{_safe(departamento.strip())}%'")
         if modalidad:
-            clausulas.append(f"modalidad_de_contratacion = '{_safe(modalidad.strip())}'")
+            clausulas.append(f"upper(modalidad_de_contratacion) like upper('%{_safe(modalidad.strip())}%')")
         if valor_min is not None:
             clausulas.append(f"precio_base >= {int(valor_min)}")
         if valor_max is not None:
@@ -501,8 +508,8 @@ def busqueda_avanzada(
     # Solo devolvemos 504 si AMBAS fuentes fallan o hacen timeout.
     logger.info("[BUSQ-AVZ] $where completo: %s", where)
 
-    fuente1: list[dict] = []
-    fuente2: list[dict] = []
+    fuente1: list[dict] | None = None
+    fuente2: list[dict] | None = None
     timeout1 = False
     timeout2 = False
 
@@ -523,15 +530,19 @@ def busqueda_avanzada(
     if timeout1 and timeout2:
         raise HTTPException(status_code=504, detail=_SECOP_TIMEOUT_MSG)
 
-    if not fuente1 and not fuente2 and not busqueda_exacta:
+    # None = SECOP no alcanzable (fallo de red); [] = alcanzable pero sin coincidencias
+    secop_ok = (not timeout1 and fuente1 is not None) or (not timeout2 and fuente2 is not None)
+    if not secop_ok:
         raise HTTPException(
             status_code=503,
             detail="No se pudo conectar con SECOP II. Intente en unos segundos.",
         )
 
-    resultados = _fusionar(fuente1, fuente2)
+    f1 = fuente1 or []
+    f2 = fuente2 or []
+    resultados = _fusionar(f1, f2)
     logger.info("[BUSQ-AVZ] fuente1=%d fuente2=%d fusionados=%d",
-                len(fuente1), len(fuente2), len(resultados))
+                len(f1), len(f2), len(resultados))
 
     # Advertencia si búsqueda exacta y proceso ya está cerrado
     advertencia: Optional[str] = None
@@ -583,8 +594,8 @@ def busqueda_avanzada(
         "advertencia":     advertencia,
         "busqueda_exacta": busqueda_exacta,
         "fuentes": {
-            "endpoint_1": len(fuente1),
-            "endpoint_2": len(fuente2),
+            "endpoint_1": len(f1),
+            "endpoint_2": len(f2),
             "total_fusionados": len(resultados),
         },
     }
