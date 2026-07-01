@@ -1426,6 +1426,11 @@ async function ejecutarBusquedaAvanzada() {
       : '';
     stEl.innerHTML = aviso;
 
+    if (_contratos.length === 0 && data.sugerencia) {
+      stEl.innerHTML = aviso + alertHtml('info',
+        `<strong>Sin resultados.</strong> ${data.sugerencia}`);
+    }
+
     renderTablaAvanzada(_contratos, data.busqueda_exacta);
     resEl.style.display = '';
 
@@ -1436,8 +1441,11 @@ async function ejecutarBusquedaAvanzada() {
 }
 
 function renderTablaAvanzada(lista, exacta) {
-  txt('busq-count', `${lista.length} resultado${lista.length !== 1 ? 's' : ''} — búsqueda avanzada`);
+  txt('busq-count', lista.length
+    ? `${lista.length} resultado${lista.length !== 1 ? 's' : ''} — búsqueda avanzada`
+    : '0 resultados — búsqueda avanzada');
   const tbody = document.getElementById('tabla-body');
+  if (!lista.length) { tbody.innerHTML = ''; return; }
   tbody.innerHTML = lista.map((c, i) => {
     const nombre  = (c.nombre_del_procedimiento || 'Sin nombre').substring(0, 65);
     const entidad = (c.entidad || '—').substring(0, 32);

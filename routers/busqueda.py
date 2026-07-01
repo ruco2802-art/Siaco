@@ -588,10 +588,28 @@ def busqueda_avanzada(
             "_busqueda_avanzada": True,
         })
 
+    sugerencia: Optional[str] = None
+    if not resultados and not busqueda_exacta:
+        filtros_activos = len(clausulas)
+        if filtros_activos >= 3:
+            sugerencia = (
+                "No se encontraron contratos con esa combinación de filtros. "
+                "Intenta con menos filtros: por ejemplo, solo departamento + palabra clave, "
+                "o cambia la modalidad a 'Licitación' para ampliar la búsqueda. "
+                "En SECOP II los nombres de procesos varían; prueba sinónimos como "
+                "'climatizacion', 'refrigeracion' o 'adecuacion' (sin tilde)."
+            )
+        else:
+            sugerencia = (
+                "No se encontraron contratos con esos criterios en SECOP II. "
+                "Prueba ampliar el rango de fechas o usar palabras más generales."
+            )
+
     return {
         "contratos":       resultados,
         "total":           len(resultados),
         "advertencia":     advertencia,
+        "sugerencia":      sugerencia,
         "busqueda_exacta": busqueda_exacta,
         "fuentes": {
             "endpoint_1": len(f1),
