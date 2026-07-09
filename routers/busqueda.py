@@ -99,6 +99,39 @@ def _fusionar(lista1: list[dict], lista2: list[dict]) -> list[dict]:
     return resultado
 
 
+# ── GET /api/secop-health ──────────────────────────────────────────────────────
+@router.get("/secop-health")
+def secop_health():
+    """Diagnóstico de conectividad con SECOP II desde el servidor. Sin auth requerida."""
+    import socket
+    result = {}
+
+    # DNS resolution
+    try:
+        ip = socket.gethostbyname("www.datos.gov.co")
+        result["dns"] = {"ok": True, "ip": ip}
+    except Exception as e:
+        result["dns"] = {"ok": False, "error": str(e)}
+
+    # HTTP test contra p6dx-8zbt
+    for label, url in [("p6dx8zbt", SECOP_URL), ("rpmrutcd", SECOP_URL_2)]:
+        t0 = time.time()
+        try:
+            r = requests.get(url, params={"$limit": "1"}, timeout=10)
+            result[label] = {
+                "ok": r.status_code == 200,
+                "status": r.status_code,
+                "ms": round((time.time() - t0) * 1000),
+                "body_snippet": r.text[:200],
+            }
+        except requests.exceptions.Timeout:
+            result[label] = {"ok": False, "error": "timeout", "ms": round((time.time() - t0) * 1000)}
+        except Exception as e:
+            result[label] = {"ok": False, "error": f"{type(e).__name__}: {e}", "ms": round((time.time() - t0) * 1000)}
+
+    return result
+
+
 def _keywords_where(keywords: str) -> str:
     """
     SoQL case-insensitive por palabras clave usando upper() LIKE.
