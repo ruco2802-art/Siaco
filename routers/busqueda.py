@@ -28,6 +28,12 @@ FASES_EXCLUIDAS = [
 SECOP_URL   = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
 SECOP_URL_2 = "https://www.datos.gov.co/resource/rpmr-utcd.json"
 
+# App token de Socrata — levanta bloqueos de IP de hosting (Railway, Heroku, etc.)
+# Registrar en https://www.datos.gov.co/profile/app_tokens
+# Agregar en Railway: Settings → Variables → SOCRATA_APP_TOKEN=xxxxx
+_SOCRATA_TOKEN = os.getenv("SOCRATA_APP_TOKEN", "")
+_SECOP_HEADERS = {"X-App-Token": _SOCRATA_TOKEN} if _SOCRATA_TOKEN else {}
+
 
 def _parse_dt(valor: str) -> Optional[datetime]:
     if not valor:
@@ -69,7 +75,10 @@ def _fetch_secop(url: str, params: dict) -> list[dict] | None:
     """
     for intento in range(2):
         try:
-            resp   = requests.get(url, params=params, timeout=15)
+            resp   = requests.get(url, params=params, timeout=15, headers=_SECOP_HEADERS)
+            if resp.status_code == 403:
+                logger.error("[SECOP] 403 Forbidden desde %s — IP bloqueada por datos.gov.co", url)
+                return None  # bloqueo de IP → tratar como no alcanzable
             parsed = resp.json()
             if isinstance(parsed, list):
                 return [x for x in parsed if isinstance(x, dict)]
@@ -113,16 +122,19 @@ def secop_health():
     except Exception as e:
         result["dns"] = {"ok": False, "error": str(e)}
 
-    # HTTP test contra p6dx-8zbt
+    result["app_token_configured"] = bool(_SOCRATA_TOKEN)
+
+    # HTTP test contra ambos datasets
     for label, url in [("p6dx8zbt", SECOP_URL), ("rpmrutcd", SECOP_URL_2)]:
         t0 = time.time()
         try:
-            r = requests.get(url, params={"$limit": "1"}, timeout=10)
+            r = requests.get(url, params={"$limit": "1"}, timeout=10, headers=_SECOP_HEADERS)
             result[label] = {
                 "ok": r.status_code == 200,
                 "status": r.status_code,
                 "ms": round((time.time() - t0) * 1000),
                 "body_snippet": r.text[:200],
+                "blocked_403": r.status_code == 403,
             }
         except requests.exceptions.Timeout:
             result[label] = {"ok": False, "error": "timeout", "ms": round((time.time() - t0) * 1000)}
