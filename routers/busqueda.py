@@ -372,6 +372,133 @@ def filtrar_hibrido(body: FiltrarBody, authorization: str = Header(None)):
     }
 
 
+# ── POST /api/contratos/score ─────────────────────
+# El browser trae los contratos desde datos.gov.co (evita 403 a IPs de Railway).
+# Este endpoint aplica filtros duros + scoring híbrido con perfil del cliente.
+class ScoreBody(BaseModel):
+    contratos: list
+    valor_minimo: float = 5_000_000
+
+
+@router.post("/contratos/score")
+def score_contratos(body: ScoreBody, authorization: str = Header(None)):
+    """Filtra y puntúa contratos traídos por el browser. Misma respuesta que GET /api/contratos."""
+    from routers.auth import require_auth
+    from routers.perfil import _load_perfil, _cliente_id_from_session
+    from analizador import busqueda_hibrida_triple
+
+    sesion = require_auth(authorization)
+    cid = _cliente_id_from_session(sesion)
+    perfil = _load_perfil(cid)
+
+    now = datetime.now()
+    seen: set[str] = set()
+    contratos_pre: list[dict] = []
+    descartados: list[dict] = []
+
+    for lic in (body.contratos or []):
+        if not isinstance(lic, dict):
+            continue
+        cod = lic.get("id_del_proceso") or lic.get("referencia_del_proceso", "")
+        if not cod or cod in seen:
+            continue
+        seen.add(cod)
+
+        fase = str(lic.get("fase", "") or lic.get("estado_del_procedimiento", "")).lower().strip()
+        if any(exc in fase for exc in FASES_EXCLUIDAS):
+            descartados.append(_fmt_descartado(lic, f"Fase cerrada: {fase or 'sin fase'}"))
+            continue
+
+        dt_manif = _parse_dt(lic.get("fecha_limite_manifestacion_interes", ""))
+        if dt_manif and dt_manif < now + timedelta(hours=24):
+            horas = max(0, int((dt_manif - now).total_seconds() / 3600))
+            descartados.append(_fmt_descartado(lic, f"Manifestacion de interes cierra en {horas}h"))
+            continue
+
+        dt_oferta = (_parse_dt(lic.get("fecha_limite_recepcion_ofertas", ""))
+                     or _parse_dt(lic.get("fecha_de_recepcion_de", "")))
+        if dt_oferta and dt_oferta < now + timedelta(hours=48):
+            horas = max(0, int((dt_oferta - now).total_seconds() / 3600))
+            descartados.append(_fmt_descartado(lic, f"Cierre de ofertas en {horas}h"))
+            continue
+
+        try:
+            valor = float(lic.get("precio_base", 0) or 0)
+        except Exception:
+            valor = 0
+        if valor < body.valor_minimo:
+            descartados.append(_fmt_descartado(lic, f"Valor COP {valor:,.0f} menor al minimo"))
+            continue
+
+        dias_cierre = None
+        if dt_oferta:
+            dias_cierre = max(0, int((dt_oferta - now).total_seconds() / 86400))
+
+        contratos_pre.append({
+            **lic,
+            "_score": 0,
+            "_score_hibrido": 0.0,
+            "_motivo": "",
+            "_urgente": dias_cierre is not None and dias_cierre <= 3,
+            "_dias_cierre": dias_cierre,
+        })
+
+    modo_busqueda = "keywords_only"
+    contratos_relevantes = contratos_pre
+
+    if perfil:
+        try:
+            exp = perfil.get("experiencia", {}) or {}
+            codigos_unspsc = exp.get("codigos_unspsc", "").strip()
+            objeto_similar = exp.get("objeto_similar", "").strip()
+            sector = perfil.get("sector", "").strip()
+            query = objeto_similar or sector
+
+            if query or codigos_unspsc:
+                perfil_analisis = {
+                    "codigos_unspsc": codigos_unspsc,
+                    "objeto_similar": objeto_similar,
+                }
+                relevantes = busqueda_hibrida_triple(query, perfil_analisis, contratos_pre)
+                ids_rel = {
+                    r.get("id_del_proceso") or r.get("referencia_del_proceso", "")
+                    for r in relevantes
+                }
+                for c in contratos_pre:
+                    ckey = c.get("id_del_proceso") or c.get("referencia_del_proceso", "")
+                    if ckey not in ids_rel:
+                        descartados.append(_fmt_descartado(c, "Baja relevancia para el perfil"))
+
+                contratos_relevantes = []
+                for r in relevantes:
+                    sh = r.get("score_hibrido", 0)
+                    contratos_relevantes.append({
+                        **r,
+                        "_score": int(round(sh * 100)),
+                        "_motivo": (
+                            f"UNSPSC:{int(r.get('score_unspsc', 0)*100)} "
+                            f"KW:{int(r.get('score_keywords', 0)*100)} "
+                            f"Sem:{int(r.get('score_semantico', 0)*100)}"
+                        ),
+                    })
+                modo_busqueda = "hibrido"
+        except Exception:
+            pass
+
+    return {
+        "contratos_relevantes":  contratos_relevantes,
+        "contratos_descartados": descartados,
+        "total_analizados":      len(body.contratos or []),
+        "total_relevantes":      len(contratos_relevantes),
+        "total_descartados":     len(descartados),
+        "modo_busqueda":         modo_busqueda,
+        "contratos":             contratos_relevantes,
+        "descartados":           descartados[:5],
+        "total":                 len(contratos_relevantes),
+        "total_raw":             len(body.contratos or []),
+    }
+
+
 # ── POST /api/contratos/analizar ──────────────────
 class AnalizarBody(BaseModel):
     contratos: list
@@ -500,9 +627,10 @@ def busqueda_avanzada(
     fecha_hasta:    str            = Query(""),
     keywords:       str            = Query(""),
     unspsc:         str            = Query(""),
+    params_only:    bool           = Query(False),
     authorization:  str            = Header(None),
 ):
-    """Búsqueda avanzada en SECOP II con filtros combinables. Código de proceso = búsqueda exacta."""
+    """Búsqueda avanzada en SECOP II. Con ?params_only=true devuelve SoQL para fetch desde el browser."""
     from routers.auth import require_auth
     require_auth(authorization)
 
@@ -548,9 +676,22 @@ def busqueda_avanzada(
         "$order": "fecha_de_publicacion DESC",
     }
 
-    # Cada fuente se intenta de forma independiente: un timeout en la primera
-    # NO impide que la segunda responda (Railway puede enrutar a distinto CDN).
-    # Solo devolvemos 504 si AMBAS fuentes fallan o hacen timeout.
+    # El browser puede hacer el fetch directamente (datos.gov.co bloquea IPs de Railway).
+    if params_only:
+        return {
+            "secop_url":      SECOP_URL,
+            "soql_params":    params_av,
+            "busqueda_exacta": busqueda_exacta,
+            "fases_excluidas": FASES_EXCLUIDAS,
+            "sugerencia_base": (
+                "No se encontraron contratos con esa combinación de filtros. "
+                "Intenta con menos filtros o palabras más generales."
+                if len(clausulas) >= 3 else
+                "No se encontraron contratos en SECOP II. "
+                "Prueba ampliar el rango de fechas o usar palabras más generales."
+            ),
+        }
+
     logger.info("[BUSQ-AVZ] $where completo: %s", where)
 
     fuente1: list[dict] | None = None
