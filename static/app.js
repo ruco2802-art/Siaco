@@ -400,21 +400,44 @@ async function buscarContratos() {
   const btn  = document.getElementById('btn-buscar');
   const stEl = document.getElementById('busq-status');
   btn.disabled = true; btn.textContent = 'Buscando...';
-  stEl.innerHTML = alertHtml('info', 'Consultando SECOP II... (puede tardar hasta 30 seg)');
+  stEl.innerHTML = alertHtml('info', 'Consultando SECOP II...');
   document.getElementById('busq-results').style.display = 'none';
   const bannerEl = document.getElementById('busq-banner');
   if (bannerEl) bannerEl.style.display = 'none';
 
   try {
-    const qs = new URLSearchParams({
-      fecha_desde:    val('b-fecha') || '2026-01-01',
-      valor_minimo:   val('b-valor') || '5000000',
-      max_resultados: val('b-max')   || '50',
-      departamento:   val('b-depto') || '',
-    });
-    const data = await apiJson(`/api/contratos?${qs}`);
+    const fechaDesde    = val('b-fecha') || '2026-01-01';
+    const valorMinimo   = parseFloat(val('b-valor') || '5000000');
+    const maxResultados = Math.min(parseInt(val('b-max') || '50', 10), 200);
+    const departamento  = val('b-depto') || '';
 
-    // Support both new and legacy response shapes
+    // Fetch desde el browser (datos.gov.co bloquea IPs de Railway con 403)
+    const secopQs = new URLSearchParams({
+      '$where': `fecha_de_publicacion > '${fechaDesde}T00:00:00'` +
+                (departamento ? ` AND departamento_entidad = '${departamento}'` : ''),
+      '$limit': String(maxResultados),
+      '$order': 'fecha_de_publicacion DESC',
+    });
+    let rawContratos;
+    try {
+      const secopResp = await fetch(
+        `https://www.datos.gov.co/resource/p6dx-8zbt.json?${secopQs}`
+      );
+      if (!secopResp.ok)
+        throw new Error(`SECOP II respondió HTTP ${secopResp.status} — intenta de nuevo en unos minutos`);
+      rawContratos = await secopResp.json();
+      if (!Array.isArray(rawContratos))
+        throw new Error('SECOP II retornó formato inesperado');
+    } catch (secopErr) {
+      throw new Error(`No se pudo consultar SECOP II: ${secopErr.message}`);
+    }
+
+    // Backend aplica filtros duros + scoring híbrido con perfil del cliente
+    const data = await apiJson('/api/contratos/score', {
+      method: 'POST',
+      body: JSON.stringify({ contratos: rawContratos, valor_minimo: valorMinimo }),
+    });
+
     _contratos   = data.contratos_relevantes || data.contratos   || [];
     _descartados = data.contratos_descartados || data.descartados || [];
 
@@ -426,7 +449,6 @@ async function buscarContratos() {
     document.getElementById('btn-analizar-ia').disabled = !_contratos.length;
 
     if (!_contratos.length && _descartados.length) {
-      // Zero relevant: auto-expand discarded and show guidance
       const discSec = document.getElementById('disc-section');
       if (discSec) discSec.setAttribute('open', '');
       stEl.innerHTML = alertHtml('warn',
@@ -1417,23 +1439,54 @@ async function ejecutarBusquedaAvanzada() {
   if (details) details.open = false;
 
   try {
-    const data = await apiJson(`/api/contratos/busqueda-avanzada?${params.toString()}`);
-    _contratos   = data.contratos || [];
-    _descartados = [];
+    // Backend construye y sanea el SoQL; browser hace el fetch (Railway bloqueado)
+    params.append('params_only', 'true');
+    const meta = await apiJson(`/api/contratos/busqueda-avanzada?${params.toString()}`);
 
-    const aviso = data.advertencia
-      ? alertHtml('warn', `⚠ ${data.advertencia}`)
-      : '';
-    stEl.innerHTML = aviso;
-
-    if (_contratos.length === 0 && data.sugerencia) {
-      stEl.innerHTML = aviso + alertHtml('info',
-        `<strong>Sin resultados.</strong> ${data.sugerencia}`);
+    let rawContratos;
+    try {
+      const secopQs  = new URLSearchParams(meta.soql_params);
+      const secopResp = await fetch(`${meta.secop_url}?${secopQs}`);
+      if (!secopResp.ok)
+        throw new Error(`SECOP II respondió HTTP ${secopResp.status}`);
+      rawContratos = await secopResp.json();
+      if (!Array.isArray(rawContratos))
+        throw new Error('SECOP II retornó formato inesperado');
+    } catch (secopErr) {
+      throw new Error(`No se pudo consultar SECOP II: ${secopErr.message}`);
     }
 
-    renderTablaAvanzada(_contratos, data.busqueda_exacta);
-    resEl.style.display = '';
+    // Enriquecer client-side: días al cierre, urgente, advertencia de fase cerrada
+    const fasesExcluidas = meta.fases_excluidas || [];
+    const now = Date.now();
+    _contratos = rawContratos.map(c => {
+      const fechaStr  = c.fecha_limite_recepcion_ofertas || c.fecha_de_recepcion_de || '';
+      const dt        = fechaStr ? new Date(fechaStr) : null;
+      const diasCierre = dt ? Math.max(0, Math.floor((dt - now) / 86400000)) : null;
+      return {
+        ...c,
+        _score: 0, _score_hibrido: 0.0, _motivo: 'Búsqueda avanzada',
+        _urgente: diasCierre !== null && diasCierre <= 3,
+        _dias_cierre: diasCierre,
+        _busqueda_avanzada: true,
+      };
+    });
+    _descartados = [];
 
+    let aviso = '';
+    if (meta.busqueda_exacta && _contratos.length) {
+      const fase = (_contratos[0].fase || _contratos[0].estado_del_procedimiento || '').toLowerCase();
+      if (fasesExcluidas.some(f => fase.includes(f)))
+        aviso = alertHtml('warn', '⚠ Este proceso ya está cerrado pero puedes revisar su información.');
+    }
+    stEl.innerHTML = aviso;
+
+    if (!_contratos.length)
+      stEl.innerHTML = aviso + alertHtml('info',
+        `<strong>Sin resultados.</strong> ${meta.sugerencia_base}`);
+
+    renderTablaAvanzada(_contratos, meta.busqueda_exacta);
+    resEl.style.display = '';
     document.getElementById('btn-analizar-ia').disabled = !_contratos.length;
   } catch (err) {
     stEl.innerHTML = alertHtml('error', err.message);
