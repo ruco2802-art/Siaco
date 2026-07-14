@@ -806,7 +806,6 @@ async function analizarPliego() {
   const stEl = document.getElementById('audit-status');
   const resEl= document.getElementById('audit-results');
 
-  // Validar que hay pliego subido
   const pliegoFile = document.getElementById('pliego-file').files[0];
   if (!pliegoFile) {
     stEl.innerHTML = alertHtml('error', '⚠ Debes subir el Pliego de Condiciones antes de analizar.');
@@ -823,9 +822,8 @@ async function analizarPliego() {
     'Buscando secciones relevantes...',
     'Analizando con IA (puede tardar 40-90 seg)...',
   ];
-  const DELAYS = [0, 3000, 8000, 16000]; // ms after start
+  const DELAYS = [0, 3000, 8000, 16000];
   const timers = [];
-
   function showStep(active) {
     const rows = STEPS.map((s, i) => {
       if (i < active)  return `<span class="prog-step prog-done">✓ ${s}</span>`;
@@ -834,11 +832,7 @@ async function analizarPliego() {
     }).join('');
     stEl.innerHTML = `<div class="progress-steps">${rows}</div>`;
   }
-
-  DELAYS.forEach((d, i) => {
-    timers.push(setTimeout(() => showStep(i), d));
-  });
-
+  DELAYS.forEach((d, i) => timers.push(setTimeout(() => showStep(i), d)));
   const clearTimers = () => timers.forEach(t => clearTimeout(t));
 
   const fd = new FormData();
@@ -849,7 +843,6 @@ async function analizarPliego() {
   fd.append('objeto',     val('a-objeto'));
   fd.append('valor',      val('a-valor') || '450000000');
   fd.append('pliego', pliegoFile);
-
   const estudiosFile = document.getElementById('estudios-file')?.files[0];
   const anexoFile    = document.getElementById('anexo-file')?.files[0];
   const adendaFile   = document.getElementById('adenda-file')?.files[0];
@@ -858,24 +851,65 @@ async function analizarPliego() {
   if (adendaFile)   fd.append('adenda',         adendaFile);
 
   try {
-    const data = await apiJson('/api/auditoria/analizar', { method: 'POST', body: fd });
+    // 1. Lanzar análisis (responde en <2s con job_id)
+    const launch = await apiJson('/api/auditoria/analizar', { method: 'POST', body: fd });
+    const jobId = launch.job_id;
+    if (!jobId) throw new Error('El servidor no devolvió un job_id. Intenta de nuevo.');
+
+    // 2. Polling: máx 80 intentos × 3s = 4 minutos
+    const MAX_POLLS = 80;
+    let polls = 0;
+    while (polls < MAX_POLLS) {
+      await new Promise(r => setTimeout(r, 3000));
+      polls++;
+
+      let job;
+      try {
+        job = await apiJson(`/api/auditoria/estado/${jobId}`);
+      } catch (pollErr) {
+        // Error de red transitorio — seguir intentando
+        continue;
+      }
+
+      if (job.estado === 'completo') {
+        clearTimers();
+        const data = job.datos;
+        const ragBadge = data.rag_activado
+          ? `<span class="prog-rag-badge">RAG activado — ${data.pliego_chars?.toLocaleString()} chars indexados → ${data.contexto_chars?.toLocaleString()} chars enviados</span>`
+          : '';
+        const allDone = STEPS.map(s => `<span class="prog-step prog-done">✓ ${s}</span>`).join('');
+        stEl.innerHTML = `<div class="progress-steps">${allDone}${ragBadge}</div>`;
+        resEl.style.display = '';
+        resEl.innerHTML = renderAuditResult(data);
+        resEl.scrollIntoView({ behavior: 'smooth' });
+        window._lastAnalisis = data;
+        sessionStorage.setItem('siaco_pliego_sesion_cid', CLIENTE_ID);
+        return;
+      }
+
+      if (job.estado === 'error') {
+        clearTimers();
+        stEl.innerHTML = alertHtml('error',
+          `Error en el análisis: ${job.mensaje || 'Error desconocido. Intenta de nuevo.'}`
+        );
+        return;
+      }
+      // estado === 'procesando' → continuar polling
+    }
+
+    // Timeout tras 4 minutos
     clearTimers();
-    const ragBadge = data.rag_activado
-      ? `<span class="prog-rag-badge">RAG activado — ${data.pliego_chars?.toLocaleString()} chars indexados → ${data.contexto_chars?.toLocaleString()} chars enviados</span>`
-      : '';
-    const allDone = STEPS.map(s => `<span class="prog-step prog-done">✓ ${s}</span>`).join('');
-    stEl.innerHTML = `<div class="progress-steps">${allDone}${ragBadge}</div>`;
-    resEl.style.display = '';
-    resEl.innerHTML = renderAuditResult(data);
-    resEl.scrollIntoView({ behavior: 'smooth' });
-    window._lastAnalisis = data;
-    // Registra que el análisis completó y qué cliente_id fue usado,
-    // para que observaciones y otras pestañas usen exactamente el mismo key de sesión.
-    sessionStorage.setItem('siaco_pliego_sesion_cid', CLIENTE_ID);
+    stEl.innerHTML = alertHtml('error',
+      'El análisis tardó más de 4 minutos. Esto puede ocurrir con pliegos muy extensos. ' +
+      'Intenta de nuevo — si el error persiste, prueba con un pliego más corto o sin documentos adicionales.'
+    );
   } catch (err) {
     clearTimers();
     stEl.innerHTML = alertHtml('error', err.message);
-  } finally { btn.disabled = false; btn.textContent = '🔍 Analizar con IA'; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 Analizar con IA';
+  }
 }
 
 function renderAuditResult(r) {
