@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """Router de auditoría de pliegos — SIACO v3.0"""
 import re
+import json
+import threading
+import uuid
 
-from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
+import anthropic
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, UploadFile, File, Form
 
 import os
-import anthropic
 import logging
 
 API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -26,6 +29,40 @@ from routers.utils import parsear_json_claude
 logger = logging.getLogger("siaco")
 
 router = APIRouter(tags=["auditoria"])
+
+
+# ── Almacén de jobs (igual que observaciones.py) ──────────────────────────────
+
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
+
+
+def _guardar_job(job_id: str, data: dict) -> None:
+    from pathlib import Path
+    with _jobs_lock:
+        _jobs[job_id] = data
+    try:
+        p = Path(f"/tmp/siaco/jobs/audit_{job_id}.json")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _leer_job(job_id: str) -> dict | None:
+    from pathlib import Path
+    with _jobs_lock:
+        if job_id in _jobs:
+            return dict(_jobs[job_id])
+    try:
+        p = Path(f"/tmp/siaco/jobs/audit_{job_id}.json")
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
 
 
 def _cliente_id(sesion: dict) -> str:
@@ -151,6 +188,56 @@ def _enriquecer_resultado(resultado: dict) -> dict:
     return resultado
 
 
+# ── Background: análisis IA (corre fuera del timeout de Railway) ──────────────
+
+def _analizar_pliego_bg(
+    job_id: str,
+    licitacion: dict,
+    perfil_analisis: dict,
+    contexto_docs: str,
+    modalidad: str,
+    sector: str,
+    cid: str,
+    rag_activado: bool,
+    pliego_chars: int,
+    contexto_chars: int,
+) -> None:
+    """
+    Llama a analizar_cliente_vs_licitacion_paralelo y guarda el resultado en el
+    almacén de jobs. Se ejecuta en el thread pool de FastAPI BackgroundTasks,
+    fuera del ciclo de vida HTTP, por lo que el timeout de Railway no aplica.
+    """
+    try:
+        resultado = analizar_cliente_vs_licitacion_paralelo(
+            licitacion=licitacion,
+            cliente=perfil_analisis,
+            modalidad=modalidad,
+            sector=sector,
+            texto_pliego=contexto_docs,
+            cliente_id=cid,
+        )
+        try:
+            guardar_analisis_historial(cid, resultado, licitacion["id_del_proceso"])
+        except Exception:
+            pass
+        resultado["pliego_chars"]   = pliego_chars
+        resultado["contexto_chars"] = contexto_chars
+        resultado["rag_activado"]   = rag_activado
+        _guardar_job(job_id, {"estado": "completo", "datos": _enriquecer_resultado(resultado)})
+        logger.info("[AUDITORIA] Job %s completado para cliente %s", job_id, cid)
+    except anthropic.APITimeoutError:
+        _guardar_job(job_id, {
+            "estado": "error",
+            "mensaje": (
+                "El análisis tardó demasiado (pliego muy extenso o IA lenta). "
+                "Intenta de nuevo — si el error persiste, usa un pliego más corto."
+            ),
+        })
+    except Exception as exc:
+        logger.error("[AUDITORIA] Error en job %s: %s", job_id, exc)
+        _guardar_job(job_id, {"estado": "error", "mensaje": str(exc)[:300]})
+
+
 # ── POST /api/auditoria/extraer ───────────────────
 @router.post("/auditoria/extraer")
 async def extraer_pliego(
@@ -236,6 +323,7 @@ async def extraer_pliego(
 # ── POST /api/auditoria/analizar ──────────────────
 @router.post("/auditoria/analizar")
 async def analizar_pliego(
+    background_tasks: BackgroundTasks,
     cliente_id:     str        = Form(...),
     modalidad:      str        = Form("infraestructura_obra_publica"),
     sector:         str        = Form("salud"),
@@ -249,7 +337,11 @@ async def analizar_pliego(
     pdf:            UploadFile = File(None),   # backward compat
     authorization:  str        = Header(None),
 ):
-    """Análisis completo de pliego con agentes IA financiero + jurídico RAG."""
+    """
+    Lanza análisis de pliego en background y responde inmediatamente con job_id.
+    El frontend hace polling a GET /api/auditoria/estado/{job_id} cada 3s.
+    Esto evita el 502 de Railway causado por los ~60-120s que toman los agentes IA.
+    """
     from routers.auth import require_auth
     sesion = require_auth(authorization)
 
@@ -278,7 +370,7 @@ async def analizar_pliego(
         "modalidad_seleccion": modalidad,
     }
 
-    # ── Extraer texto del pliego (obligatorio) ────────
+    # ── Extraer texto del pliego (obligatorio, síncrono) ──
     archivo_pliego = pliego or pdf
     texto_pliego = ""
     raw_pliego = b""
@@ -302,7 +394,7 @@ async def analizar_pliego(
             ),
         )
 
-    # Guardar pliego original en Supabase (best-effort: no bloquea el análisis si falla)
+    # Guardar pliego original en Supabase (best-effort)
     if raw_pliego and archivo_pliego and archivo_pliego.filename:
         try:
             from supabase_client import sb_upload
@@ -338,7 +430,7 @@ async def analizar_pliego(
                 if t and t not in (SCANNED_PDF_MARKER, DOC_NOT_SUPPORTED_MARKER):
                     textos_extra.append(f"=== {nombre_doc} ===\n{t[:4000]}")
 
-    # ── Guardar texto completo en sesión para el chat ─
+    # ── Guardar texto en sesión (para chat y observaciones) ─
     from contexto_sesion import guardar_contexto_sesion
     guardar_contexto_sesion(
         cid,
@@ -353,7 +445,7 @@ async def analizar_pliego(
         },
     )
 
-    # ── Combinar y aplicar RAG si es necesario ────────
+    # ── RAG (si el pliego es largo) ───────────────────
     contexto_completo = texto_pliego
     if textos_extra:
         contexto_completo += "\n\n" + "\n\n".join(textos_extra)
@@ -368,31 +460,42 @@ async def analizar_pliego(
     else:
         contexto_docs = contexto_completo
 
-    # ── LOG: verificar que el texto llega a Claude ────
     print(f"\n{'='*60}")
     print(f"[AUDITORIA] Pliego: {len(texto_pliego)} chars | "
           f"Contexto Claude: {len(contexto_docs)} chars | RAG: {rag_activado}")
     print(f"[AUDITORIA] Preview (primeros 200 chars):\n{texto_pliego[:200]}")
     print(f"{'='*60}\n")
 
-    try:
-        resultado = analizar_cliente_vs_licitacion_paralelo(
-            licitacion=licitacion,
-            cliente=perfil_analisis,
-            modalidad=modalidad,
-            sector=sector,
-            texto_pliego=contexto_docs,
-            cliente_id=cid,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en análisis IA: {str(e)[:300]}")
+    # ── Lanzar análisis IA en background ─────────────
+    job_id = uuid.uuid4().hex[:16]
+    _guardar_job(job_id, {"estado": "procesando"})
 
-    try:
-        guardar_analisis_historial(cid, resultado, licitacion["id_del_proceso"])
-    except Exception:
-        pass
+    background_tasks.add_task(
+        _analizar_pliego_bg,
+        job_id,
+        licitacion,
+        perfil_analisis,
+        contexto_docs,
+        modalidad,
+        sector,
+        cid,
+        rag_activado,
+        len(texto_pliego),
+        len(contexto_docs),
+    )
 
-    resultado["pliego_chars"]   = len(texto_pliego)
-    resultado["contexto_chars"] = len(contexto_docs)
-    resultado["rag_activado"]   = rag_activado
-    return _enriquecer_resultado(resultado)
+    logger.info("[AUDITORIA] Job %s lanzado para cliente %s", job_id, cid)
+    return {"job_id": job_id, "estado": "procesando"}
+
+
+# ── GET /api/auditoria/estado/{job_id} ────────────
+@router.get("/auditoria/estado/{job_id}")
+def estado_analisis(job_id: str, authorization: str = Header(None)):
+    """Polling endpoint — devuelve {estado: 'procesando'} o {estado: 'completo', datos: {...}}."""
+    from routers.auth import require_auth
+    require_auth(authorization)
+
+    job = _leer_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job no encontrado o expirado")
+    return job
