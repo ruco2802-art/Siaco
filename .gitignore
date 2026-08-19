@@ -19,8 +19,25 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+.venv_parsers/
 venv/
 env/
+
+# Pipeline
+pipeline/cache/
+.pipeline_cache/
+pipeline/__pycache__/
+pipeline/src/__pycache__/
+
+# Datos de clientes (sensibles — nunca en repo público)
+clientes/
+
+# Datos generados / temporales
+resultados_evaluacion/
+pliegos_evaluacion/
+prospectos_finales.csv
+_respaldos/
+nul
 
 # IDEs
 .vscode/

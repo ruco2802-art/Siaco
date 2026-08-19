@@ -1,0 +1,379 @@
+{
+  "_meta": {
+    "version": "2.1.0",
+    "fecha_actualizacion": "2026-08-18",
+    "descripcion": "Estructura normativa CCE para documentos tipo de infraestructura social. Registra QUÉ indicadores exige cada modalidad, bajo qué condiciones y con qué valores — cuando el CCE los fija. Modelo mixto: a mayor cuantía, mayor discrecionalidad de la entidad.",
+    "modelo_mixto": "Mínima cuantía: CCE fija todos los valores. Menor cuantía: CCE solo fija liquidez; resto los define la entidad. Obra pública (licitación): plantilla pura, todos los valores definidos por la entidad en el pliego.",
+    "nota_precedencia": "VALOR DEL PLIEGO > VALOR DEL CATÁLOGO > 'umbral no disponible'. El catálogo es referencia y piso normativo. La entidad puede exigir umbrales más estrictos que los del CCE (ej. Paicol: liquidez 1,21 cuando el CCE fija 1,2). El evaluador debe tomar el valor del pliego cuando existe.",
+    "nota_operador_inferido": "operador_inferido: true indica que el documento CCE omitió el símbolo relacional en la tabla de mipyme (valores aparecen como '1,1' y '0,70' sin operador). El operador se infiere por lógica financiera estándar y debe ser auditable.",
+    "fuentes": {
+      "obra_publica": {
+        "resolucion": "Resolución CCE 539 de 2025",
+        "documento_base": "CCE-EICP-GI-14",
+        "matriz_2": "DT-Licitacion-Version-2.zip / Matriz 2 - Indicadores financieros y organizacionales.docx",
+        "url_zip": "https://www.colombiacompra.gov.co/wp-content/uploads/2025/09/DT-Licitacion-Version-2.zip",
+        "fecha_vigencia": "2026-02-16",
+        "estado": "confirmado"
+      },
+      "menor_cuantia": {
+        "resolucion": "Resolución CCE 540 de 2025",
+        "matriz_2": "Matriz 2 - Indicadores financieros y organizacionales (DT menor cuantía)",
+        "estado": "confirmado"
+      },
+      "minima_cuantia": {
+        "resolucion": "Resolución CCE 541 de 2025",
+        "matriz_2": "Matriz 2 - Indicadores financieros y organizacionales (DT mínima cuantía)",
+        "estado": "confirmado"
+      }
+    }
+  },
+
+  "_pendiente_deteccion_irregularidades": {
+    "descripcion": "El módulo de observaciones al pliego puede cruzar la estructura obligatoria CCE contra lo que exige el pliego auditado y detectar desviaciones.",
+    "casos_a_detectar": [
+      "Exige un indicador fuera de los obligatorios de la modalidad (indicador no normativo)",
+      "Omite un indicador obligatorio sin justificación documentada",
+      "Exige patrimonio sin cumplirse la condición doble: presupuesto < 4.000 SMMLV o plazo < 24 meses",
+      "Aplica umbrales de no-Mipyme a Mipyme o viceversa (discriminación inversa)",
+      "No distingue Rango 1 / Rango 2 cuando el presupuesto cruza los 4.000 SMMLV (solo obra pública)",
+      "El pliego fija un umbral menos estricto que el mínimo CCE — solo aplica cuando origen_valor es 'definido_por_cce'. Ej: liquidez 1,0 en menor cuantía cuando el CCE fija 1,2 para no-Mipyme"
+    ],
+    "estado": "pendiente_implementacion",
+    "modulo_destino": "routers/observaciones.py — citar estructura_normativa.json como fuente de referencia"
+  },
+
+  "valores_fijos_universales": {
+    "ingresos_operacionales_piso": {
+      "indicador": "Capacidad Organizacional (factor CO)",
+      "valor": 125000,
+      "moneda": "USD",
+      "descripcion": "Si los ingresos operacionales del proponente son menores a USD 125.000, el factor CO se toma como USD 125.000. El umbral específico lo fija la entidad por encima de este piso.",
+      "fuente_numeral": "Documento base CCE-EICP-GI-14, sección 3.9",
+      "confianza": "alta"
+    }
+  },
+
+  "formulas_universales": {
+    "capital_trabajo": {
+      "tipo": "formula",
+      "descripcion": "Capital de Trabajo neto >= Capital de Trabajo Demandado. El CTd lo define la entidad en el pliego o la invitación; la fórmula de cálculo es universal.",
+      "expresion_empresa": "AC - PC",
+      "operador": ">=",
+      "expresion_umbral": "CTd",
+      "variables": [
+        {"nombre": "AC",  "fuente": "perfil", "campo": "financiero.activo_corriente"},
+        {"nombre": "PC",  "fuente": "perfil", "campo": "financiero.pasivo_corriente"},
+        {"nombre": "CTd", "fuente": "pliego", "campo": "capital_trabajo_demandado"}
+      ],
+      "fuente_numeral": "Documento base CCE-EICP-GI-14, sección 3.7",
+      "confianza": "alta"
+    },
+    "factor_k_residual": {
+      "tipo": "formula",
+      "descripcion": "Capacidad residual = 80% del patrimonio líquido menos compromisos vigentes. Aplicable cuando el proceso lo exija.",
+      "expresion_empresa": "0.8 * PL - compromisos",
+      "operador": ">=",
+      "expresion_umbral": "POE",
+      "variables": [
+        {"nombre": "PL",          "fuente": "perfil", "campo": "financiero.patrimonio_neto"},
+        {"nombre": "compromisos", "fuente": "perfil", "campo": "financiero.saldos_contratos_en_ejecucion"},
+        {"nombre": "POE",         "fuente": "pliego", "campo": "presupuesto_oficial"}
+      ],
+      "fuente_numeral": "Decreto 1082 de 2015, Art. 2.2.1.1.1.5.3",
+      "confianza": "alta"
+    }
+  },
+
+  "modalidades": {
+
+    "obra_publica": {
+      "estado": "confirmado",
+      "obligatoriedad": "obligatorio",
+      "nota": "La Matriz 2 de licitación es plantilla pura: no trae valores. Cada entidad los define según su estudio del sector.",
+      "rangos_presupuesto": [
+        {
+          "id": "rango_1",
+          "descripcion": "Rango 1",
+          "desde_smmlv": 0,    "incluye_inferior": false,
+          "hasta_smmlv": 4000, "incluye_superior": false
+        },
+        {
+          "id": "rango_2",
+          "descripcion": "Rango 2",
+          "desde_smmlv": 4000, "incluye_inferior": true,
+          "hasta_smmlv": null
+        }
+      ],
+      "variantes": ["mipyme", "no_mipyme"],
+      "indicadores_obligatorios": [
+        {
+          "id": "indice_liquidez",
+          "nombre": "Índice de liquidez",
+          "formula_calculo": "Activo Corriente / Pasivo Corriente",
+          "operador": ">=",
+          "nota_habilitacion": "Proponente sin pasivos corrientes queda habilitado automáticamente.",
+          "valor": null,
+          "origen_valor": "definido_por_entidad_en_pliego",
+          "aplica_rangos": ["rango_1", "rango_2"],
+          "aplica_variantes": ["mipyme", "no_mipyme"]
+        },
+        {
+          "id": "indice_endeudamiento",
+          "nombre": "Índice de endeudamiento",
+          "formula_calculo": "Pasivo Total / Activo Total",
+          "operador": "<=",
+          "valor": null,
+          "origen_valor": "definido_por_entidad_en_pliego",
+          "aplica_rangos": ["rango_1", "rango_2"],
+          "aplica_variantes": ["mipyme", "no_mipyme"]
+        },
+        {
+          "id": "razon_cobertura_intereses",
+          "nombre": "Razón de cobertura de intereses",
+          "formula_calculo": "Utilidad Operacional / Gastos de Intereses",
+          "operador": ">=",
+          "nota_habilitacion": "Proponente sin gastos de intereses queda habilitado si utilidad operacional >= 0.",
+          "valor": null,
+          "origen_valor": "definido_por_entidad_en_pliego",
+          "aplica_rangos": ["rango_1", "rango_2"],
+          "aplica_variantes": ["mipyme", "no_mipyme"]
+        },
+        {
+          "id": "capital_trabajo",
+          "nombre": "Capital de trabajo",
+          "formula_calculo": "Activo Corriente - Pasivo Corriente",
+          "operador": ">=",
+          "valor": "ver formulas_universales.capital_trabajo — CTd definido por entidad",
+          "origen_valor": "formula_universal_umbral_en_pliego",
+          "aplica_rangos": ["rango_1", "rango_2"],
+          "aplica_variantes": ["mipyme", "no_mipyme"]
+        },
+        {
+          "id": "patrimonio",
+          "nombre": "Patrimonio",
+          "operador": ">=",
+          "valor": null,
+          "origen_valor": "definido_por_entidad_en_pliego",
+          "aplica_rangos": ["rango_2"],
+          "aplica_variantes": ["mipyme", "no_mipyme"],
+          "condicion": {
+            "descripcion": "Solo exigible si presupuesto >= 4.000 SMMLV Y plazo >= 24 meses",
+            "presupuesto_min_smmlv": 4000,
+            "plazo_min_meses": 24,
+            "logica": "AND"
+          }
+        },
+        {
+          "id": "rentabilidad_patrimonio",
+          "nombre": "Rentabilidad del patrimonio",
+          "formula_calculo": "Utilidad Neta / Patrimonio",
+          "operador": ">=",
+          "valor": null,
+          "origen_valor": "definido_por_entidad_en_pliego",
+          "aplica_rangos": ["rango_1", "rango_2"],
+          "aplica_variantes": ["mipyme", "no_mipyme"]
+        },
+        {
+          "id": "rentabilidad_activo",
+          "nombre": "Rentabilidad del activo",
+          "formula_calculo": "Utilidad Neta / Activo Total",
+          "operador": ">=",
+          "valor": null,
+          "origen_valor": "definido_por_entidad_en_pliego",
+          "aplica_rangos": ["rango_1", "rango_2"],
+          "aplica_variantes": ["mipyme", "no_mipyme"]
+        }
+      ]
+    },
+
+    "menor_cuantia": {
+      "estado": "confirmado",
+      "obligatoriedad": "obligatorio",
+      "nota_rangos": "No hay rangos de presupuesto en esta modalidad.",
+      "rangos_presupuesto": null,
+      "variantes": ["mipyme", "no_mipyme"],
+      "nota_caso_real": "Caso Paicol: exigió liquidez >= 1,21 en menor cuantía. El CCE fija 1,2 para no_mipyme. La entidad ajustó al alza dentro de lo permitido. El evaluador debe tomar el valor del pliego; el del catálogo sirve como referencia para detección de irregularidades.",
+      "indicadores_obligatorios": [
+        {
+          "id": "indice_liquidez",
+          "nombre": "Índice de liquidez",
+          "formula_calculo": "Activo Corriente / Pasivo Corriente",
+          "operador": ">=",
+          "nota_habilitacion": "Proponente sin pasivos corrientes queda habilitado automáticamente.",
+          "por_variante": {
+            "mipyme": {
+              "valor": 1.1,
+              "operador_inferido": true,
+              "origen_valor": "definido_por_cce"
+            },
+            "no_mipyme": {
+              "valor": 1.2,
+              "origen_valor": "definido_por_cce"
+            }
+          }
+        },
+        {
+          "id": "indice_endeudamiento",
+          "nombre": "Índice de endeudamiento",
+          "formula_calculo": "Pasivo Total / Activo Total",
+          "operador": "<=",
+          "por_variante": {
+            "mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            },
+            "no_mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            }
+          }
+        },
+        {
+          "id": "razon_cobertura_intereses",
+          "nombre": "Razón de cobertura de intereses",
+          "formula_calculo": "Utilidad Operacional / Gastos de Intereses",
+          "operador": ">=",
+          "nota_habilitacion": "Proponente sin gastos de intereses queda habilitado si utilidad operacional >= 0.",
+          "por_variante": {
+            "mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            },
+            "no_mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            }
+          }
+        },
+        {
+          "id": "capital_trabajo",
+          "nombre": "Capital de trabajo",
+          "formula_calculo": "Activo Corriente - Pasivo Corriente",
+          "operador": ">=",
+          "por_variante": {
+            "mipyme": {
+              "valor": "ver formulas_universales.capital_trabajo — CTd definido en los Pliegos Tipo",
+              "origen_valor": "formula_universal_umbral_en_pliego"
+            },
+            "no_mipyme": {
+              "valor": "ver formulas_universales.capital_trabajo — CTd definido en los Pliegos Tipo",
+              "origen_valor": "formula_universal_umbral_en_pliego"
+            }
+          }
+        },
+        {
+          "id": "rentabilidad_patrimonio",
+          "nombre": "Rentabilidad del patrimonio",
+          "formula_calculo": "Utilidad Neta / Patrimonio",
+          "operador": ">=",
+          "por_variante": {
+            "mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            },
+            "no_mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            }
+          }
+        },
+        {
+          "id": "rentabilidad_activo",
+          "nombre": "Rentabilidad del activo",
+          "formula_calculo": "Utilidad Neta / Activo Total",
+          "operador": ">=",
+          "por_variante": {
+            "mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            },
+            "no_mipyme": {
+              "valor": null,
+              "origen_valor": "definido_por_entidad_en_pliego"
+            }
+          }
+        }
+      ]
+    },
+
+    "minima_cuantia": {
+      "estado": "confirmado",
+      "obligatoriedad": "opcional_segun_entidad",
+      "nota_obligatoriedad": "La Entidad puede o no exigir la Capacidad Financiera mínima en los Procesos de Contratación cuando no hace el pago contra entrega.",
+      "nota_rangos": "No hay rangos de presupuesto en esta modalidad.",
+      "rangos_presupuesto": null,
+      "variantes": ["mipyme", "no_mipyme"],
+      "indicadores_obligatorios": [
+        {
+          "id": "indice_liquidez",
+          "nombre": "Índice de liquidez",
+          "formula_calculo": "Activo Corriente / Pasivo Corriente",
+          "operador": ">=",
+          "nota_habilitacion": "Proponente sin pasivos corrientes queda habilitado automáticamente.",
+          "por_variante": {
+            "mipyme": {
+              "valor": 1.1,
+              "operador_inferido": true,
+              "origen_valor": "definido_por_cce"
+            },
+            "no_mipyme": {
+              "valor": 1.2,
+              "origen_valor": "definido_por_cce"
+            }
+          }
+        },
+        {
+          "id": "indice_endeudamiento",
+          "nombre": "Índice de endeudamiento",
+          "formula_calculo": "Pasivo Total / Activo Total",
+          "operador": "<=",
+          "por_variante": {
+            "mipyme": {
+              "valor": 0.70,
+              "operador_inferido": true,
+              "origen_valor": "definido_por_cce"
+            },
+            "no_mipyme": {
+              "valor": 0.70,
+              "origen_valor": "definido_por_cce"
+            }
+          }
+        },
+        {
+          "id": "razon_cobertura_intereses",
+          "nombre": "Razón de cobertura de intereses",
+          "formula_calculo": "Utilidad Operacional / Gastos de Intereses",
+          "operador": ">=",
+          "nota_habilitacion": "Proponente sin gastos de intereses queda habilitado si utilidad operacional >= 0.",
+          "por_variante": {
+            "mipyme": {
+              "valor": 1,
+              "origen_valor": "definido_por_cce"
+            },
+            "no_mipyme": {
+              "valor": 1,
+              "origen_valor": "definido_por_cce"
+            }
+          }
+        },
+        {
+          "id": "capital_trabajo",
+          "nombre": "Capital de trabajo",
+          "formula_calculo": "Activo Corriente - Pasivo Corriente",
+          "operador": ">=",
+          "por_variante": {
+            "mipyme": {
+              "valor": "ver formulas_universales.capital_trabajo — CTd definido en la invitación",
+              "origen_valor": "formula_universal_umbral_en_pliego"
+            },
+            "no_mipyme": {
+              "valor": "ver formulas_universales.capital_trabajo — CTd definido en la invitación",
+              "origen_valor": "formula_universal_umbral_en_pliego"
+            }
+          }
+        }
+      ]
+    }
+
+  }
+}

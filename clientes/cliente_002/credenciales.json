@@ -1,9 +1,0 @@
-{
-  "cliente_id": "cliente_002",
-  "hash": "c2f6333a65a68e119d675a499a3f05f1183ed01ed06ed86257b388322f3123df",
-  "salt": "6550207f0669ec6dfbb6a6859f2e0864c2422691ff001a86a3cdd6f8929ac62a",
-  "plan": "básico",
-  "activo": true,
-  "fecha_creacion": "2026-06-19T17:00:57.815554",
-  "fecha_vencimiento": "2026-07-19T17:00:57.815562"
-}

@@ -1,0 +1,5 @@
+anthropic>=0.30.0
+pydantic>=2.0.0
+marker-pdf>=0.3.0
+langchain-text-splitters>=0.0.29
+pymupdf>=1.23.0

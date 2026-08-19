@@ -1,0 +1,83 @@
+{
+  "archivo": "Resolucion-539-de-2025.pdf",
+  "paginas": [
+    {
+      "pagina_pdf": 1,
+      "tablas": [],
+      "observaciones": "Página de portada y considerandos de Resolución. No contiene tablas. Documento escaneado de buena calidad, texto legible sin degradación significativa."
+    },
+    {
+      "pagina_pdf": 2,
+      "tablas": [],
+      "observaciones": "Página que contiene únicamente texto normativo (considerandos de la Resolución 539 de 2025). No hay tablas presentes en esta página."
+    },
+    {
+      "pagina_pdf": 3,
+      "tablas": [],
+      "observaciones": "Página contiene solo texto narrativo (considerandos de una resolución administrativa). No hay tablas presentes en esta página."
+    },
+    {
+      "pagina_pdf": 4,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "observaciones": "Página 4 contiene solo texto narrativo (considerandos de la Resolución 539 de 2025). No hay tablas presentes en esta página."
+    },
+    {
+      "pagina_pdf": 5,
+      "tablas": [],
+      "observaciones": "La página contiene texto normativo de una resolución (RESOLUCIÓN NÚMERO 539 de 2025). No hay tablas presentes. El contenido es principalmente prosa legal organizada en párrafos y secciones (Capítulo I, Artículos 1 y 2, apartados A y B con una enumeración de anexos)."
+    },
+    {
+      "pagina_pdf": 6,
+      "tablas": [],
+      "observaciones": "La página contiene texto narrativo organizado en secciones (5. Anexo 5 – Glosario, C. FORMATOS, D. MATRICES, E. FORMULARIOS) con listas numeradas de formatos, matrices y formularios, así como párrafos explicativos. No hay tablas en esta página."
+    },
+    {
+      "pagina_pdf": 7,
+      "tablas": [],
+      "calidad_suficiente": true,
+      "motivo": "La página contiene solo texto normativo (artículos 3 y 4 de la Resolución). No hay tablas."
+    },
+    {
+      "pagina_pdf": 8,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "observaciones": "Página de contenido normativo (Resolución 539 de 2025). No contiene tablas. El documento presenta párrafos numerados y artículos sobre combinación de experiencia y documentos tipo para procesos de licitación de obra pública. La calidad del escaneo es buena, sin degradación que afecte la legibilidad del texto."
+    },
+    {
+      "pagina_pdf": 9,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "observaciones": "Página 9 contiene texto normativo (artículos 6, 7, 8 y 9 de la Resolución 539 de 2025). No incluye tablas. El documento está legible sin degradación significativa."
+    },
+    {
+      "pagina_pdf": 10,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "motivo": "Página contiene solo texto normativo (artículos, párrafos y capítulos). No hay tablas presentes."
+    },
+    {
+      "pagina_pdf": 11,
+      "tablas": [],
+      "observaciones": "La página contiene texto normativo (Resolución 539 de 2025) sin tablas. Se trata de artículos y párrafos sobre documentos tipo complementarios para sectores de salud, cultura, recreación y deporte. No hay contenido tabulado que transcribir."
+    },
+    {
+      "pagina_pdf": 12,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "observaciones": "Página 12 contiene únicamente texto normativo (párrafos, artículos y capítulos). No hay tablas estructuradas en formato de filas y columnas."
+    },
+    {
+      "pagina_pdf": 13,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "motivo": "La página contiene únicamente texto normativo (artículos y párrafos de la Resolución 539 de 2025). No hay tablas presentes."
+    },
+    {
+      "pagina_pdf": 14,
+      "tablas": [],
+      "calidad_suficiente": true,
+      "observaciones": "Página 14 contiene texto normativo (Resolución 539, Artículo 24 sobre Derogatoria) y firmas manuscritas. No hay tablas estructuradas en formato de filas y columnas. El documento presenta sellado y anotaciones manuscritas superpuestas que no afectan la legibilidad del contenido textual."
+    }
+  ]
+}

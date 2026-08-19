@@ -219,6 +219,20 @@ def _obtener_modelo_embeddings():
     return _modelo_embeddings
 
 
+def verificar_embeddings() -> dict:
+    """
+    Verifica si el servicio de embeddings responde correctamente.
+    Retorna {"disponible": bool, "error": str | None}.
+    Llamar antes de corridas por lote para abortar temprano si el modelo no está listo.
+    """
+    try:
+        modelo = _obtener_modelo_embeddings()
+        modelo.encode(["verificacion_salud"], show_progress_bar=False)
+        return {"disponible": True, "error": None}
+    except Exception as exc:
+        return {"disponible": False, "error": str(exc)}
+
+
 def _extraer_keywords(texto):
     """Extrae palabras clave simples (>3 caracteres) de un texto en español."""
     import re as _re
@@ -497,6 +511,15 @@ def extraer_texto_completo_pdf(raw_bytes: bytes) -> str:
 # Sentinel para archivos .doc (Word 97-2003) que python-docx no puede abrir
 DOC_NOT_SUPPORTED_MARKER = "__DOC_LEGACY_NOT_SUPPORTED__"
 
+# Sentinel para requisitos que no pudieron evaluarse por retrieval insuficiente.
+# Distinto de NO_ENCONTRADO_EN_PLIEGO (que significa "se buscó y no está").
+NO_ANALIZADO_SENTINEL = "NO_ANALIZADO_CONTEXTO_INSUFICIENTE"
+
+# Umbral configurable: % mínimo de chars_totales_documento que deben llegar
+# a Claude para considerar el retrieval "completo". Basado en corridas exitosas
+# de la Tarea 3 (~21 %) — se usa 12 % para dar margen a pliegos cortos.
+COBERTURA_NORMAL_MIN_PCT = 12.0
+
 
 def extraer_texto_word(archivo_bytes: bytes) -> str:
     """Extrae texto y tablas de un documento Word (.docx)."""
@@ -595,36 +618,99 @@ _RAG_QUERIES = [
 ]
 
 
-def chunking_rag_pliego(texto: str, query: str = "", top_k_por_query: int = 5) -> str:
+def _es_tabla_contenido(chunk: str) -> bool:
+    """
+    Detecta si un chunk es predominantemente tabla de contenido (índice de secciones).
+    Si es ToC: se excluye del indexado semántico pero se conserva como mapa de secciones.
+    """
+    import re as _re
+
+    lineas = [l for l in chunk.split('\n') if l.strip()]
+    if len(lineas) < 4:
+        return False
+
+    patron_toc_clasico = _re.compile(r'^\s*\d+(\.\d+)*\s+.{3,}\.{3,}')  # "1.2. Texto....."
+    patron_num_inicio  = _re.compile(r'^\s*\d+(\.\d+)+\s')               # "1.2 " o "3.9.1 "
+    patron_puntos      = _re.compile(r'\.{3,}')
+
+    n_toc    = sum(1 for l in lineas if patron_toc_clasico.match(l))
+    n_num    = sum(1 for l in lineas if patron_num_inicio.match(l))
+    n_puntos = sum(1 for l in lineas if patron_puntos.search(l))
+    total    = len(lineas)
+
+    if n_toc / total > 0.25:       # ToC clásico con puntos
+        return True
+    if n_num / total > 0.45 and n_puntos / total > 0.20:  # índice denso sin puntos largos
+        return True
+    return False
+
+
+def chunking_rag_pliego(
+    texto: str, query: str = "", top_k_por_query: int = 5, max_chars: int = 50_000
+) -> "tuple[str, dict]":
     """
     RAG semántico multi-query para pliegos de cualquier tamaño.
 
-    - Chunking: 800 chars con overlap 150
-    - 5 queries especializadas en habilitantes SECOP II
-    - top_k_por_query chunks por query → deduplicados (máx 25 únicos)
-    - Resultado ordenado por posición original para coherencia
-    - Fallback sin modelo: primeros + últimos chunks
+    - Chunking: 2.000 chars con overlap 250
+    - La tabla de contenido se excluye del indexado semántico y se conserva como
+      mapa de secciones al inicio del resultado (primer elemento del split).
+    - 5 queries especializadas + query de usuario → top_k_por_query chunks únicos por query
+    - Resultado ordenado por posición original para coherencia narrativa
+    - Fallback sin modelo: primeros + últimos chunks de contenido
+
+    Retorna: (contexto_str, meta_dict) donde meta_dict contiene:
+      - embeddings_disponibles (bool)
+      - n_chunks_content (int)
+      - n_chunks_seleccionados (int)
+      - chars_enviados (int)
+      - motivo_degradacion (str | None)
     """
-    CHUNK_SIZE = 800
-    OVERLAP    = 150
-    MAX_CHARS  = 5000   # límite de contexto enviado a Claude
+    CHUNK_SIZE = 2000
+    OVERLAP    = 250
+    MAX_CHARS  = max_chars  # configurable por corrida; default 50_000
+
+    def _meta(emb_ok, n_content, n_sel, resultado_str, motivo=None):
+        return {
+            "embeddings_disponibles": emb_ok,
+            "n_chunks_content":       n_content,
+            "n_chunks_seleccionados": n_sel,
+            "chars_enviados":         len(resultado_str),
+            "motivo_degradacion":     motivo,
+        }
 
     # ── Chunking ──────────────────────────────────
-    chunks = []    # list of (original_pos, text)
+    chunks_all = []    # list of (original_pos, text)
     pos = 0
     while pos < len(texto):
         chunk = texto[pos: pos + CHUNK_SIZE].strip()
-        if len(chunk) > 60:
-            chunks.append((pos, chunk))
+        if len(chunk) > 100:
+            chunks_all.append((pos, chunk))
         pos += CHUNK_SIZE - OVERLAP
 
-    if not chunks:
-        return texto[:MAX_CHARS]
-    if len(chunks) <= top_k_por_query:
-        resultado = "\n\n".join(c[1] for c in chunks)
-        return resultado[:MAX_CHARS]
+    if not chunks_all:
+        r = texto[:MAX_CHARS]
+        return r, _meta(False, 0, 0, r, "Sin chunks extraíbles del documento")
 
-    print(f"[RAG] {len(chunks)} chunks generados de {len(texto)} chars")
+    # ── Separar tabla de contenido de contenido real ──────────────────────────
+    chunks_toc     = [(p, t) for p, t in chunks_all if _es_tabla_contenido(t)]
+    chunks_content = [(p, t) for p, t in chunks_all if not _es_tabla_contenido(t)]
+
+    toc_text = ""
+    if chunks_toc:
+        toc_joined = "\n\n".join(t for _, t in chunks_toc[:3])  # máx 3 chunks de índice
+        toc_text = f"[ÍNDICE DE SECCIONES DEL PLIEGO]\n{toc_joined}"
+        print(f"[RAG] {len(chunks_toc)} chunk(s) de tabla de contenido separados del indexado semántico")
+
+    # Si todo el texto era ToC (poco probable), indexar todo
+    chunks = chunks_content if chunks_content else chunks_all
+
+    if len(chunks) <= top_k_por_query:
+        contenido = "\n\n[...]\n\n".join(c[1] for c in chunks)
+        resultado = toc_text + "\n\n[...]\n\n" + contenido if toc_text else contenido
+        r = resultado[:MAX_CHARS]
+        return r, _meta(True, len(chunks), len(chunks), r)
+
+    print(f"[RAG] {len(chunks)} chunks de contenido de {len(texto)} chars (excl. {len(chunks_toc)} ToC)")
 
     # ── Embedding + recuperación ───────────────────
     try:
@@ -647,17 +733,23 @@ def chunking_rag_pliego(texto: str, query: str = "", top_k_por_query: int = 5) -
 
         # Ordenar por posición original para coherencia narrativa
         sorted_idx = sorted(selected, key=lambda i: chunks[i][0])
-        seleccion  = "\n\n[...]\n\n".join(texts[i] for i in sorted_idx)
+        contenido  = "\n\n[...]\n\n".join(texts[i] for i in sorted_idx)
 
-        print(f"[RAG] {len(selected)} chunks únicos seleccionados de {len(queries)} queries → {len(seleccion)} chars")
-        return seleccion[:MAX_CHARS]
+        print(f"[RAG] {len(selected)} chunks únicos de {len(queries)} queries → {len(contenido)} chars")
+
+        resultado = toc_text + "\n\n[...]\n\n" + contenido if toc_text else contenido
+        r = resultado[:MAX_CHARS]
+        return r, _meta(True, len(chunks), len(selected), r)
 
     except Exception as e:
         print(f"[RAG] Fallback sin modelo semántico: {e}")
         mid      = top_k_por_query // 2
         textos   = [c[1] for c in chunks]
         fallback = textos[:mid] + textos[-(top_k_por_query - mid):]
-        return "\n\n[...]\n\n".join(fallback)[:MAX_CHARS]
+        contenido = "\n\n[...]\n\n".join(fallback)
+        resultado = toc_text + "\n\n[...]\n\n" + contenido if toc_text else contenido
+        r = resultado[:MAX_CHARS]
+        return r, _meta(False, len(chunks), len(fallback), r, str(e))
 
 
 def _procesar_y_cachear_pliego(cliente_id: str, texto: str) -> tuple:
@@ -971,7 +1063,7 @@ def analizar_patrones(cliente_id: str) -> dict:
     }
 
 
-def agente_financiero(licitacion, cliente, texto_pliego=None, cliente_id=None):
+def agente_financiero(licitacion, cliente, texto_pliego=None, cliente_id=None, sin_rag=False):
     """
     AGENTE 1: Auditor Financiero con memoria documental e historial.
     cliente_id: si se proporciona, enriquece el análisis con documentos del cliente
@@ -1026,18 +1118,21 @@ def agente_financiero(licitacion, cliente, texto_pliego=None, cliente_id=None):
             pass
 
     if texto_pliego:
+        _ctx_fin = texto_pliego if sin_rag else texto_pliego[:70_000]
         bloque_pliego = (
-            f"\nPLIEGO ESPECÍFICO (prioridad sobre criterios genéricos):\n{texto_pliego[:8000]}\n"
+            f"\nPLIEGO ESPECÍFICO (prioridad sobre cualquier criterio genérico):\n{_ctx_fin}\n"
         )
     else:
-        bloque_pliego = "\nPLIEGO ESPECÍFICO: No suministrado. Usa criterios financieros genéricos de contratación estatal colombiana.\n"
+        bloque_pliego = "\nPLIEGO ESPECÍFICO: No suministrado. Todos los campos valor_pliego del checklist_detallado deben decir NO_ENCONTRADO_EN_PLIEGO.\n"
 
     prompt = f"""
 {_SKILL_FIN}
 
 Actúa como un Auditor Financiero experto en contratación estatal colombiana.
-IMPORTANTE: Cita siempre el artículo o norma específica (Ley 80/1993, Decreto 1082/2015,
-Resolución 196/2016 CCE) que respalda cada punto de tu evaluación.
+REGLA DE EXTRACCIÓN: Los valores exigidos en cada indicador financiero (liquidez, endeudamiento,
+etc.) deben venir EXCLUSIVAMENTE del pliego suministrado. Si el pliego no menciona un umbral,
+el campo "valor_pliego" debe decir NO_ENCONTRADO_EN_PLIEGO. Prohibido usar umbrales genéricos
+(ej: "≥ 1.0", "≤ 0.80") que no aparezcan textualmente en el pliego.
 
 Evalúa la viabilidad financiera del cliente para esta licitación.
 
@@ -1053,29 +1148,55 @@ INDICADORES DEL CLIENTE:
 {bloque_docs}{bloque_historial}{bloque_pliego}
 
 Regla de concepto: score < 40 → NO VIABLE | 40–70 → CONDICIONAL | > 70 → VIABLE
+LÍMITE: Máximo 100 chars por razón/recomendación. Máximo 3 razones y 3 recomendaciones.
+El array "checklist_detallado" va PRIMERO en el JSON.
 
 REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
 {{
+    "checklist_detallado": [
+        {{
+            "requisito": "Índice de Liquidez",
+            "valor_pliego": "valor del pliego o NO_ENCONTRADO_EN_PLIEGO",
+            "exigido_literal": "igual a valor_pliego",
+            "valor_normativo_referencia": "IDL ≥ 1.0 según Res.196/2016 CCE (referencia orientativa)",
+            "fuente": "pliego | no_encontrado",
+            "valor_empresa": "del cliente",
+            "cumple": true/false/null
+        }},
+        {{
+            "requisito": "Índice de Endeudamiento",
+            "valor_pliego": "valor del pliego o NO_ENCONTRADO_EN_PLIEGO",
+            "exigido_literal": "igual a valor_pliego",
+            "valor_normativo_referencia": "NDE ≤ 0.80 según Res.196/2016 CCE (referencia orientativa)",
+            "fuente": "pliego | no_encontrado",
+            "valor_empresa": "del cliente",
+            "cumple": true/false/null
+        }},
+        {{
+            "requisito": "Capacidad de Contratación (RUP)",
+            "valor_pliego": "valor contrato o NO_ENCONTRADO_EN_PLIEGO",
+            "exigido_literal": "igual a valor_pliego",
+            "valor_normativo_referencia": null,
+            "fuente": "pliego | no_encontrado",
+            "valor_empresa": "cap. máx. cliente",
+            "cumple": true/false/null
+        }}
+    ],
     "score_financiero": numero_0_a_100,
     "concepto": "VIABLE" o "NO VIABLE" o "CONDICIONAL",
-    "razones": ["razón 1 con decreto o artículo si aplica"],
+    "razones": ["máx 100 chars por razón"],
     "articulos_aplicables": ["Decreto 1082/2015 art. X"],
-    "recomendaciones": ["acción concreta 1"],
+    "recomendaciones": ["máx 100 chars por recomendación"],
     "indices_evaluados": {{"liquidez": valor_numerico, "endeudamiento": valor_numerico, "capital_trabajo": "calculado o N/A"}},
     "cumple_financiero": true o false,
-    "analisis_numerico": "resumen corto max 2 líneas",
-    "checklist_detallado": [
-        {{"requisito": "Índice de Liquidez", "valor_pliego": "exigido", "valor_empresa": "del cliente", "cumple": true}},
-        {{"requisito": "Índice de Endeudamiento", "valor_pliego": "exigido", "valor_empresa": "del cliente", "cumple": true}},
-        {{"requisito": "Capacidad de Contratación (RUP)", "valor_pliego": "valor contrato", "valor_empresa": "cap. máx. cliente", "cumple": true}}
-    ]
+    "analisis_numerico": "max 120 chars"
 }}
 """
 
     t0 = _time.time()
     respuesta = api_client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=6144,
         temperature=0.0,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -1087,7 +1208,14 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
         except Exception:
             pass
 
+    if respuesta.stop_reason == "max_tokens":
+        print(f"[FIN-DIAG] FINANCIERO TRUNCADO (stop=max_tokens) — JSON puede ser incompleto")
+
     resultado = _extraer_json(respuesta.content[0].text)
+    resultado["_uso"] = {
+        "input_tokens":  respuesta.usage.input_tokens,
+        "output_tokens": respuesta.usage.output_tokens,
+    }
 
     # Garantizar retrocompatibilidad: derivar campos si faltan
     if "cumple_financiero" not in resultado:
@@ -1097,23 +1225,90 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
     if "checklist_detallado" not in resultado:
         idx = resultado.get("indices_evaluados", {})
         resultado["checklist_detallado"] = [
-            {"requisito": "Índice de Liquidez", "valor_pliego": "≥ 1.0", "valor_empresa": str(idx.get("liquidez", "N/A")), "cumple": resultado.get("cumple_financiero", False)},
-            {"requisito": "Índice de Endeudamiento", "valor_pliego": "≤ 0.80", "valor_empresa": str(idx.get("endeudamiento", "N/A")), "cumple": resultado.get("cumple_financiero", False)},
+            {"requisito": "Índice de Liquidez", "valor_pliego": "NO_ENCONTRADO_EN_PLIEGO", "valor_empresa": str(idx.get("liquidez", "N/A")), "cumple": None},
+            {"requisito": "Índice de Endeudamiento", "valor_pliego": "NO_ENCONTRADO_EN_PLIEGO", "valor_empresa": str(idx.get("endeudamiento", "N/A")), "cumple": None},
         ]
 
     return resultado
 
 
-def agente_legal_rag(licitacion, contexto_biblioteca, experiencia_cliente=None, texto_pliego=None, cliente_id=None):
-    """
-    AGENTE 2: Abogado Consultor RAG con cruce documental del cliente.
-    cliente_id: si se proporciona, cruza requisitos del pliego con documentos del cliente.
-    """
-    import anthropic
-    import time as _time
-    import uuid as _uuid
+def _agente_legal_paso_a(api_client, licitacion, texto_pliego, call_id, max_chars=70_000):
+    """Paso A — Extracción pura: solo el pliego, sin normativa ni skills.
 
-    call_id = _uuid.uuid4().hex[:8]
+    max_chars: límite de caracteres del pliego enviados al modelo.
+    None = sin límite (para experimentos sin RAG). Default=70_000 (comportamiento de producción).
+    """
+    import time as _time
+
+    bloque_pliego = (texto_pliego or "")[:max_chars] if max_chars is not None else (texto_pliego or "")
+
+    prompt_a = f"""Actúa como un extractor de datos de documentos contractuales.
+Tu única tarea es leer el pliego adjunto y extraer los REQUISITOS HABILITANTES — las condiciones que un proponente debe cumplir para que su oferta sea evaluada.
+
+REGLAS ABSOLUTAS — sin excepción:
+1. El pliego es tu ÚNICA fuente. No tienes acceso a ninguna normativa externa.
+2. Si un valor, umbral, porcentaje o plazo NO aparece textualmente en el fragmento recibido, escribe exactamente: NO_ENCONTRADO_EN_PLIEGO
+3. PROHIBIDO completar campos con: valores que suelen exigirse en procesos similares, conocimiento general, ni lo que dicen el Decreto 1082, la Resolución 196/2016, la Resolución CCE, ni ninguna otra norma. Un campo NO_ENCONTRADO_EN_PLIEGO es correcto. Un campo inventado es un error grave.
+4. En "ubicacion_pliego": anota la sección o numeral exacto (ej: "Numeral 3.9", "Sección 2.6.3"). Si no puedes ubicarlo, escribe "texto del pliego" o null.
+5. No cites artículos de ley ni resoluciones. Solo cita el pliego.
+6. EXCLUIR únicamente: (a) causales de rechazo de la oferta económica, (b) plazos del cronograma del proceso (fechas de apertura, cierre, adjudicación), (c) instrucciones de formato de la oferta (foliado, sellos, carátulas, formularios de presentación, AIU). NO excluyas documentos que el proponente debe acreditar aunque no tengan umbral numérico — esos sí son habilitantes.
+7. Sé conciso: máximo 200 caracteres por campo. Si el valor es largo, resume la esencia sin perder el número o umbral.
+8. Extrae TODOS los requisitos habilitantes que encuentres, sin límite de cantidad. No omitas ninguno por considerarlo menos importante. Un requisito habilitante omitido puede descalificar al proponente, sin importar cuán menor parezca. Si un requisito no tiene umbral numérico (por ejemplo, presentar una declaración, un certificado o un paz y salvo), es igualmente habilitante y debe reportarse.
+
+PROCESO: {licitacion.get('nombre_del_procedimiento')}
+VALOR: COP {licitacion.get('precio_base')}
+
+TEXTO DEL PLIEGO:
+{bloque_pliego}
+
+Categorías de requisitos habilitantes a extraer (ejemplos no exhaustivos — extrae cualquier requisito que encuentres, aunque no encaje en ninguna categoría):
+- EXPERIENCIA (ejemplos): valor acumulado contratos similares, valor contrato individual mayor, objeto similar (descripción, CIIU, UNSPSC), participación mínima en consorcio, plazo de la experiencia, número máximo de contratos para acreditar
+- FINANCIEROS (ejemplos): índice de liquidez (IDL), índice de endeudamiento (NDE), razón de cobertura de intereses (RCI), capital de trabajo, patrimonio neto líquido, renta o ingresos operacionales, capacidad residual
+- JURÍDICOS / CAPACIDAD LEGAL (ejemplos): RUP en firme, cámara de comercio, pólizas habilitantes, garantía de seriedad, inhabilidades e incompatibilidades, paz y salvos (municipal, parafiscales, seguridad social), boletín de responsables fiscales, antecedentes disciplinarios, declaraciones juramentadas, certificaciones de aportes parafiscales, certificado de industria nacional
+- TÉCNICOS Y OPERATIVOS (ejemplos): personal mínimo requerido, equipos mínimos, certificaciones técnicas
+- OTROS: cualquier condición que el pliego exija cumplir para que la oferta sea evaluada, aunque no encaje en las categorías anteriores
+
+REGLA DE ORO: Responde ÚNICAMENTE con JSON válido, sin texto antes ni después.
+{{
+    "requisitos_habilitantes": [
+        {{
+            "requisito": "nombre corto del requisito",
+            "exigido_literal": "cita textual del pliego (máx 200 chars) — o NO_ENCONTRADO_EN_PLIEGO",
+            "ubicacion_pliego": "Numeral X.X / null",
+            "documento_soporte": "documento que pide el pliego (máx 80 chars) — o NO_ENCONTRADO_EN_PLIEGO"
+        }}
+    ],
+    "observaciones_extraccion": "Notas breves: secciones que parecen faltar, si el fragmento está incompleto, etc. (máx 200 chars)"
+}}"""
+
+    t0 = _time.time()
+    respuesta = api_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=8192,
+        temperature=0.0,
+        messages=[{"role": "user", "content": prompt_a}],
+    )
+    elapsed = _time.time() - t0
+    stop_reason = respuesta.stop_reason
+    print(
+        f"[LEGAL-DIAG #{call_id}] PASO-A | {elapsed:.1f}s | stop={stop_reason} | "
+        f"tokens={respuesta.usage.input_tokens}in/{respuesta.usage.output_tokens}out"
+    )
+    if stop_reason == "max_tokens":
+        print(f"[LEGAL-DIAG #{call_id}] PASO-A TRUNCADO — JSON puede estar incompleto")
+    resultado = _extraer_json(respuesta.content[0].text)
+    resultado["_uso"] = {
+        "input_tokens":  respuesta.usage.input_tokens,
+        "output_tokens": respuesta.usage.output_tokens,
+    }
+    return resultado
+
+
+def _agente_legal_paso_b(api_client, licitacion, contexto_biblioteca, resultado_a,
+                          experiencia_cliente, bloque_docs_cliente, call_id):
+    """Paso B — Contraste: requisitos extraídos en Paso A + normativa CCE + datos del cliente."""
+    import json as _json
+    import time as _time
 
     try:
         from prompts import SKILL_JURIDICO as _SKILL_JUR, SKILL_ESTRATEGIA as _SKILL_EST
@@ -1121,7 +1316,171 @@ def agente_legal_rag(licitacion, contexto_biblioteca, experiencia_cliente=None, 
         _SKILL_JUR = ""
         _SKILL_EST = ""
 
-    api_client = anthropic.Anthropic(api_key=API_KEY, timeout=120.0, max_retries=2)
+    # Truncar campos de texto largo antes de serializar: reduce input tokens de Paso B
+    # y previene que el modelo los expanda aún más en el output.
+    reqs_a_compactos = []
+    for req in resultado_a.get("requisitos_habilitantes", []):
+        reqs_a_compactos.append({
+            "requisito":         req.get("requisito", "")[:80],
+            "exigido_literal":   (req.get("exigido_literal") or "")[:120],
+            "ubicacion_pliego":  req.get("ubicacion_pliego"),
+            "documento_soporte": (req.get("documento_soporte") or "")[:60],
+        })
+    requisitos_a = _json.dumps(reqs_a_compactos, ensure_ascii=False, indent=2)
+    obs = resultado_a.get("observaciones_extraccion", "")
+
+    exp_acumulado     = experiencia_cliente.get('valor_acumulado', '—')
+    exp_individual    = experiencia_cliente.get('valor_individual_max', '—')
+    exp_objeto        = experiencia_cliente.get('objeto_similar', '—')
+    exp_unspsc        = experiencia_cliente.get('codigos_unspsc', '—')
+    exp_participacion = experiencia_cliente.get('participacion_minima', '—')
+
+    bloque_experiencia = f"""
+EXPERIENCIA REGISTRADA DEL OFERENTE:
+- Valor acumulado contratos similares (3 años): COP {experiencia_cliente.get('valor_acumulado', 'No registrado')}
+- Valor contrato individual más alto: COP {experiencia_cliente.get('valor_individual_max', 'No registrado')}
+- Objetos de contratos similares: {experiencia_cliente.get('objeto_similar', 'No registrado')}
+- Códigos UNSPSC: {experiencia_cliente.get('codigos_unspsc', 'No registrado')}
+- Participación mínima en consorcios previos: {experiencia_cliente.get('participacion_minima', 'No registrado')}%
+"""
+
+    prompt_b = f"""
+{_SKILL_JUR}
+{_SKILL_EST}
+
+Actúa como Abogado Consultor experto en contratación pública colombiana.
+LÍMITE DE RESPUESTA: Incluye TODOS los requisitos recibidos de Paso A sin omitir ninguno. Sé estrictamente conciso en campos de texto libre (máx 150 chars por campo). Máximo 4 documentos en documentos_a_gestionar. Máximo 3 ítems en riesgos.
+Cita el artículo y norma específica (Ley 80/1993, Ley 1150/2007, Decreto 1082/2015, Resolución CCE)
+que respalda cada evaluación. Indica si el documento faltante es SUBSANABLE o NO SUBSANABLE
+con base en Ley 1150/2007 art. 5.
+
+OBJETO PROCESO: {licitacion.get('nombre_del_procedimiento')}
+VALOR: COP {licitacion.get('precio_base')}
+
+REQUISITOS EXTRAÍDOS DEL PLIEGO (fuente primaria — Paso A):
+{requisitos_a}
+{f"NOTA DEL EXTRACTOR: {obs}" if obs else ""}
+
+BIBLIOTECA NORMATIVA CCE (solo para contraste y detección de riesgos — NO para completar campos vacíos):
+{contexto_biblioteca[:10000]}
+{bloque_experiencia}
+{bloque_docs_cliente}
+
+Instrucciones de evaluación:
+- Para cada requisito recibido de Paso A: copia "exigido_literal" y "ubicacion_pliego" tal como llegaron.
+- "exigido" = mismo valor que "exigido_literal" (campo de compatibilidad).
+- "valor_normativo_referencia": lo que dice la biblioteca CCE sobre ese tipo de requisito (referencia orientativa, NUNCA como exigencia del proceso). null si la norma no aplica o no hay referencia relevante.
+- "fuente": "pliego" si exigido_literal tiene un valor real (no NO_ENCONTRADO_EN_PLIEGO); "no_encontrado" si exigido_literal = NO_ENCONTRADO_EN_PLIEGO y no hay norma de referencia; "normativa" solo si exigido_literal = NO_ENCONTRADO_EN_PLIEGO pero hay un valor_normativo_referencia.
+- Para requisitos con exigido_literal="NO_ENCONTRADO_EN_PLIEGO": en "cliente_tiene" escribe "El pliego no especifica — no se puede evaluar". En "cumple" usa null.
+- Los requisitos que la norma exige pero el pliego no menciona explícitamente van en "riesgos", no en "requisitos_habilitantes".
+
+REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. MÁXIMO 150 chars por campo de texto libre.
+El array "requisitos_habilitantes" va PRIMERO para garantizar que no quede truncado.
+{{
+    "requisitos_habilitantes": [
+        {{
+            "requisito": "nombre corto",
+            "exigido": "igual a exigido_literal",
+            "exigido_literal": "cita textual del pliego o NO_ENCONTRADO_EN_PLIEGO (de Paso A)",
+            "ubicacion_pliego": "sección o null (de Paso A)",
+            "valor_normativo_referencia": "referencia CCE o null (máx 80 chars)",
+            "fuente": "pliego | normativa | no_encontrado",
+            "cliente_tiene": "dato corto o El pliego no especifica (máx 60 chars)",
+            "cumple": true/false/null,
+            "documento_soporte": "doc o null",
+            "norma": "Ley/Decreto art. X (máx 60 chars)"
+        }}
+    ],
+    "matriz_experiencia": [
+        {{"requisito": "Valor acumulado de contratos", "valor_pliego": "exigido o NO_ENCONTRADO_EN_PLIEGO", "valor_empresa": "COP {exp_acumulado}", "cumple": true/false/null}},
+        {{"requisito": "Valor contrato individual más alto", "valor_pliego": "exigido o NO_ENCONTRADO_EN_PLIEGO", "valor_empresa": "COP {exp_individual}", "cumple": true/false/null}},
+        {{"requisito": "Objeto similar", "valor_pliego": "clasificación exigida o NO_ENCONTRADO_EN_PLIEGO", "valor_empresa": "{exp_objeto}", "cumple": true/false/null}},
+        {{"requisito": "Códigos UNSPSC", "valor_pliego": "códigos exigidos o NO_ENCONTRADO_EN_PLIEGO", "valor_empresa": "{exp_unspsc}", "cumple": true/false/null}},
+        {{"requisito": "Participación mínima", "valor_pliego": "porcentaje exigido o NO_ENCONTRADO_EN_PLIEGO", "valor_empresa": "{exp_participacion}%", "cumple": true/false/null}}
+    ],
+    "viable_juridico": true o false,
+    "score_juridico": numero_0_a_100,
+    "concepto": "VIABLE" o "NO VIABLE" o "CONDICIONAL",
+    "riesgos_legales": "max 150 chars — cita norma y numeral del pliego",
+    "argumentos_viabilidad": "max 150 chars",
+    "documentos_a_gestionar": ["Doc 1", "Doc 2", "Doc 3", "Doc 4"],
+    "documentos_faltantes": ["doc que el cliente no tiene"],
+    "riesgos": ["max 80 chars por riesgo"]
+}}"""
+
+    t0 = _time.time()
+    respuesta = api_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=8192,
+        temperature=0.0,
+        messages=[{"role": "user", "content": prompt_b}],
+    )
+    elapsed = _time.time() - t0
+    stop_reason = respuesta.stop_reason
+    uso = respuesta.usage
+    print(
+        f"[LEGAL-DIAG #{call_id}] PASO-B | {elapsed:.1f}s | stop={stop_reason} | "
+        f"tokens={uso.input_tokens}in/{uso.output_tokens}out"
+    )
+    if stop_reason == "max_tokens":
+        print(f"[LEGAL-DIAG #{call_id}] PASO-B TRUNCADO — JSON probablemente incompleto")
+    resultado = _extraer_json(respuesta.content[0].text)
+    resultado["_uso"] = {
+        "input_tokens":  uso.input_tokens,
+        "output_tokens": uso.output_tokens,
+    }
+    return resultado
+
+
+def _con_reintento(fn, call_id: str, paso: str, max_intentos: int = 3):
+    """
+    Ejecuta fn() con hasta max_intentos intentos ante errores de red o tasa.
+    Backoff fijo: 5 s → 15 s → 45 s.
+    Re-lanza en el último intento o ante errores no retriables.
+    """
+    import time as _t
+    import anthropic as _anth
+
+    _RETRIABLES = (_anth.APIConnectionError, _anth.RateLimitError, _anth.InternalServerError)
+    esperas = [5, 15, 45]
+
+    for intento in range(1, max_intentos + 1):
+        try:
+            return fn()
+        except _RETRIABLES as exc:
+            if intento == max_intentos:
+                raise
+            espera = esperas[intento - 1]
+            print(
+                f"[LEGAL-DIAG #{call_id}] {paso} intento {intento}/{max_intentos} "
+                f"falló ({type(exc).__name__}) — reintentando en {espera}s"
+            )
+            _t.sleep(espera)
+
+
+def agente_legal_rag(licitacion, contexto_biblioteca, experiencia_cliente=None, texto_pliego=None, cliente_id=None, sin_rag=False):
+    """
+    AGENTE 2: Abogado Consultor RAG — pipeline de dos pasos.
+    Paso A: extracción pura del pliego (sin normativa).
+    Paso B: contraste con biblioteca CCE y evaluación del cliente.
+
+    Parámetros:
+      sin_rag: si True, envía texto_pliego completo a Paso A sin truncar los 70 000 chars.
+               Solo para experimentos — el comportamiento de producción usa sin_rag=False.
+
+    Garantías de integridad (Task 8):
+    - Si Paso A falla tras 3 reintentos, Paso B NO corre.
+    - Errores de red/tasa se reintenten automáticamente (backoff 5/15/45 s).
+    - _estado_analisis y _tokens_uso siempre presentes en el retorno.
+    """
+    import anthropic
+    import time as _time
+    import uuid as _uuid
+
+    call_id = _uuid.uuid4().hex[:8]
+    t_inicio = _time.time()
+    # max_retries=0 — el reintento lo manejamos nosotros en _con_reintento
+    api_client = anthropic.Anthropic(api_key=API_KEY, timeout=240.0, max_retries=0)
     experiencia_cliente = experiencia_cliente or {}
 
     # Contexto documental del cliente para cruce legal
@@ -1138,118 +1497,103 @@ def agente_legal_rag(licitacion, contexto_biblioteca, experiencia_cliente=None, 
         except Exception:
             pass
 
-    bloque_experiencia = f"""
-EXPERIENCIA REGISTRADA DEL OFERENTE:
-- Valor acumulado contratos similares (3 años): COP {experiencia_cliente.get('valor_acumulado', 'No registrado')}
-- Valor contrato individual más alto: COP {experiencia_cliente.get('valor_individual_max', 'No registrado')}
-- Objetos de contratos similares: {experiencia_cliente.get('objeto_similar', 'No registrado')}
-- Códigos UNSPSC: {experiencia_cliente.get('codigos_unspsc', 'No registrado')}
-- Participación mínima en consorcios previos: {experiencia_cliente.get('participacion_minima', 'No registrado')}%
-"""
-
-    if texto_pliego:
-        bloque_pliego = f"\nPLIEGO ESPECÍFICO (prioridad sobre biblioteca normativa):\n{texto_pliego[:15000]}\n"
-    else:
-        bloque_pliego = "\nPLIEGO ESPECÍFICO: No suministrado. Análisis basado en biblioteca normativa general.\n"
-
-    prompt = f"""
-{_SKILL_JUR}
-{_SKILL_EST}
-
-Actúa como Abogado Consultor experto en contratación pública colombiana.
-IMPORTANTE: Cita siempre el artículo y norma específica (Ley 80/1993, Ley 1150/2007,
-Decreto 1082/2015, Resolución CCE) que respalda cada evaluación. Indica si el documento
-faltante es SUBSANABLE o NO SUBSANABLE con base en Ley 1150/2007 art. 5.
-
-OBJETO PROCESO: {licitacion.get('nombre_del_procedimiento')}
-VALOR: COP {licitacion.get('precio_base')}
-
-BIBLIOTECA NORMATIVA (fragmentos más relevantes):
-{contexto_biblioteca[:10000]}
-{bloque_pliego}
-{bloque_experiencia}
-{bloque_docs_cliente}
-
-Evalúa la experiencia habilitante cruzando los datos del cliente con los requisitos.
-Prioriza el pliego sobre la biblioteca. Si no hay info suficiente, usa "Sin información disponible".
-
-REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
-{{
-    "viable_juridico": true o false,
-    "score_juridico": numero_0_a_100,
-    "concepto": "VIABLE" o "NO VIABLE" o "CONDICIONAL",
-    "riesgos_legales": "resumen max 2 líneas",
-    "argumentos_viabilidad": "por qué es viable (max 5 líneas)",
-    "documentos_a_gestionar": ["Doc 1", "Doc 2"],
-    "documentos_faltantes": ["doc que el cliente no tiene según análisis"],
-    "riesgos": ["riesgo con norma aplicable"],
-    "requisitos_habilitantes": [
-        {{"requisito": "nombre", "exigido": "lo que pide el pliego", "cliente_tiene": "lo que tiene el cliente", "cumple": true, "documento_soporte": "nombre doc", "norma": "art. X"}}
-    ],
-    "matriz_experiencia": [
-        {{"requisito": "Valor acumulado de contratos", "valor_pliego": "exigido", "valor_empresa": "COP {experiencia_cliente.get('valor_acumulado', '—')}", "cumple": true o false}},
-        {{"requisito": "Valor contrato individual más alto", "valor_pliego": "exigido", "valor_empresa": "COP {experiencia_cliente.get('valor_individual_max', '—')}", "cumple": true o false}},
-        {{"requisito": "Objeto similar", "valor_pliego": "clasificación exigida", "valor_empresa": "{experiencia_cliente.get('objeto_similar', '—')}", "cumple": true o false}},
-        {{"requisito": "Códigos UNSPSC", "valor_pliego": "códigos exigidos", "valor_empresa": "{experiencia_cliente.get('codigos_unspsc', '—')}", "cumple": true o false}},
-        {{"requisito": "Participación mínima", "valor_pliego": "porcentaje exigido", "valor_empresa": "{experiencia_cliente.get('participacion_minima', '—')}%", "cumple": true o false}}
-    ]
-}}
-"""
-
-    # DIAGNÓSTICO: imprimir prompt antes de enviar (call_id permite filtrar
-    # las líneas de una sola invocación cuando hay llamadas concurrentes)
     print(
         f"[LEGAL-DIAG #{call_id}] INICIO | "
         f"pliego={len(texto_pliego or '')} chars | "
-        f"biblioteca={len(contexto_biblioteca)} chars | "
-        f"prompt_total={len(prompt)} chars"
+        f"biblioteca={len(contexto_biblioteca)} chars"
     )
 
-    t0 = _time.time()
-    respuesta = api_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=8192,
-        temperature=0.0,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    elapsed = _time.time() - t0
+    errores_capturados = []
+    paso_a_ok = False
+    paso_b_ok = False
+    _max_chars_a = None if sin_rag else 70_000  # sin_rag=True → texto completo a Paso A
 
-    raw_text   = respuesta.content[0].text
-    stop_reason = respuesta.stop_reason
-    uso        = respuesta.usage
-
-    # DIAGNÓSTICO: métricas de respuesta
-    print(
-        f"[LEGAL-DIAG #{call_id}] FIN | Tiempo={elapsed:.1f}s | stop_reason={stop_reason} | "
-        f"input_tokens={uso.input_tokens} | output_tokens={uso.output_tokens}"
-    )
-
-    if stop_reason == "max_tokens":
-        print(
-            f"[LEGAL-DIAG #{call_id}] TRUNCACIÓN — respuesta cortada a {uso.output_tokens} "
-            f"tokens. JSON probablemente incompleto."
-        )
-
-    if elapsed > 10:
-        try:
-            from logger import setup_logger
-            setup_logger().warning(f"agente_legal_rag tardó {elapsed:.1f}s — módulo_origen=analizador")
-        except Exception:
-            pass
-
+    # ── Paso A: extracción pura (con reintento) ───────────────────────────────
     try:
-        resultado = _extraer_json(raw_text)
-    except json.JSONDecodeError as exc:
-        print(
-            f"[LEGAL-DIAG #{call_id}] PARSE FALLÓ ({len(raw_text)} chars) | "
-            f"inicio: {raw_text[:300]!r} | fin: {raw_text[-300:]!r}"
+        resultado_a = _con_reintento(
+            lambda: _agente_legal_paso_a(api_client, licitacion, texto_pliego, call_id, max_chars=_max_chars_a),
+            call_id, "PASO-A",
         )
-        raise
+        paso_a_ok = True
+    except Exception as exc:
+        msg = f"{type(exc).__name__}: {str(exc)[:300]}"
+        print(f"[LEGAL-DIAG #{call_id}] PASO-A ABORTADO tras reintentos: {msg}")
+        errores_capturados.append({"paso": "A", "error": msg})
 
-    # DIAGNÓSTICO: JSON parseado pero score ausente o cero
+    # Extraer token counts de Paso A antes de pasarlo a Paso B
+    uso_a = resultado_a.pop("_uso", {}) if paso_a_ok else {}
+
+    # ── Abortar si Paso A falló: no correr Paso B con datos vacíos ────────────
+    if not paso_a_ok:
+        t_total = round(_time.time() - t_inicio, 1)
+        print(f"[LEGAL-DIAG #{call_id}] ABORTADO | {t_total}s — Paso B NO ejecutado")
+        return {
+            "viable_juridico": False,
+            "score_juridico":  0,
+            "concepto":        "ERROR",
+            "riesgos_legales": "Análisis no completado — ver _estado_analisis",
+            "argumentos_viabilidad": "",
+            "documentos_a_gestionar": [],
+            "documentos_faltantes":   [],
+            "riesgos":                [],
+            "requisitos_habilitantes": [],
+            "matriz_experiencia":      [],
+            "_estado_analisis": {
+                "estado":          "fallido",
+                "paso_a_exitoso":  False,
+                "paso_b_exitoso":  False,
+                "errores":         errores_capturados,
+            },
+        }
+
+    # ── Paso B: contraste con normativa (con reintento) ───────────────────────
+    try:
+        resultado = _con_reintento(
+            lambda: _agente_legal_paso_b(
+                api_client, licitacion, contexto_biblioteca,
+                resultado_a, experiencia_cliente, bloque_docs_cliente, call_id,
+            ),
+            call_id, "PASO-B",
+        )
+        paso_b_ok = True
+        uso_b = resultado.pop("_uso", {})
+    except json.JSONDecodeError as exc:
+        msg = f"JSONDecodeError: {str(exc)[:200]}"
+        print(f"[LEGAL-DIAG #{call_id}] PASO-B PARSE FALLÓ: {msg}")
+        errores_capturados.append({"paso": "B", "error": msg})
+        uso_b = {}
+        resultado = {
+            "viable_juridico":   None,
+            "score_juridico":    None,
+            "concepto":          "PARCIAL",
+            "riesgos_legales":   "Paso B no completó el análisis",
+            "argumentos_viabilidad": "",
+            "documentos_a_gestionar": [],
+            "requisitos_habilitantes": resultado_a.get("requisitos_habilitantes", []),
+            "matriz_experiencia": [],
+        }
+    except Exception as exc:
+        msg = f"{type(exc).__name__}: {str(exc)[:300]}"
+        print(f"[LEGAL-DIAG #{call_id}] PASO-B ABORTADO: {msg}")
+        errores_capturados.append({"paso": "B", "error": msg})
+        uso_b = {}
+        resultado = {
+            "viable_juridico":   None,
+            "score_juridico":    None,
+            "concepto":          "PARCIAL",
+            "riesgos_legales":   "Paso B falló — ver _estado_analisis",
+            "argumentos_viabilidad": "",
+            "documentos_a_gestionar": [],
+            "requisitos_habilitantes": resultado_a.get("requisitos_habilitantes", []),
+            "matriz_experiencia": [],
+        }
+
+    t_total = round(_time.time() - t_inicio, 1)
+    print(f"[LEGAL-DIAG #{call_id}] TOTAL | {t_total}s (Paso A + Paso B)")
+
     score_j = resultado.get("score_juridico")
-    if score_j is None or score_j == 0:
-        print(f"[LEGAL-DIAG #{call_id}] score_juridico={score_j} en JSON parseado correctamente")
+    if score_j is not None and score_j == 0:
+        print(f"[LEGAL-DIAG #{call_id}] score_juridico=0 — posible resultado degradado")
 
     # Retrocompatibilidad
     if "viable_juridico" not in resultado:
@@ -1260,6 +1604,25 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
         resultado["argumentos_viabilidad"] = resultado.get("concepto", "Sin análisis disponible")
     if "documentos_a_gestionar" not in resultado:
         resultado["documentos_a_gestionar"] = resultado.get("documentos_faltantes", [])
+
+    # Estado de análisis para consumidores del JSON
+    if errores_capturados:
+        estado_an = "parcial" if paso_a_ok else "fallido"
+    else:
+        estado_an = "completo"
+
+    resultado["_estado_analisis"] = {
+        "estado":         estado_an,
+        "paso_a_exitoso": paso_a_ok,
+        "paso_b_exitoso": paso_b_ok,
+        "errores":        errores_capturados,
+    }
+    resultado["_tokens_uso"] = {
+        "paso_a_input":  uso_a.get("input_tokens"),
+        "paso_a_output": uso_a.get("output_tokens"),
+        "paso_b_input":  uso_b.get("input_tokens"),
+        "paso_b_output": uso_b.get("output_tokens"),
+    }
 
     return resultado
 

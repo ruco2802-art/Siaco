@@ -1,0 +1,70 @@
+{
+  "archivo": "Resolucion-540-de-2025_transversal_menor_cuantia.pdf",
+  "paginas": [
+    {
+      "pagina_pdf": 1,
+      "tablas": []
+    },
+    {
+      "pagina_pdf": 2,
+      "tablas": [],
+      "observaciones": "Página 2 contiene solo texto narrativo (considerandos de la Resolución). No hay tablas presentes."
+    },
+    {
+      "pagina_pdf": 3,
+      "tablas": [],
+      "observaciones": "La página 3 contiene únicamente texto narrativo (considerandos de la Resolución). No hay tablas presentes en esta página."
+    },
+    {
+      "pagina_pdf": 4,
+      "tablas": [],
+      "observaciones": "La página contiene solo texto normativo (considerandos y artículos iniciales de la Resolución 540 de 2025). No hay tablas presentes. El documento está bien legible sin manchas o degradación significativa que afecte la comprensión del contenido textual."
+    },
+    {
+      "pagina_pdf": 5,
+      "tablas": [],
+      "observaciones": "La página 5 contiene solo texto estructurado en secciones (A. DOCUMENTO BASE DEL PLIEGO TIPO, B. ANEXOS, C. FORMATOS, D. MATRICES, E. FORMULARIOS) con listas numeradas. No hay tablas en esta página."
+    },
+    {
+      "pagina_pdf": 6,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "observaciones": "Página 6 contiene únicamente texto normativo (Resolución 540 de 2025, párrafos y artículos 3 y 4). No hay tablas presentes en esta página."
+    },
+    {
+      "pagina_pdf": 7,
+      "tablas": [],
+      "observaciones": "Página 7 contiene únicamente texto normativo (Resolución 540 de 2025, artículos y párrafos). No hay tablas presentes en esta página."
+    },
+    {
+      "pagina_pdf": 8,
+      "tablas": [],
+      "calidad_suficiente": true,
+      "observaciones": "Página de texto normativo sin tablas. Contiene Artículos 6 a 9 de la Resolución 540 de 2025, referentes a capacidad financiera, documentos complementarios del sector educativo, y desarrollo de documentos tipo. No se identifican estructuras tabulares."
+    },
+    {
+      "pagina_pdf": 9,
+      "tablas": [],
+      "calidad_suficiente": true,
+      "observaciones": "La página contiene texto normativo (artículos 10-14 de la Resolución 540 de 2025) sin tablas. No hay elementos tabulares que transcribir."
+    },
+    {
+      "pagina_pdf": 10,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "observaciones": "Esta página contiene únicamente texto normativo. No hay tablas presentes."
+    },
+    {
+      "pagina_pdf": 11,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "observaciones": "Página que contiene únicamente texto normativo. No hay tablas presentes. El documento es un escaneo de buena calidad legible en su totalidad."
+    },
+    {
+      "pagina_pdf": 12,
+      "tablas": [],
+      "calidad_insuficiente": false,
+      "motivo": "La página contiene solo texto normativo y firmas. No hay tablas que transcribir."
+    }
+  ]
+}

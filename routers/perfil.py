@@ -16,41 +16,115 @@ router = APIRouter(tags=["perfil"])
 
 
 # ── Modelos ────────────────────────────────────────
-class RupModel(BaseModel):
-    tiene_rup: bool = False
-    estado_rup: str = "Inactivo"
-    numero_rup: str = ""
-    fecha_vencimiento_rup: str = ""
+# PerfilBody = vista que el formulario frontend puede enviar hoy.
+# Los campos None llegan al pipeline como dato_faltante (no como cero).
+# Campos pendientes de agregar al formulario frontend marcados con [TODO-FORM].
+
+class PerfilBodyFinanciero(BaseModel):
+    # Hoy en el formulario
+    indice_liquidez: float | None = None
+    indice_endeudamiento: float | None = None
+    cobertura_intereses: float | None = None    # era razon_cobertura_interes
+    capital_trabajo: float | None = None
+    patrimonio_neto: float | None = None        # era patrimonio_liquido
+    renta_operacional: float | None = None      # [TODO-FORM]
+    ebitda: float | None = None                 # [TODO-FORM]
+    rentabilidad_patrimonio: float | None = None  # [TODO-FORM] ROE
+    rentabilidad_activo: float | None = None      # [TODO-FORM] ROA
+    roe: float | None = None                    # [TODO-FORM]
+    roa: float | None = None                    # [TODO-FORM]
+    ingresos_operacionales_ultimos_5_anos: list[float] = []  # [TODO-FORM] lista 5 años
+    saldos_contratos_en_ejecucion: float | None = None       # [TODO-FORM]
+    numero_profesionales_vinculados: int | None = None       # [TODO-FORM]
 
 
-class FinancieroModel(BaseModel):
-    indice_liquidez: float = 0.0
-    indice_endeudamiento: float = 0.0
-    razon_cobertura_interes: float = 0.0
-    patrimonio_liquido: float = 0.0
-    presupuesto_minimo_contrato: float = 10_000_000
-    presupuesto_maximo_contrato: float = 500_000_000
-    capital_trabajo: float = 0.0
+class PerfilBodyJuridico(BaseModel):
+    rup_en_firme: bool | None = None
+    rup_fecha_expedicion: str | None = None     # [TODO-FORM]
+    camara_comercio: bool | None = None
+    camara_comercio_fecha: str | None = None    # [TODO-FORM]
+    rut_vigente: bool | None = None             # [TODO-FORM]
+    rut_fecha: str | None = None                # [TODO-FORM]
+    paz_y_salvo_parafiscales: bool | None = None      # [TODO-FORM]
+    paz_y_salvo_seguridad_social: bool | None = None  # [TODO-FORM]
+    paz_y_salvo_impuestos: bool | None = None         # [TODO-FORM]
+    paz_salvo_municipal: bool | None = None           # [TODO-FORM]
+    sin_inhabilidades: bool | None = None             # [TODO-FORM]
+    sin_antecedentes_disciplinarios: bool | None = None  # [TODO-FORM]
+    sin_antecedentes_penales: bool | None = None         # [TODO-FORM]
+    antecedentes_fiscales: bool | None = None         # [TODO-FORM]
+    redam: bool | None = None                         # [TODO-FORM]
+    medidas_correctivas: bool | None = None           # [TODO-FORM]
+    garantia_seriedad: bool | None = None             # [TODO-FORM]
 
 
-class ExperienciaModel(BaseModel):
-    valor_acumulado: float = 0.0
-    valor_individual_max: float = 0.0
-    objeto_similar: str = ""
-    codigos_unspsc: str = ""
-    participacion_minima: float = 30.0
+class PerfilBodyExperiencia(BaseModel):
+    valor_acumulado: float | None = None
+    valor_individual_max: float | None = None
+    objetos_similares: list[str] = []           # era objeto_similar (str)
+    codigos_unspsc: list[str] = []              # era codigos_unspsc (str)
+    contratos_acreditados: int | None = None    # [TODO-FORM]
+    antiguedad_meses: int | None = None         # [TODO-FORM]
+
+
+class PerfilBodySocial(BaseModel):
+    porcentaje_mujeres_nomina: float | None = None  # [TODO-FORM]
+    porcentaje_discapacidad: float | None = None    # [TODO-FORM]
+    personas_reincorporadas: int | None = None      # [TODO-FORM]
+    poblacion_etnica: bool | None = None            # [TODO-FORM]
 
 
 class PerfilBody(BaseModel):
+    # Identificación
     nombre: str = ""
     nit: str = ""
     sector: str = ""
+    municipio_domicilio: str = ""           # [TODO-FORM]
+    departamento_domicilio: str = ""        # [TODO-FORM]
+    es_mipyme: bool = False
+    tamano_empresa: str | None = None       # [TODO-FORM] "micro"|"pequena"|"mediana"|"grande"
+    es_empresa_de_mujeres: bool = False     # [TODO-FORM]
+    # Metadatos de contacto (no van al pipeline)
     notificacion: str = "whatsapp"
     contacto_whatsapp: str = ""
     contacto_email: str = ""
-    rup: RupModel = RupModel()
-    financiero: FinancieroModel = FinancieroModel()
-    experiencia: ExperienciaModel = ExperienciaModel()
+    # Bloques de capacidad
+    financiero: PerfilBodyFinanciero = PerfilBodyFinanciero()
+    juridico: PerfilBodyJuridico = PerfilBodyJuridico()
+    experiencia: PerfilBodyExperiencia = PerfilBodyExperiencia()
+    social: PerfilBodySocial = PerfilBodySocial()      # [TODO-FORM] sección nueva
+
+    def to_perfil_empresa(self) -> dict:
+        """
+        Produce el dict que cargar_perfil() acepta.
+        Los campos vacíos (0.0, "") se convierten en None para que el evaluador
+        los trate como dato_faltante en vez de producir un score de cero.
+        """
+        fin = self.financiero.model_dump()
+        jur = self.juridico.model_dump()
+        exp = self.experiencia.model_dump()
+        soc = self.social.model_dump()
+
+        # Normalizar strings vacíos → None en campos de fecha
+        for d in (jur,):
+            for k, v in d.items():
+                if isinstance(v, str) and v.strip() == "":
+                    d[k] = None
+
+        return {
+            "nombre": self.nombre,
+            "nit": self.nit or None,
+            "sector": self.sector or None,
+            "municipio_domicilio": self.municipio_domicilio or None,
+            "departamento_domicilio": self.departamento_domicilio or None,
+            "es_mipyme": self.es_mipyme,
+            "tamano_empresa": self.tamano_empresa or None,
+            "es_empresa_de_mujeres": self.es_empresa_de_mujeres,
+            "financiero": fin if any(v is not None for v in fin.values() if not isinstance(v, list)) else None,
+            "juridico": jur if any(v is not None for v in jur.values() if not isinstance(v, str)) else None,
+            "experiencia": exp if any(v is not None for v in exp.values() if not isinstance(v, list)) else None,
+            "social": soc if any(v is not None for v in soc.values()) else None,
+        }
 
 
 # ── Helpers ────────────────────────────────────────
@@ -164,11 +238,15 @@ def update_perfil(body: PerfilBody, authorization: str = Header(None)):
     cid = _cliente_id_from_session(sesion)
 
     existente = _load_perfil(cid)
-    nuevo = body.model_dump()
+    # Guarda en formato canónico (PerfilEmpresa) con metadatos de sesión preservados
+    nuevo = body.to_perfil_empresa()
     nuevo["cliente_id"] = cid
+    nuevo["notificacion"] = body.notificacion
+    nuevo["contacto_whatsapp"] = body.contacto_whatsapp
+    nuevo["contacto_email"] = body.contacto_email
 
-    for campo in ("plan", "fecha_creacion", "notificacion"):
-        if campo in existente and campo not in nuevo:
+    for campo in ("plan", "fecha_creacion"):
+        if campo in existente:
             nuevo[campo] = existente[campo]
 
     _save_perfil(cid, nuevo)

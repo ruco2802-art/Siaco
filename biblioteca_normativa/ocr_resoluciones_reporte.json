@@ -1,0 +1,32 @@
+{
+  "modelo": "claude-haiku-4-5-20251001",
+  "skills": [
+    "transcripcion_tablas.md",
+    "anexo_escaneados.md"
+  ],
+  "resultados": [
+    {
+      "archivo": "Resolucion-539-de-2025.pdf",
+      "n_paginas": 14,
+      "input_tokens": 63784,
+      "output_tokens": 1336
+    },
+    {
+      "archivo": "Resolucion-540-de-2025_transversal_menor_cuantia.pdf",
+      "n_paginas": 12,
+      "input_tokens": 54672,
+      "output_tokens": 974
+    },
+    {
+      "archivo": "Resolucion-541-de-2025_minima_cuantia.pdf",
+      "n_paginas": 11,
+      "input_tokens": 50116,
+      "output_tokens": 1203
+    }
+  ],
+  "totales": {
+    "input_tokens": 168572,
+    "output_tokens": 3513,
+    "costo_usd": 0.1489
+  }
+}
