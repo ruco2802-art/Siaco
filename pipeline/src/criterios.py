@@ -197,9 +197,13 @@ class TablaTramos(_CriterioBase):
     """
     Caso 3 — puntaje según el rango en que cae el valor del perfil.
     Ejemplo: liquidez [0, 0.50) → 20 pts, [0.50, 0.75) → 25 pts, ...
+    naturaleza="puntaje": el campo puntaje es una puntuación (score).
+    naturaleza="habilitante": puntaje=1.0 → HABILITADO, 0.0 → NO HABILITADO.
     """
     tipo: Literal["tabla_tramos"] = "tabla_tramos"
     campo_perfil: str
+    # CRÍTICO: nunca asumir la naturaleza. "puntaje" asigna score; "habilitante" HABILITA o no.
+    naturaleza: Literal["puntaje", "habilitante"] = "habilitante"
     tramos: list[Tramo]
 
 
