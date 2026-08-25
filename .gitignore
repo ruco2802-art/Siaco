@@ -39,10 +39,14 @@ prospectos_finales.csv
 _respaldos/
 nul
 
-# IDEs
+# IDEs y herramientas locales
 .vscode/
 .idea/
 *.swp
+.impeccable/
+
+# Outputs de tests y scripts de exploración
+test_out.txt
 
 # OS
 .DS_Store

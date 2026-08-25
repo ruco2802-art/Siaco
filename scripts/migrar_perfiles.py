@@ -78,6 +78,22 @@ def _migrar_formato_a(data: dict) -> dict:
             "rup_en_firme": rup_viejo.get("tiene_rup"),
         }
 
+    # Renombrado 2025-08: antecedentes_fiscales → sin_antecedentes_fiscales,
+    # redam → sin_redam, medidas_correctivas → sin_medidas_correctivas.
+    juridico_viejo = data.get("juridico", {})
+    if juridico_viejo:
+        jur = perfil.setdefault("juridico", {})
+        renames = {
+            "antecedentes_fiscales":      "sin_antecedentes_fiscales",
+            "antecedentes_fiscales_fecha": "sin_antecedentes_fiscales_fecha",
+            "redam":                      "sin_redam",
+            "redam_fecha":                "sin_redam_fecha",
+            "medidas_correctivas":        "sin_medidas_correctivas",
+        }
+        for viejo, nuevo in renames.items():
+            if viejo in juridico_viejo and nuevo not in jur:
+                jur[nuevo] = juridico_viejo[viejo]
+
     return perfil
 
 

@@ -52,9 +52,9 @@ class PerfilBodyJuridico(BaseModel):
     sin_inhabilidades: bool | None = None             # [TODO-FORM]
     sin_antecedentes_disciplinarios: bool | None = None  # [TODO-FORM]
     sin_antecedentes_penales: bool | None = None         # [TODO-FORM]
-    antecedentes_fiscales: bool | None = None         # [TODO-FORM]
-    redam: bool | None = None                         # [TODO-FORM]
-    medidas_correctivas: bool | None = None           # [TODO-FORM]
+    sin_antecedentes_fiscales: bool | None = None      # [TODO-FORM]
+    sin_redam: bool | None = None                     # [TODO-FORM]
+    sin_medidas_correctivas: bool | None = None       # [TODO-FORM]
     garantia_seriedad: bool | None = None             # [TODO-FORM]
 
 

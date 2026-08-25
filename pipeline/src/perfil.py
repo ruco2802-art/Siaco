@@ -4,6 +4,13 @@ src/perfil.py — esquema canónico de PerfilEmpresa.
 
 ÚNICA fuente de verdad: el frontend y el pipeline importan desde aquí.
 No dupliques estas clases en evaluator.py, routers/perfil.py ni en ningún otro módulo.
+
+Convención semántica — bloque jurídico:
+  True SIEMPRE significa condición favorable para ofertar, sin excepción.
+  Ejemplos: sin_inhabilidades=True → no tiene inhabilidades (puede ofertar).
+            sin_redam=True → no figura en REDAM (puede ofertar).
+  Esta convención elimina la ambigüedad entre "tengo el certificado" y "estoy
+  reportado"; todos los evaluadores y el skill generacion_criterios.md la asumen.
 """
 from __future__ import annotations
 
@@ -64,15 +71,15 @@ class PerfilJuridico(BaseModel):
     paz_y_salvo_impuestos: bool | None = None
     paz_salvo_municipal: bool | None = None
     paz_salvo_municipal_fecha: str | None = None
-    # Antecedentes y registros
+    # Antecedentes y registros (True = condición favorable, ver convención del módulo)
     sin_inhabilidades: bool | None = None
     sin_antecedentes_disciplinarios: bool | None = None
     sin_antecedentes_penales: bool | None = None
-    antecedentes_fiscales: bool | None = None      # True = sin antecedentes
-    antecedentes_fiscales_fecha: str | None = None
-    redam: bool | None = None                      # True = no figura en REDAM
-    redam_fecha: str | None = None
-    medidas_correctivas: bool | None = None        # True = sin medidas vigentes
+    sin_antecedentes_fiscales: bool | None = None
+    sin_antecedentes_fiscales_fecha: str | None = None
+    sin_redam: bool | None = None
+    sin_redam_fecha: str | None = None
+    sin_medidas_correctivas: bool | None = None
     # Otros
     garantia_seriedad: bool | None = None
 
