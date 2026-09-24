@@ -60,7 +60,7 @@ f.write("    prompt = 'Eres experto en licitaciones de Colombia. Analiza para Re
 f.write("    prompt += f'Objeto: {objeto}\\nDescripcion: {descripcion}\\nValor: {valor}\\nEntidad: {entidad}\\nCierre: {fecha_cierre}\\n'\n")
 f.write("    prompt += '{\"relevante\": true/false, \"score\": 0-100, \"motivo\": \"max 20 palabras\", \"accion\": \"PRESENTAR/REVISAR/DESCARTAR\", \"urgente\": true/false}'\n")
 f.write("    try:\n")
-f.write("        respuesta = client.messages.create(model='claude-sonnet-4-6', max_tokens=300, temperature=0.1, messages=[{'role': 'user', 'content': prompt}])\n")
+f.write("        respuesta = client.messages.create(model='claude-sonnet-4-6', max_tokens=300, messages=[{'role': 'user', 'content': prompt}])\n")
 f.write("        texto = respuesta.content[0].text.strip()\n")
 f.write("        return json.loads(texto)\n")
 f.write("    except Exception as e:\n")

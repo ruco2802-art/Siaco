@@ -102,7 +102,7 @@ def _llamar_llm(
     resp = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=2_000,
-        temperature=0.0,
+        extra_body={"temperature": 0.0},
         system=[{"type": "text", "text": skill_texto, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": texto_requisito}],
     )

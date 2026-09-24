@@ -8,6 +8,7 @@ src/evaluator.py — contraste perfil ↔ requisitos, Python puro.
 """
 from __future__ import annotations
 
+import unicodedata
 from typing import Any, Callable
 
 from pydantic import BaseModel
@@ -27,8 +28,16 @@ from .perfil import (  # esquema canónico — única fuente de verdad
 __all__ = [
     "PerfilEmpresa", "PerfilFinanciero", "PerfilExperiencia",
     "PerfilJuridico", "PerfilTecnico", "PerfilSocial",
-    "cargar_perfil", "evaluar_empresa", "seleccionar_rango_umbrales",
+    "cargar_perfil", "cargar_perfil_por_cid", "evaluar_empresa", "seleccionar_rango_umbrales",
 ]
+
+
+def _strip_accents(s: str) -> str:
+    """Elimina diacríticos: 'representación' → 'representacion'."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
 
 
 # ─── Selección de rango × variante (estructura_normativa.json) ─────────────
@@ -155,10 +164,15 @@ _MAP_JUR: list[tuple[str, Callable[[PerfilJuridico], Any]]] = [
     ("garantia",                    lambda p: p.garantia_seriedad),
     ("garantía",                    lambda p: p.garantia_seriedad),
     ("rut",                         lambda p: p.rut_vigente),
+    # Declaraciones habilitantes
+    ("insolvencia",                 lambda p: p.sin_insolvencia),
+    ("conflicto de",                lambda p: p.sin_conflicto_interes),
+    ("objeto social",               lambda p: p.objeto_social_compatible),
+    ("estudios y dise",             lambda p: p.sin_estudios_diseno_previos),
     ("existencia",                  lambda p: p.camara_comercio),
     ("representacion",              lambda p: p.camara_comercio),
-    ("boletin",                     lambda p: p.sin_antecedentes_disciplinarios),
-    ("boletín",                     lambda p: p.sin_antecedentes_disciplinarios),
+    ("boletin",                     lambda p: p.sin_antecedentes_fiscales),
+    ("boletín",                     lambda p: p.sin_antecedentes_fiscales),
     ("antecedente",                 lambda p: p.sin_antecedentes_disciplinarios),
 ]
 
@@ -170,12 +184,14 @@ def _valor_perfil(req: Requisito, perfil: PerfilEmpresa) -> Any:
     (Bug real: perfiles sin bloque financiero producían "NO VIABLE — datos en cero".)
     """
     nombre_l = req.nombre.lower()
+    # sin tildes — permite que keywords sin acento capturen nombres con acento y viceversa
+    nombre_n = _strip_accents(nombre_l)
 
     if req.categoria == "financiero":
         if perfil.financiero is None:
             return None
         for kw, fn in _MAP_FIN:
-            if kw in nombre_l:
+            if _strip_accents(kw) in nombre_n:
                 return fn(perfil.financiero)
         return None
 
@@ -183,7 +199,7 @@ def _valor_perfil(req: Requisito, perfil: PerfilEmpresa) -> Any:
         if perfil.experiencia is None:
             return None
         for kw, fn in _MAP_EXP:
-            if kw in nombre_l:
+            if _strip_accents(kw) in nombre_n:
                 return fn(perfil.experiencia)
         return None
 
@@ -191,18 +207,23 @@ def _valor_perfil(req: Requisito, perfil: PerfilEmpresa) -> Any:
         if perfil.juridico is None:
             return None
         for kw, fn in _MAP_JUR:
-            if kw in nombre_l:
+            if _strip_accents(kw) in nombre_n:
                 return fn(perfil.juridico)
         return None
 
     if req.categoria == "tecnico":
         if perfil.tecnico is None:
             return None
-        if "personal" in nombre_l:
+        if "titulo" in nombre_n:
+            tp = perfil.tecnico.titulo_profesional
+            return None if tp is None else (tp != "ninguno")
+        if "colombianos" in nombre_n:
+            return perfil.tecnico.porcentaje_empleados_colombianos
+        if "personal" in nombre_n:
             return perfil.tecnico.personal_disponible
-        if "equipo" in nombre_l:
+        if "equipo" in nombre_n:
             return bool(perfil.tecnico.equipos)
-        if "certificacion" in nombre_l or "certificación" in nombre_l:
+        if "certificacion" in nombre_n:
             return bool(perfil.tecnico.certificaciones)
         return None
 
@@ -226,6 +247,57 @@ def _evaluar_item(
         return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
     if req.aplica_a == "no_mipyme" and perfil.es_mipyme:
         return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
+    # Extranjero sin domicilio → no aplica si la empresa es nacional (mipyme o con municipio)
+    if req.aplica_a == "extranjero_sin_domicilio":
+        es_nacional = perfil.es_mipyme or (perfil.municipio_domicilio is not None)
+        if es_nacional:
+            return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
+
+    # ── Inferencia de no_aplica por nombre — complementa aplica_a de extracciones previas
+    _nl = req.nombre.lower()
+
+    # Proponente plural → no aplica si la empresa es individual
+    if not perfil.es_proponente_plural:
+        _KW_PLURAL = (
+            "proponente plural", "consorci", "unión temporal", "union temporal",
+            "integrantes del proponente", "integrante de un proponente",
+        )
+        if any(kw in _nl for kw in _KW_PLURAL):
+            return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
+
+    # Entidad estatal → nunca aplica a empresas privadas
+    _KW_ESTATAL = ("entidad estatal", "acto de creación")
+    if any(kw in _nl for kw in _KW_ESTATAL):
+        return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
+
+    # Extranjero → no aplica si la empresa tiene municipio colombiano
+    # "trato nacional" y "formato 9a" se omiten: también aplican a nacionales (opciones 1/2)
+    if perfil.municipio_domicilio is not None:
+        _KW_EXTRANJERO = (
+            "extranjero sin domicilio",  # aplica_a explícito del extractor
+            "para extranjero",           # Formato 9A opción 3, UNSPSC para extranjeros sin domicilio
+            "proponente extranjero",     # nombre explícito del tipo de oferente
+            "formato 9b",               # Incorporación de componente nacional en servicios extranjeros
+        )
+        if any(kw in _nl for kw in _KW_EXTRANJERO):
+            return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
+
+    # ── [B8] Conflicto de umbral: el pliego define más de un valor ─────────
+    # Ocurre cuando la fusión encuentra umbrales distintos entre los fragmentos
+    # (p. ej. variantes mipyme / no_mipyme) o cuando la extracción discrepa.
+    # Elegir uno daría un veredicto falso a un cliente: se reporta para revisión.
+    if getattr(req, "conflicto_umbral", False):
+        return {
+            "requisito":  req.nombre,
+            "estado":     "revisar_manual",
+            "categoria":  req.categoria,
+            "fuente_numeral": req.fuente_numeral,
+            "umbrales_alternativos": getattr(req, "umbrales_alternativos", []),
+            "motivo": (
+                "El pliego define más de un umbral para este requisito. "
+                "Verifica cuál aplica a tu tipo de proponente antes de ofertar."
+            ),
+        }
 
     # ── Camino con criterio estructurado ───────────────────────────────────
     if req.criterio is not None:
@@ -299,7 +371,9 @@ def _evaluar_item(
 def _stats_categoria(items: list[dict]) -> dict:
     """Desglose de una categoría con fórmula visible. [I6]"""
     _estados_skip = {"no_aplica"}
-    _estados_sin_dato = {"dato_faltante", "no_evaluable"}
+    # revisar_manual [B8]: hay umbral, pero ambiguo. No cuenta como cumple ni
+    # como no_cumple — el score no puede afirmar nada sobre este requisito.
+    _estados_sin_dato = {"dato_faltante", "no_evaluable", "revisar_manual"}
     evaluados = [i for i in items if i["estado"] not in _estados_skip]
     con_datos = [i for i in evaluados if i["estado"] not in _estados_sin_dato]
     cumple = sum(1 for i in con_datos if i["estado"] == "cumple")
@@ -308,13 +382,17 @@ def _stats_categoria(items: list[dict]) -> dict:
 
     # score = None cuando no hay datos — nunca 0.0
     score = (cumple / len(con_datos) * 100.0) if con_datos else None
+    # cobertura: fracción de req evaluados que tienen dato
+    cobertura = (len(con_datos) / len(evaluados)) if evaluados else 0.0
 
     return {
         "score": score,
         "cumple": cumple,
         "no_cumple": no_cumple,
         "dato_faltante": dato_faltante,
+        "no_aplica": sum(1 for i in items if i["estado"] == "no_aplica"),
         "evaluados": len(evaluados),
+        "cobertura": round(cobertura, 3),
     }
 
 
@@ -376,6 +454,11 @@ def evaluar_empresa(
     # [I6] fórmula: media ponderada solo de categorías con datos
     score_global = (score_num / peso_num) if peso_num > 0 else 0.0
 
+    # cobertura global: total requisitos con dato / total evaluados (ex no_aplica)
+    total_evaluados = sum(s["evaluados"] for s in desglose.values())
+    total_con_datos = sum(s["cumple"] + s["no_cumple"] for s in desglose.values())
+    cobertura_global = (total_con_datos / total_evaluados) if total_evaluados > 0 else 0.0
+
     # [I4] veredicto derivado — nunca asignado a mano
     if hay_dato_faltante:
         veredicto = "dato_insuficiente"
@@ -393,9 +476,47 @@ def evaluar_empresa(
         "es_mipyme": perfil.es_mipyme,
         "clave_umbrales": clave_umbrales,
         "score_global": round(score_global, 2),
+        "cobertura_global": round(cobertura_global, 3),
+        "total_evaluados": total_evaluados,
+        "total_con_datos": total_con_datos,
         "veredicto": veredicto,
         "desglose": desglose,
         "items": todos_items,
         "_formula": "score = Σ(score_cat × peso_cat) / Σ(peso_cat con datos)",
         "_pesos": _PESOS,
     }
+
+
+# ─── Carga de perfil desde disco (para uso en routers) ─────────────────────
+
+def cargar_perfil_por_cid(cid: str, base_dir: str | None = None) -> PerfilEmpresa | None:
+    """
+    Carga el perfil de un cliente desde disco y retorna PerfilEmpresa.
+
+    Busca en orden:
+      1. clientes/{cid}.json          (formato plano — JSON canónico)
+      2. clientes/{cid}/perfil.json   (formato directorio — sesión web)
+
+    Retorna None si no existe el archivo; el evaluador marcará todo como
+    dato_faltante. Lanza ValueError si el archivo existe pero el JSON es inválido.
+
+    Nunca retorna 0 para campos faltantes: los campos ausentes son None.
+    """
+    import json
+    from pathlib import Path
+
+    if base_dir is None:
+        _repo = Path(__file__).parent.parent.parent
+        _base = _repo / "clientes"
+    else:
+        _base = Path(base_dir)
+
+    for ruta in [_base / f"{cid}.json", _base / cid / "perfil.json"]:
+        if ruta.exists():
+            try:
+                data = json.loads(ruta.read_text("utf-8"))
+            except Exception as exc:
+                raise ValueError(f"JSON inválido en {ruta}: {exc}") from exc
+            return cargar_perfil(data)
+
+    return None

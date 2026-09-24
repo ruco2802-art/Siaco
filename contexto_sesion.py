@@ -34,6 +34,7 @@ def guardar_contexto_sesion(
     texto_pliego: str,
     textos_adicionales: str = "",
     parametros_proceso: dict | None = None,
+    pliego_sha256: str = "",
 ) -> None:
     """Guarda el contexto en memoria + /tmp + Supabase Storage."""
     datos = {
@@ -43,6 +44,8 @@ def guardar_contexto_sesion(
     }
     if parametros_proceso:
         datos["parametros_proceso"] = parametros_proceso
+    if pliego_sha256:
+        datos["pliego_sha256"] = pliego_sha256
     # 1. Memoria
     contextos_sesion[cliente_id] = datos
 
@@ -165,35 +168,107 @@ def obtener_contexto_sesion(cliente_id: str) -> dict:
     return {}
 
 
-def contexto_para_chat(cliente_id: str, query: str) -> str:
+FuenteContexto = str  # Literal: "pipeline" | "rag_clasico" | "sin_pliego"
+
+
+def contexto_para_chat(cliente_id: str, query: str) -> tuple[str, FuenteContexto]:
     """
-    Devuelve el fragmento de pliego más relevante para la query del chat.
-    - Si el pliego es corto (<= 5 000 chars): lo devuelve completo.
-    - Si es largo: aplica RAG con la query del usuario (top-2 por sub-query).
-    Siempre añade los documentos adicionales al final (hasta 2 000 chars).
-    Devuelve cadena vacía si no hay pliego guardado para el cliente.
+    Devuelve (fragmento, fuente) donde fuente declara la calidad del contexto:
+      "pipeline"   — SHA + artefactos disponibles; chunks semánticos, 100% cobertura
+      "rag_clasico"— pliego presente pero sin artefactos; RAG sobre primeros 15 000 chars
+      "sin_pliego" — sin sesión o sin texto; el chat trabaja sin documento
+
+    Prioridad del fragmento:
+    1. Pipeline (artefactos.py): chunks semánticos con metadata de sección + bloque
+       de requisitos habilitantes estructurado.
+    2. RAG clásico (buscar_chunks_pliego_cacheados): embeddings sobre texto[:15_000].
+    3. Texto directo: si el pliego cabe en _CHAT_RAG_THRESHOLD (no aplica RAG).
+
+    El límite de 5 000 chars se mantiene en todos los caminos (control de costo).
+    Siempre añade documentos adicionales al final (hasta 2 000 chars).
     """
     ctx = obtener_contexto_sesion(cliente_id)
     if not ctx:
-        return ""
+        return "", "sin_pliego"
 
     texto       = ctx.get("texto_pliego", "")
     adicionales = ctx.get("textos_adicionales", "")
+    sha256      = ctx.get("pliego_sha256", "")
 
     if not texto:
-        return ""
+        return "", "sin_pliego"
 
-    if len(texto) <= _CHAT_RAG_THRESHOLD:
-        fragmento = texto
-    else:
+    fragmento = ""
+    fuente: FuenteContexto = "rag_clasico"
+
+    # ── Camino 1: pipeline chunks ──────────────────────────────────────────
+    if sha256:
         try:
-            from analizador import buscar_chunks_pliego_cacheados
-            chunks = buscar_chunks_pliego_cacheados(cliente_id, query, top_k=10)
-            fragmento = "\n\n[...]\n\n".join(chunks) if chunks else texto[:_CHAT_RAG_THRESHOLD]
-        except Exception:
-            fragmento = texto[:_CHAT_RAG_THRESHOLD]
+            import sys, os
+            _pipeline_src = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "pipeline"
+            )
+            if _pipeline_src not in sys.path:
+                sys.path.insert(0, _pipeline_src)
+
+            from src.artefactos import obtener_artefactos, chunks_relevantes, bloque_requisitos
+
+            art = obtener_artefactos(sha256)
+            if art:
+                bloque_req = bloque_requisitos(art, solo_habilitantes=True, max_chars_total=3_000)
+                presupuesto_chunks = _CHAT_RAG_THRESHOLD - len(bloque_req) - 200
+                n_chunks = max(2, presupuesto_chunks // 1_200)
+                top_chunks = chunks_relevantes(art, query, top_k=n_chunks, max_chars_por_chunk=1_200)
+
+                partes_chunk = []
+                chars_usados = 0
+                for c in top_chunks:
+                    t = c.get("texto", "")
+                    if chars_usados + len(t) > presupuesto_chunks:
+                        t = t[:presupuesto_chunks - chars_usados] + "…"
+                    if t:
+                        cap = c.get("metadata", {}).get("capitulo", "") or c.get("capitulo", "")
+                        num = c.get("metadata", {}).get("numeral_derivado", "") or c.get("numeral_derivado", "")
+                        meta = f"[{cap or ''}{' §' + num if num else ''}] " if (cap or num) else ""
+                        partes_chunk.append(meta + t)
+                        chars_usados += len(t)
+                    if chars_usados >= presupuesto_chunks:
+                        break
+
+                if partes_chunk or bloque_req:
+                    secciones = []
+                    if bloque_req:
+                        secciones.append(f"=== REQUISITOS HABILITANTES ===\n{bloque_req}")
+                    if partes_chunk:
+                        secciones.append("=== SECCIONES RELEVANTES ===\n" + "\n\n[...]\n\n".join(partes_chunk))
+                    fragmento = "\n\n".join(secciones)
+                    fuente = "pipeline"
+                    logger.info(
+                        "[CHAT-RAG] fuente=pipeline chunks=%d requisitos=%d fragmento=%d chars cliente=%s",
+                        len(art.chunks), len(art.requisitos), len(fragmento), cliente_id,
+                    )
+        except Exception as exc:
+            logger.warning("[CHAT-RAG] Pipeline chunks fallaron, usando RAG clásico: %s", exc)
+            fragmento = ""
+
+    # ── Camino 2: RAG clásico (fallback) ──────────────────────────────────
+    if not fragmento:
+        fuente = "rag_clasico"
+        if len(texto) <= _CHAT_RAG_THRESHOLD:
+            fragmento = texto
+        else:
+            try:
+                from analizador import buscar_chunks_pliego_cacheados
+                chunks_cl = buscar_chunks_pliego_cacheados(cliente_id, query, top_k=10)
+                fragmento = "\n\n[...]\n\n".join(chunks_cl) if chunks_cl else texto[:_CHAT_RAG_THRESHOLD]
+            except Exception:
+                fragmento = texto[:_CHAT_RAG_THRESHOLD]
+        logger.info(
+            "[CHAT-RAG] fuente=rag_clasico fragmento=%d chars cliente=%s",
+            len(fragmento), cliente_id,
+        )
 
     if adicionales:
         fragmento += f"\n\n--- DOCUMENTOS ADICIONALES ---\n{adicionales[:2_000]}"
 
-    return fragmento
+    return fragmento, fuente

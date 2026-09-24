@@ -26,7 +26,7 @@ def extraer_datos_oferta(pdf_bytes: bytes, proceso_id: str, nit_competidor: str)
         resp = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1000,
-            temperature=0.0,
+            extra_body={"temperature": 0.0},
             messages=[{
                 "role": "user",
                 "content": (
@@ -152,7 +152,6 @@ def generar_estrategia_oferta(cliente_id: str, proceso_id: str, competidores_pro
         resp = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1500,
-            temperature=0.1,
             messages=[{
                 "role": "user",
                 "content": (

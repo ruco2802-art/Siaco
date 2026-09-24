@@ -1197,7 +1197,7 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido. Estructura exacta:
     respuesta = api_client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=6144,
-        temperature=0.0,
+        extra_body={"temperature": 0.0},
         messages=[{"role": "user", "content": prompt}],
     )
     elapsed = _time.time() - t0
@@ -1248,7 +1248,7 @@ Tu única tarea es leer el pliego adjunto y extraer los REQUISITOS HABILITANTES 
 REGLAS ABSOLUTAS — sin excepción:
 1. El pliego es tu ÚNICA fuente. No tienes acceso a ninguna normativa externa.
 2. Si un valor, umbral, porcentaje o plazo NO aparece textualmente en el fragmento recibido, escribe exactamente: NO_ENCONTRADO_EN_PLIEGO
-3. PROHIBIDO completar campos con: valores que suelen exigirse en procesos similares, conocimiento general, ni lo que dicen el Decreto 1082, la Resolución 196/2016, la Resolución CCE, ni ninguna otra norma. Un campo NO_ENCONTRADO_EN_PLIEGO es correcto. Un campo inventado es un error grave.
+3. PROHIBIDO completar campos con: valores que suelen exigirse en procesos similares, conocimiento general, ni lo que dicen el Decreto 1082, la Resolución 196/2016 [no-citable], la Resolución CCE, ni ninguna otra norma. Un campo NO_ENCONTRADO_EN_PLIEGO es correcto. Un campo inventado es un error grave.
 4. En "ubicacion_pliego": anota la sección o numeral exacto (ej: "Numeral 3.9", "Sección 2.6.3"). Si no puedes ubicarlo, escribe "texto del pliego" o null.
 5. No cites artículos de ley ni resoluciones. Solo cita el pliego.
 6. EXCLUIR únicamente: (a) causales de rechazo de la oferta económica, (b) plazos del cronograma del proceso (fechas de apertura, cierre, adjudicación), (c) instrucciones de formato de la oferta (foliado, sellos, carátulas, formularios de presentación, AIU). NO excluyas documentos que el proponente debe acreditar aunque no tengan umbral numérico — esos sí son habilitantes.
@@ -1285,7 +1285,7 @@ REGLA DE ORO: Responde ÚNICAMENTE con JSON válido, sin texto antes ni después
     respuesta = api_client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=8192,
-        temperature=0.0,
+        extra_body={"temperature": 0.0},
         messages=[{"role": "user", "content": prompt_a}],
     )
     elapsed = _time.time() - t0
@@ -1412,7 +1412,7 @@ El array "requisitos_habilitantes" va PRIMERO para garantizar que no quede trunc
     respuesta = api_client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=8192,
-        temperature=0.0,
+        extra_body={"temperature": 0.0},
         messages=[{"role": "user", "content": prompt_b}],
     )
     elapsed = _time.time() - t0
@@ -1781,7 +1781,7 @@ def _analisis_viabilidad_ligero(licitacion, cliente):
         respuesta = _client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=250,
-            temperature=0.0,
+            extra_body={"temperature": 0.0},
             messages=[{"role": "user", "content": prompt}]
         )
         return _extraer_json(respuesta.content[0].text)

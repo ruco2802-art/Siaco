@@ -80,7 +80,11 @@ Rastrear y alertar en cada fecha clave:
 - T-72h cierre recepción ofertas → activar checklist 5.3
 - T-24h cierre → 🚨 URGENTE "Última revisión de oferta"
 - Publicación informe de evaluación → notificar, analizar si hay observaciones
-  que presentar (plazo legal: generalmente 3 días hábiles según Decreto 1082)
+  que presentar. El plazo de subsanación lo fija la entidad en el pliego:
+  la ley no establece un número de días. El límite legal es hasta el
+  término de traslado del informe de evaluación (Ley 1150/2007 art. 5,
+  parágrafo 1, modificado por Ley 1882/2018 art. 5), salvo mínima cuantía
+  y subasta.
 - Publicación de subsanaciones → alerta inmediata, plazo puede ser 24-48h
 - Fecha de adjudicación → registrar resultado en historial del cliente
 - Fecha de firma de contrato → cerrar expediente, registrar lección aprendida

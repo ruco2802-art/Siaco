@@ -160,7 +160,7 @@ class Requisito(BaseModel):
         validation_alias=AliasChoices("fuente_numeral", "numeral", "seccion", "fuente")
     )
     fuente_documento: str = "pliego"
-    aplica_a: Literal["todos", "mipyme", "no_mipyme"] = Field(
+    aplica_a: Literal["todos", "mipyme", "no_mipyme", "extranjero_sin_domicilio"] = Field(
         default="todos",
         validation_alias=AliasChoices("aplica_a", "aplica_para", "aplica"),
     )
@@ -173,8 +173,32 @@ class Requisito(BaseModel):
     subsanable: bool | None = None
     cita_verificada: bool = False
     cita_verificada_parcial: bool = False   # primeros 60 chars normalizados existen
-    # ── Clasificación de impacto (el modelo puede retornarla) ────────────────
-    criticidad: Literal["habilitante", "puntaje", "procedimental"] = "habilitante"
+    # ── Clasificación de impacto ─────────────────────────────────────────────
+    # Default "indeterminado": un requisito que no pasó por clasificador.py es
+    # DESCONOCIDO, no habilitante. Con default "habilitante" un pliego sin
+    # clasificar producía 218 falsos habilitantes y un score inflado en silencio.
+    # [C3] clasificador.py asigna el valor real; este default sólo debe sobrevivir
+    # cuando la clasificación no corrió — y entonces debe ser visible.
+    criticidad: Literal["habilitante", "puntaje", "procedimental", "indeterminado"] = "indeterminado"
+    evidencia_criticidad: Literal[
+        "capitulo_habilitantes", "limitacion_participacion",
+        "causal_rechazo", "capitulo_presentacion", "capitulo_puntaje", "inferido"
+    ] | None = None
+    tiene_plazo: bool = False
+    # ── Consolidación (asignado por clasificador.py, no por el modelo LLM) ──
+    numerales_fuentes: list[str] = Field(default_factory=list)
+    # [B8] Fusión de fragmentos: el primario aporta identidad, pero el umbral
+    # puede venir de cualquier miembro del grupo. Estos campos preservan de
+    # dónde salió y qué pasa cuando hay más de un umbral distinto.
+    fuente_umbral_numeral: str | None = None   # numeral del miembro que aportó el umbral
+    umbrales_alternativos: list[dict] = Field(default_factory=list)
+    conflicto_umbral: bool = False             # True ⇒ el evaluador NO debe evaluar
+    # Nombres de los requisitos absorbidos al fusionar. Sin esto el nombre
+    # desaparece del informe y el operador cree que el sistema no lo detectó
+    # (caso real: "inhabilidades" absorbida en "Capacidad jurídica").
+    nombres_absorbidos: list[str] = Field(default_factory=list)
+    # True si la propia entidad lista este requisito como causal de rechazo en 1.15
+    es_causal_rechazo_explicita: bool = False
     # ── Campos de análisis (asignados programáticamente, no por el modelo) ──
     pagina_origen: int | None = None
     estado_verificacion: Literal["verificada", "degradada", "no_verificada"] = "no_verificada"
@@ -209,6 +233,10 @@ class ResultadoExtraccion(BaseModel):
 # ─── Configuración API ─────────────────────────────────────────────────────
 
 _MODEL = "claude-sonnet-4-6"
+# extra_body={'temperature': 0.0} funciona con la línea 4.6/4.5. Opus 4.7+ y
+# Sonnet 5 rechazan valores no-default. Al migrar de modelo hay que quitarlo.
+# El SDK anthropic 1.x quitó temperature de la firma, no de la API: pasarlo por
+# extra_body conserva el determinismo del baseline (ver ESTADO_PIPELINE.md).
 _MAX_TOKENS = 8_000        # fusible — no presupuesto
 _ALERT_USO_PCT = 0.60
 
@@ -473,7 +501,7 @@ def _llamar(
             resp = client.messages.create(
                 model=_MODEL,
                 max_tokens=max_tokens_chunk,
-                temperature=0.0,
+                extra_body={"temperature": 0.0},
                 system=sistema,
                 messages=[{"role": "user", "content": _prompt_usuario(chunk)}],
             )
@@ -597,6 +625,7 @@ def extraer(
     chunks: list[dict],
     api_key: str | None = None,
     ruta_salida: Path | None = None,
+    pliego_sha256: str = "",
 ) -> ResultadoExtraccion:
     """
     Extrae requisitos habilitantes de TODOS los chunks.
@@ -609,12 +638,13 @@ def extraer(
          Si el guardado final falla → IOError, no advertencia silenciosa.
 
     Parámetros:
-      ruta_salida: si se provee, guarda resultado.model_dump_json() en esa ruta
-                   ANTES de imprimir el resumen. Error fatal si falla.
+      ruta_salida:   si se provee, guarda resultado.model_dump_json() en esa ruta.
+      pliego_sha256: SHA256 del PDF de origen; se guarda en metadatos_corrida para
+                     permitir que artefactos.py identifique el resultado sin ambigüedad.
     """
     client = anthropic.Anthropic(
         api_key=api_key or os.getenv("ANTHROPIC_API_KEY"),
-        timeout=60.0,   # 60s por handshake + respuesta (CLAUDE.md: timeout=30s por llamada)
+        timeout=120.0,  # 120s — chunks grandes (1.15 causales) generan respuestas largas
         max_retries=0,  # reintentos propios en _llamar con backoff controlado
     )
     ctx = _ExtraccionCtx()
@@ -711,6 +741,7 @@ def extraer(
         "n_chunks_truncados": len(chunks_truncados),
         "n_chunks_error_json": len(chunks_error_json),
         "n_requisitos_rechazados": len(ctx.rechazos),
+        "pliego_sha256": pliego_sha256,
     }
 
     resultado = ResultadoExtraccion(

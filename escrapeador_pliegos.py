@@ -156,7 +156,6 @@ def analizar_con_claude(paginas, cliente, nombre_archivo):
         respuesta = client_anthropic.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=2500,  # Ampliado para evitar el corte prematuro del reporte
-            temperature=0.2,
             messages=[{"role": "user", "content": prompt}]
         )
         return respuesta.content[0].text

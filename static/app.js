@@ -14,6 +14,48 @@ let _descartados = [];
 let _pliegoRaw   = null;
 let _selIdx      = -1;   // índice del contrato seleccionado en el panel
 
+// ════════════ ESTADOS DE UN REQUISITO ════════════
+// COPIA de pipeline/src/estados.py — ahí está la fuente canónica.
+// El navegador no importa Python, así que hay dos copias;
+// pipeline/tests/test_estados.py las compara y falla si divergen.
+//
+// Antes esta tabla se dibujaba con `row.cumple ? '✅' : '❌'`. Con eso,
+// `dato_faltante` —8 de los 14 indicadores de Paicol— salía como ❌: el
+// sistema afirmaba que la empresa no cumplía cuando lo que pasaba era que
+// faltaba el dato. El operador firma ese informe.
+const ESTADOS = {
+  cumple:         { etiqueta: 'CUMPLE',          icono: '✓', forma: 'circulo-lleno', clase: 'estado-cumple',         detalle: '' },
+  no_cumple:      { etiqueta: 'NO CUMPLE',       icono: '✕', forma: 'cruz',          clase: 'estado-no-cumple',      detalle: 'diferencia' },
+  dato_faltante:  { etiqueta: 'DATO FALTANTE',   icono: '?', forma: 'interrogacion', clase: 'estado-dato-faltante',  detalle: 'documento_requerido' },
+  revisar_manual: { etiqueta: 'REVISIÓN MANUAL', icono: '!', forma: 'triangulo',     clase: 'estado-revisar-manual', detalle: 'umbrales_alternativos' },
+  no_aplica:      { etiqueta: 'NO APLICA',       icono: '–', forma: 'guion',         clase: 'estado-no-aplica',      detalle: '' },
+};
+const _ESTADO_DESCONOCIDO = { etiqueta: 'SIN CLASIFICAR', icono: '·', forma: 'punto', clase: 'estado-desconocido', detalle: '' };
+
+/** Estado de una fila, tolerando resultados viejos que sólo traen `cumple`. */
+function estadoDeFila(fila) {
+  if (fila && ESTADOS[fila.estado]) return fila.estado;
+  return (fila && fila.cumple) ? 'cumple' : 'no_cumple';
+}
+
+function presentacionEstado(estado) { return ESTADOS[estado] || _ESTADO_DESCONOCIDO; }
+
+/** Detalle redactado del estado: lo que convierte un hueco en una acción. */
+function detalleEstado(fila) {
+  const campo = presentacionEstado(estadoDeFila(fila)).detalle;
+  if (!campo) return '';
+  const v = fila[campo];
+  if (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length)) return '';
+  if (campo === 'diferencia') {
+    const n = Number(v);
+    if (Number.isNaN(n)) return '';
+    return n < 0 ? `faltan ${Math.abs(n)}` : `excede en ${n}`;
+  }
+  if (campo === 'documento_requerido')   return `aporta: ${v}`;
+  if (campo === 'umbrales_alternativos') return 'alternativas: ' + (Array.isArray(v) ? v.join(' / ') : v);
+  return String(v);
+}
+
 // ════════════ UTILIDADES BASE ════════════
 async function api(path, opts = {}) {
   const headers = { Authorization: `Bearer ${TOKEN}`, ...(opts.headers || {}) };
@@ -815,25 +857,59 @@ async function analizarPliego() {
   btn.disabled = true; btn.textContent = '⏳ Analizando...';
   resEl.style.display = 'none';
 
-  // ── Animated progress steps ──────────────────────
-  const STEPS = [
-    'Extrayendo texto del pliego...',
-    'Indexando documentos...',
-    'Buscando secciones relevantes...',
-    'Analizando con IA (puede tardar 40-90 seg)...',
+  // ── Fases reales del pipeline ────────────────────
+  // El backend envía {fase, paso, total, mensaje} en cada respuesta del polling
+  // (ver _guardar_fase en routers/auditoria.py). Antes había 4 pasos avanzados
+  // por setTimeout que describían el flujo RAG ya desconectado: el progreso era
+  // una animación, no el estado del trabajo.
+  const FASES = [
+    ['leyendo_documento',     'Leyendo el documento'],
+    ['reparando_tablas',      'Reparando tablas'],
+    ['analizando_secciones',  'Analizando secciones'],
+    ['extrayendo_requisitos', 'Extrayendo requisitos'],
+    ['evaluando_perfil',      'Evaluando el perfil de la empresa'],
+    ['redactando_concepto',   'Redactando el concepto de viabilidad'],
   ];
-  const DELAYS = [0, 3000, 8000, 16000];
-  const timers = [];
-  function showStep(active) {
-    const rows = STEPS.map((s, i) => {
-      if (i < active)  return `<span class="prog-step prog-done">✓ ${s}</span>`;
-      if (i === active) return `<span class="prog-step prog-active"><span class="prog-spinner"></span>${s}</span>`;
-      return `<span class="prog-step prog-pending">○ ${s}</span>`;
+  const TOTAL_FASES = FASES.length;
+
+  // El mensaje viene del backend; se escapa porque termina en innerHTML.
+  const escFase = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+
+  // Un pliego ya procesado salta de 0 a 5: las fases intermedias no se
+  // ejecutan y deben verse como omitidas, no como completadas.
+  function showFases(paso, mensaje, desdeCache) {
+    const rows = FASES.map(([, etiqueta], i) => {
+      const n = i + 1;
+      if (n === paso) {
+        return `<span class="prog-step prog-active"><span class="prog-spinner"></span>${etiqueta}</span>`;
+      }
+      if (n < paso) {
+        // Sólo las fases 1-4 (parseo, tablas, chunking, extracción) pueden
+        // venir de caché. La 5 (evaluar perfil) y la 6 siempre se ejecutan.
+        return (desdeCache && n <= 4)
+          ? `<span class="prog-step prog-pending">⤻ ${etiqueta} <em>(desde caché)</em></span>`
+          : `<span class="prog-step prog-done">✓ ${etiqueta}</span>`;
+      }
+      return `<span class="prog-step prog-pending">○ ${etiqueta}</span>`;
     }).join('');
-    stEl.innerHTML = `<div class="progress-steps">${rows}</div>`;
+
+    const cabecera = paso > 0
+      ? `<span class="prog-contador">Paso ${paso} de ${TOTAL_FASES}</span>`
+      : '';
+    const detalle = mensaje
+      ? `<span class="prog-mensaje">${escFase(mensaje)}</span>`
+      : '';
+    stEl.innerHTML =
+      `<div class="progress-steps">${cabecera}${rows}${detalle}</div>`;
   }
-  DELAYS.forEach((d, i) => timers.push(setTimeout(() => showStep(i), d)));
-  const clearTimers = () => timers.forEach(t => clearTimeout(t));
+
+  // Estado inicial: lanzando, sin fase todavía
+  showFases(0, 'Subiendo el pliego…', false);
+  // Ya no hay temporizadores que limpiar; se conserva el nombre porque el
+  // resto del flujo (completo / error / timeout) lo invoca.
+  const clearTimers = () => {};
 
   const fd = new FormData();
   fd.append('cliente_id', CLIENTE_ID);
@@ -859,6 +935,10 @@ async function analizarPliego() {
     // 2. Polling: máx 80 intentos × 3s = 4 minutos
     const MAX_POLLS = 80;
     let polls = 0;
+    // Si el primer paso observado ya es el 5, el pliego venía de caché: las
+    // fases 1-4 no corrieron y se marcan como omitidas, no completadas.
+    let desdeCache = false;
+    let vistoPasoTemprano = false;
     while (polls < MAX_POLLS) {
       await new Promise(r => setTimeout(r, 3000));
       polls++;
@@ -871,14 +951,35 @@ async function analizarPliego() {
         continue;
       }
 
+      // Progreso real: el backend manda fase/paso/total/mensaje mientras procesa.
+      // Un pliego cacheado entra directo en el paso 5 sin pasar por 1-4.
+      if (job.estado === 'procesando') {
+        const paso = Number(job.paso) || 0;
+        if (paso >= 5 && !vistoPasoTemprano) desdeCache = true;
+        if (paso > 0 && paso < 5) vistoPasoTemprano = true;
+        showFases(paso, job.mensaje, desdeCache);
+      }
+
       if (job.estado === 'completo') {
         clearTimers();
         const data = job.datos;
-        const ragBadge = data.rag_activado
-          ? `<span class="prog-rag-badge">RAG activado — ${data.pliego_chars?.toLocaleString()} chars indexados → ${data.contexto_chars?.toLocaleString()} chars enviados</span>`
+        // Reemplaza el badge de RAG (flujo desconectado: rag_activado,
+        // pliego_chars y contexto_chars ya no se producen) por métricas que
+        // el pipeline sí entrega.
+        const cob = typeof data.cobertura_pliego === 'number'
+          ? `${(data.cobertura_pliego * 100).toFixed(1)}% de cobertura de evaluación`
           : '';
-        const allDone = STEPS.map(s => `<span class="prog-step prog-done">✓ ${s}</span>`).join('');
-        stEl.innerHTML = `<div class="progress-steps">${allDone}${ragBadge}</div>`;
+        const chunks = data.chunks_procesados
+          ? `${data.chunks_procesados.toLocaleString()} secciones procesadas`
+          : '';
+        const partes = [chunks, cob].filter(Boolean).join(' · ');
+        const pipeBadge = partes
+          ? `<span class="prog-rag-badge">Pipeline completo — ${partes}</span>`
+          : '';
+        const allDone = FASES
+          .map(([, etiqueta]) => `<span class="prog-step prog-done">✓ ${etiqueta}</span>`)
+          .join('');
+        stEl.innerHTML = `<div class="progress-steps">${allDone}${pipeBadge}</div>`;
         resEl.style.display = '';
         resEl.innerHTML = renderAuditResult(data);
         resEl.scrollIntoView({ behavior: 'smooth' });
@@ -920,18 +1021,28 @@ function renderAuditResult(r) {
   const scoreJ   = r.score_juridico  || 0;
   const badgeCls = color === 'green' ? 'viable' : color === 'red' ? 'no-viable' : 'condicional';
 
+  // Estado real, no el booleano. `dato_faltante` y `revisar_manual` NO son
+  // incumplimientos: afirmarlo sería mentir sobre la empresa.
   const tablaRows = (r.tabla_comparativa || []).map(row => {
-    const icon = row.cumple ? '✅' : '❌';
-    const sub  = row.subsanable ? '<span class="sub-tag">Subsanable</span>' : '';
-    const tipo = row.tipo === 'financiero' ? '💰' : '⚖️';
-    return `<tr class="${row.cumple ? 'row-ok' : 'row-fail'}">
+    const estado = estadoDeFila(row);
+    const pres   = presentacionEstado(estado);
+    const extra  = detalleEstado(row);
+    const sub    = row.subsanable ? '<span class="sub-tag">Subsanable</span>' : '';
+    const tipo   = row.tipo === 'financiero' ? '💰' : '⚖️';
+    return `<tr class="${pres.clase}">
       <td>${tipo}</td><td>${row.requisito||'—'}</td><td>${row.exigido||'—'}</td>
-      <td>${row.cliente_tiene||'—'}</td><td class="td-center">${icon} ${sub}</td>
+      <td>${row.cliente_tiene||'—'}</td>
+      <td class="td-center">
+        <span class="estado-badge ${pres.clase}" data-forma="${pres.forma}">
+          <span class="estado-icono" aria-hidden="true">${pres.icono}</span>${pres.etiqueta}
+        </span>${sub}
+        ${extra ? `<div class="estado-detalle">${extra}</div>` : ''}
+      </td>
       <td class="norma-cell">${row.norma||'—'}</td>
     </tr>`;
   }).join('');
 
-  const citas = (r.citas_normativas||[]).map(c => `<div class="norma-cite">📖 ${c}</div>`).join('')
+  const citas = (r.citas_normativas||[]).map(c => `<div class="norma-cite">${c}</div>`).join('')
     || '<div class="empty-state">—</div>';
   const docsFalt = (r.checklist_documentos||[]).filter(d => d.estado === 'falta');
   const docsHtml = docsFalt.length
@@ -939,6 +1050,28 @@ function renderAuditResult(r) {
     : '<div class="empty-state">Sin documentos faltantes</div>';
   const recs = [...(r.recomendaciones||[]), ...(r.acciones_inmediatas||[])];
   const riesgos = r.riesgos_juridicos || r.riesgos || [];
+
+  // El pipeline no produce analisis_financiero / analisis_juridico (eran del
+  // flujo RAG). Los agentes de redacción entregan un concepto y, el
+  // financiero, además una lista de razones. Sin este mapeo las dos tarjetas
+  // desaparecían de la pantalla.
+  const razonesFin = r.razones_financiero || [];
+  const analisisFin = r.analisis_financiero || (
+    r.concepto_financiero
+      ? [
+          `<strong>${r.concepto_financiero}</strong>`,
+          razonesFin.length
+            ? `<ul>${razonesFin.map(x => `<li>${x}</li>`).join('')}</ul>`
+            : '',
+          r.indices_evaluados?.descripcion
+            ? `<p>${r.indices_evaluados.descripcion}</p>`
+            : '',
+        ].filter(Boolean).join('')
+      : ''
+  );
+  const analisisJur = r.analisis_juridico || (
+    r.concepto_juridico ? `<strong>${r.concepto_juridico}</strong>` : ''
+  );
 
   return `<div class="audit-result">
     <div class="concepto-header">
@@ -949,14 +1082,20 @@ function renderAuditResult(r) {
         <div class="score-card"><div class="score-big">${scoreJ}</div><div class="score-label">Jurídico</div></div>
       </div>
     </div>
-    ${r.analisis_financiero ? `<div class="card"><div class="card-title">💰 Análisis Financiero</div><div class="analisis-texto">${r.analisis_financiero}</div></div>` : ''}
+    ${analisisFin ? `<div class="card"><div class="card-title">💰 Análisis Financiero</div><div class="analisis-texto">${analisisFin}</div></div>` : ''}
     ${tablaRows ? `<div class="card"><div class="card-title">📋 Habilitantes — Tabla Comparativa</div>
       <div class="table-wrap"><table class="req-table">
         <thead><tr><th></th><th>Requisito</th><th>Exigido</th><th>Empresa</th><th>¿Cumple?</th><th>Norma</th></tr></thead>
         <tbody>${tablaRows}</tbody>
       </table></div></div>` : ''}
-    ${r.analisis_juridico ? `<div class="card"><div class="card-title">⚖️ Análisis Jurídico (RAG)</div><div class="analisis-texto">${r.analisis_juridico}</div></div>` : ''}
-    <div class="card"><div class="card-title">📖 Citas Normativas</div>${citas}</div>
+    ${analisisJur ? `<div class="card"><div class="card-title">⚖️ Análisis Jurídico</div><div class="analisis-texto">${analisisJur}</div></div>` : ''}
+    <!-- "Fundamento del concepto", no "Citas Normativas": el contenido son
+         razones del agente filtradas por palabras clave ("Ley", "Decreto",
+         "art."), no citas verificadas contra la biblioteca normativa. Tiene
+         valor como razonamiento; no puede prometer precisión de cita.
+         Pasará a citas reales cuando el bibliotecario normativo entregue
+         normas_citadas con fragmento verificado. -->
+    <div class="card"><div class="card-title">📖 Fundamento del concepto</div>${citas}</div>
     ${docsFalt.length ? `<div class="card"><div class="card-title">📎 Documentos a Gestionar</div>${docsHtml}</div>` : ''}
     ${riesgos.length ? `<div class="card"><div class="card-title">⚠ Riesgos</div><ul class="riesgos-list">${riesgos.map(x=>`<li>⚠ ${x}</li>`).join('')}</ul></div>` : ''}
     ${recs.length ? `<div class="card"><div class="card-title">✅ Plan de Acción</div><ul>${recs.map(x=>`<li>${x}</li>`).join('')}</ul></div>` : ''}
@@ -1354,6 +1493,8 @@ function limpiarChat() {
   _chatIniciado = false;
   const msgs = document.getElementById('chat-msgs');
   if (msgs) msgs.innerHTML = '';
+  const fuente = document.getElementById('chat-fuente');
+  if (fuente) fuente.hidden = true;
   api('/api/chat/historial', { method: 'DELETE' }).catch(() => {});
   _appendChatMsg('assistant', '¡Hola! Soy tu asesor de contratación pública. Puedo guiarte paso a paso para aplicar a esta licitación. ¿Por dónde quieres empezar?');
   _chatIniciado = true;
@@ -1410,6 +1551,7 @@ async function sendChat() {
     });
     typing.remove();
     _appendChatMsg('assistant', data.respuesta);
+    _actualizarFuenteChat(data.fuente_contexto);
   } catch (err) {
     typing.remove();
     _appendChatMsg('assistant', `Lo siento, ocurrió un error: ${err.message}`);
@@ -1417,6 +1559,21 @@ async function sendChat() {
     sendBtn.disabled = false;
     if (input) input.focus();
   }
+}
+
+function _actualizarFuenteChat(fuente) {
+  const el = document.getElementById('chat-fuente');
+  if (!el) return;
+  if (!fuente || fuente === 'sin_pliego') {
+    el.hidden = true;
+    return;
+  }
+  const esPipeline = fuente === 'pipeline';
+  el.className = 'chat-fuente ' + (esPipeline ? 'chat-fuente--pipeline' : 'chat-fuente--rag');
+  el.hidden = false;
+  el.innerHTML = esPipeline
+    ? '<span class="chat-fuente-dot"></span>análisis estructurado — respuestas con cita al numeral'
+    : '<span class="chat-fuente-dot"></span>modo básico — el pliego no está procesado. Ejecuta el pipeline para respuestas con cita al numeral.';
 }
 
 // Enter = enviar, Shift+Enter = nueva línea

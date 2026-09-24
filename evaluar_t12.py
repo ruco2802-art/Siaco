@@ -160,7 +160,7 @@ def _llamar(client, prompt: str, max_tokens: int, etiqueta: str) -> tuple[dict, 
         resp = client.messages.create(
             model=_MODELO,
             max_tokens=max_tokens,
-            temperature=0.0,
+            extra_body={"temperature": 0.0},
             messages=[{"role": "user", "content": prompt}],
         )
         elapsed = round(time.time() - t0, 1)

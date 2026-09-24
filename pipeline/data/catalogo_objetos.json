@@ -1,0 +1,1155 @@
+{
+  "_meta": {
+    "version": "2.0.0",
+    "fecha": "2026-09-23",
+    "descripcion": "Catálogo de objetos y aspectos del dominio de contratación pública colombiana. Resuelve B11: la regla de coherencia compara palabras, no significados, y un grupo unido por un término específico pero transversal ('residual') sobrevive aunque mezcle objetos distintos.",
+    "clave_de_agrupacion": "(objeto, aspecto, capitulo) — el aspecto es opcional. Mismo objeto en capítulos distintos NO se fusiona: 'RUP para experiencia' (3.5) y 'RUP para capacidad financiera' (3.9) son verificaciones distintas del mismo documento.",
+    "criterio_desempate": "Gana el alias MÁS LARGO. 'capacidad residual' vence a 'capacidad'.",
+    "criterio_ante_la_duda": "NO FUSIONAR. Un requisito sin objeto queda solo e infla el conteo — visible y corregible. Uno mal agrupado produce un veredicto falso — invisible.",
+    "fuentes": {
+      "paicol": "resultados_evaluacion/paicol_2026_resultado.json — 218 requisitos extraídos del Documento Tipo CCE-EICP-GI-02 (Municipio de Paicol, DHMP-SA-SPOP-005 de 2026)",
+      "cce": "biblioteca_normativa/estructura_normativa.json v2.1.0 — nombres oficiales de indicadores financieros y organizacionales, derivados de las Matriz 2 (ver D4 en ESTADO_PIPELINE.md)"
+    },
+    "mantenimiento": "Los requisitos sin objeto se registran en logs/objetos_no_identificados.jsonl. El catálogo crece con datos reales, no por anticipación.",
+    "ejes": "Clave de agrupación: (objeto, aspecto, sujeto, capítulo). El eje `sujeto` se añadió el 2026-09-23 tras la corrida de Ternera: 4 de las 6 bolsas nuevas —3 de ellas CON umbral— mezclaban persona natural, jurídica, extranjera y proponente plural bajo un solo veredicto. Con un solo pliego (Paicol) el eje habría sido generalización prematura; con dos, es el patrón. `aspecto=None` y `sujeto=None` no agrupan por sí mismos."
+  },
+  "aspectos": [
+    {
+      "aspecto": "vigencia",
+      "alias": [
+        "en firme",
+        "vigente y en firme",
+        "vigencia maxima",
+        "vigencia minima",
+        "vigente",
+        "renovacion",
+        "fecha de corte",
+        "antes del cierre",
+        "al cierre del proceso",
+        "dias antes del cierre",
+        "vigencia del seguro",
+        "ampliacion de vigencia",
+        "expedido"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "cantidad",
+      "alias": [
+        "numero maximo",
+        "numero minimo",
+        "numero de contratos",
+        "maximo un contrato",
+        "al menos un contrato",
+        "maximo de actividades",
+        "contratos adicionales maximos"
+      ],
+      "fuente": "paicol",
+      "nota": "Unidad: unidades contables (contratos, integrantes, actividades). No comparable con porcentaje ni valor."
+    },
+    {
+      "aspecto": "porcentaje",
+      "alias": [
+        "porcentaje minimo",
+        "porcentaje de participacion",
+        "porcentaje total",
+        "participacion minima",
+        "participacion maxima",
+        "porcentaje maximo"
+      ],
+      "fuente": "paicol",
+      "nota": "Unidad: porcentaje. No comparable con cantidad ni valor."
+    },
+    {
+      "aspecto": "valor",
+      "alias": [
+        "valor asegurado",
+        "valor minimo",
+        "valor total",
+        "valor acumulado",
+        "tope maximo",
+        "smmlv",
+        "no superior al presupuesto",
+        "artificialmente bajo",
+        "presupuesto oficial"
+      ],
+      "fuente": "paicol",
+      "nota": "Unidad: monetaria (SMMLV, pesos). No comparable con cantidad ni porcentaje."
+    },
+    {
+      "aspecto": "formato",
+      "alias": [
+        "formato",
+        "anexo",
+        "formulario",
+        "diligenciamiento"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "plural",
+      "alias": [
+        "proponente plural",
+        "proponentes plurales",
+        "consorcio",
+        "union temporal",
+        "estructura plural",
+        "contratistas plurales",
+        "integrantes del proponente",
+        "cada miembro del proponente",
+        "suma de miembros"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "mipyme",
+      "alias": [
+        "mipyme",
+        "empresa de mujer",
+        "empresas de mujeres",
+        "emprendimientos y empresas de mujeres",
+        "criterio diferencial"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "extranjero",
+      "alias": [
+        "extranjero",
+        "extranjera",
+        "extranjeros",
+        "extranjeras",
+        "sin domicilio",
+        "sin sucursal",
+        "apostilla",
+        "trato nacional",
+        "idioma extranjero",
+        "moneda extranjera",
+        "en el exterior",
+        "residencia"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "subsanabilidad",
+      "alias": [
+        "subsanabilidad",
+        "subsanable",
+        "subsanacion",
+        "no subsanabilidad",
+        "causal de rechazo",
+        "prohibicion",
+        "restriccion",
+        "exclusion"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "acreditacion",
+      "alias": [
+        "acreditacion",
+        "acreditar",
+        "certificacion",
+        "certificado",
+        "declaracion bajo juramento",
+        "declaracion juramentada",
+        "documentos validos",
+        "fotocopia",
+        "copia documento",
+        "documento de identificacion",
+        "reporte",
+        "relacion de"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "calculo",
+      "alias": [
+        "formula",
+        "factor",
+        "calculo",
+        "conversion",
+        "componente",
+        "indicador de",
+        "coeficiente"
+      ],
+      "fuente": "paicol"
+    },
+    {
+      "aspecto": "medio_prueba",
+      "alias": [
+        "acreditacion de experiencia mediante rup",
+        "mediante rup",
+        "documentos validos para acreditacion",
+        "documentos validos",
+        "orden de prevalencia",
+        "certificacion del subcontrato",
+        "certificacion de subcontrato",
+        "certificacion de facturacion",
+        "certificacion de la entidad",
+        "acta de inicio",
+        "documento equivalente",
+        "copia del contrato"
+      ],
+      "fuente": "paicol + ternera — miembros del grupo `acreditacion` de D6",
+      "nota": "CON QUÉ se prueba. No comparable con quién lo expide ni con qué debe decir."
+    },
+    {
+      "aspecto": "emisor",
+      "alias": [
+        "prohibicion de auto certificaciones",
+        "prohibicion de autocertificaciones",
+        "auto certificaciones",
+        "autocertificaciones",
+        "certificaciones de interventor",
+        "nombre y cargo de quien expide",
+        "quien expide",
+        "suscrito por representante legal",
+        "avalado por",
+        "aval con firma",
+        "expedida por la entidad"
+      ],
+      "fuente": "paicol + ternera — 'Prohibición de auto certificaciones para acreditar experiencia'",
+      "nota": "QUIÉN puede expedirlo."
+    },
+    {
+      "aspecto": "contenido",
+      "alias": [
+        "informacion requerida por contrato",
+        "acreditacion de objeto del contrato",
+        "acreditacion de magnitud",
+        "magnitud longitud volumenes",
+        "area disenada o construida",
+        "contenido minimo",
+        "debe contener",
+        "datos minimos"
+      ],
+      "fuente": "paicol + ternera — 'Acreditación de experiencia: información requerida por contrato aportado'",
+      "nota": "QUÉ debe decir el documento."
+    }
+  ],
+  "objetos": [
+    {
+      "objeto": "RUP",
+      "nombre_canonico": "Registro Único de Proponentes",
+      "alias": [
+        "rup",
+        "registro unico de proponentes"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numerales 3.5, 3.8, 3.9) + Ley 1150/2007 art. 6"
+    },
+    {
+      "objeto": "RUT",
+      "nombre_canonico": "Registro Único Tributario",
+      "alias": [
+        "rut",
+        "registro unico tributario"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol — 'RUT para celebración del contrato'"
+    },
+    {
+      "objeto": "CAMARA_COMERCIO",
+      "nombre_canonico": "Certificado de Cámara de Comercio",
+      "alias": [
+        "camara de comercio"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "EXISTENCIA_REPRESENTACION",
+      "nombre_canonico": "Existencia y representación legal",
+      "alias": [
+        "existencia y representacion",
+        "documento equivalente de existencia",
+        "acto de creacion de entidad estatal",
+        "duracion de la persona juridica",
+        "duracion persona juridica",
+        "duracion en documento equivalente",
+        "establecimiento legal en colombia",
+        "representante legal"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.3)"
+    },
+    {
+      "objeto": "AUTORIZACION_ORGANO_SOCIAL",
+      "nombre_canonico": "Autorización del órgano social competente",
+      "alias": [
+        "autorizacion del organo social",
+        "organo social competente"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.3.2)"
+    },
+    {
+      "objeto": "REVISOR_FISCAL",
+      "nombre_canonico": "Revisor fiscal",
+      "alias": [
+        "revisor fiscal"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.3.2)"
+    },
+    {
+      "objeto": "PODER_APODERADO",
+      "nombre_canonico": "Poder del apoderado",
+      "alias": [
+        "poder del apoderado",
+        "apoderado"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "SEGURIDAD_SOCIAL",
+      "nombre_canonico": "Seguridad social integral",
+      "alias": [
+        "seguridad social",
+        "afiliacion o pago de seguridad social",
+        "pension de vejez",
+        "exencion de cotizacion de pension",
+        "no obligacion de aportes",
+        "salud y pensiones"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral 3.4) + Ley 789/2002 art. 50"
+    },
+    {
+      "objeto": "PARAFISCALES",
+      "nombre_canonico": "Aportes parafiscales",
+      "alias": [
+        "parafiscal",
+        "parafiscales",
+        "aportes legales"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral 3.4)"
+    },
+    {
+      "objeto": "ANTECEDENTES_FISCALES",
+      "nombre_canonico": "Boletín de responsables fiscales (CGR)",
+      "alias": [
+        "responsables fiscales",
+        "boletin de responsables",
+        "antecedentes fiscales"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.2) + Ley 610/2000"
+    },
+    {
+      "objeto": "ANTECEDENTES_DISCIPLINARIOS",
+      "nombre_canonico": "Antecedentes disciplinarios",
+      "alias": [
+        "antecedentes disciplinarios"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.2)"
+    },
+    {
+      "objeto": "ANTECEDENTES_JUDICIALES",
+      "nombre_canonico": "Antecedentes judiciales y penales",
+      "alias": [
+        "antecedentes judiciales",
+        "antecedentes penales"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.2)"
+    },
+    {
+      "objeto": "REDAM",
+      "nombre_canonico": "Registro de Deudores Alimentarios Morosos",
+      "alias": [
+        "redam",
+        "deudores alimentarios"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.2) + Ley 2097/2021"
+    },
+    {
+      "objeto": "MEDIDAS_CORRECTIVAS",
+      "nombre_canonico": "Medidas correctivas (RNMC)",
+      "alias": [
+        "medidas correctivas"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "PAZ_SALVO_MUNICIPAL",
+      "nombre_canonico": "Paz y salvo municipal",
+      "alias": [
+        "paz y salvo municipal",
+        "paz y salvo"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "INHABILIDADES",
+      "nombre_canonico": "Inhabilidades e incompatibilidades",
+      "alias": [
+        "inhabilidad",
+        "inhabilidades",
+        "incompatibilidad",
+        "incompatibilidades"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numerales 1.15, 3.2) + Ley 80/1993 art. 8"
+    },
+    {
+      "objeto": "CONFLICTO_INTERES",
+      "nombre_canonico": "Conflicto de interés",
+      "alias": [
+        "conflicto de interes"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 1.14)"
+    },
+    {
+      "objeto": "OBJETO_SOCIAL",
+      "nombre_canonico": "Objeto social compatible",
+      "alias": [
+        "objeto social"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numerales 1.15, 3.3.2)"
+    },
+    {
+      "objeto": "INSOLVENCIA",
+      "nombre_canonico": "Ausencia de proceso de insolvencia",
+      "alias": [
+        "insolvencia",
+        "ley 1116"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 1.15) + Ley 1116/2006"
+    },
+    {
+      "objeto": "ESTUDIOS_DISENOS_PREVIOS",
+      "nombre_canonico": "No haber realizado estudios y diseños de la obra",
+      "alias": [
+        "estudios y disenos de la obra",
+        "realizado estudios y disenos"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 1.14)"
+    },
+    {
+      "objeto": "PRESENTACION_MULTIPLE",
+      "nombre_canonico": "Prohibición de presentación múltiple de propuestas",
+      "alias": [
+        "presentacion multiple de propuestas",
+        "multiples propuestas"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "OBRAS_INCONCLUSAS",
+      "nombre_canonico": "Registro Nacional de Obras Civiles Inconclusas",
+      "alias": [
+        "obras civiles inconclusas",
+        "obras inconclusas"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol + Ley 2020/2020"
+    },
+    {
+      "objeto": "LIQUIDEZ",
+      "nombre_canonico": "Índice de liquidez",
+      "alias": [
+        "indice de liquidez",
+        "liquidez",
+        "idl"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — indicador obligatorio en las tres modalidades"
+    },
+    {
+      "objeto": "ENDEUDAMIENTO",
+      "nombre_canonico": "Índice de endeudamiento",
+      "alias": [
+        "indice de endeudamiento",
+        "endeudamiento",
+        "nde"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — indicador obligatorio en las tres modalidades"
+    },
+    {
+      "objeto": "COBERTURA_INTERESES",
+      "nombre_canonico": "Razón de cobertura de intereses",
+      "alias": [
+        "razon de cobertura de intereses",
+        "cobertura de intereses",
+        "cobertura de interes",
+        "rci"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — indicador obligatorio en las tres modalidades"
+    },
+    {
+      "objeto": "CAPITAL_TRABAJO",
+      "nombre_canonico": "Capital de trabajo",
+      "alias": [
+        "capital de trabajo"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — indicador obligatorio en las tres modalidades"
+    },
+    {
+      "objeto": "PATRIMONIO",
+      "nombre_canonico": "Patrimonio",
+      "alias": [
+        "patrimonio"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — obligatorio en obra pública bajo condición doble"
+    },
+    {
+      "objeto": "RENTABILIDAD_PATRIMONIO",
+      "nombre_canonico": "Rentabilidad del patrimonio",
+      "alias": [
+        "rentabilidad del patrimonio",
+        "roe"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — obligatorio en obra pública y menor cuantía"
+    },
+    {
+      "objeto": "RENTABILIDAD_ACTIVO",
+      "nombre_canonico": "Rentabilidad del activo",
+      "alias": [
+        "rentabilidad del activo",
+        "roa"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — obligatorio en obra pública y menor cuantía"
+    },
+    {
+      "objeto": "CAPACIDAD_RESIDUAL",
+      "nombre_canonico": "Capacidad residual de contratación",
+      "alias": [
+        "capacidad residual",
+        "crpc",
+        "capacidad residual del proceso",
+        "factor sce",
+        "saldos contratos en ejecucion",
+        "factor e",
+        "factor experiencia",
+        "liquidez para capacidad residual",
+        "indice de liquidez para capacidad residual"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol (numeral 3.10) + estructura_normativa.json factor_k_residual"
+    },
+    {
+      "objeto": "CAPACIDAD_ORGANIZACIONAL",
+      "nombre_canonico": "Capacidad organizacional",
+      "alias": [
+        "capacidad organizacional",
+        "capacidad de organizacion"
+      ],
+      "categoria": "financiero",
+      "fuente": "paicol (numeral 3.8) + cce"
+    },
+    {
+      "objeto": "CAPACIDAD_FINANCIERA",
+      "nombre_canonico": "Capacidad financiera",
+      "alias": [
+        "capacidad financiera"
+      ],
+      "categoria": "financiero",
+      "fuente": "paicol (numeral 3.6) + cce"
+    },
+    {
+      "objeto": "CAPACIDAD_JURIDICA",
+      "nombre_canonico": "Capacidad jurídica",
+      "alias": [
+        "capacidad juridica"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.2)"
+    },
+    {
+      "objeto": "CAPACIDAD_TECNICA",
+      "nombre_canonico": "Capacidad técnica",
+      "alias": [
+        "capacidad tecnica"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "INGRESOS_OPERACIONALES",
+      "nombre_canonico": "Ingresos operacionales",
+      "alias": [
+        "ingresos operacionales"
+      ],
+      "categoria": "financiero",
+      "fuente": "cce — ingresos_operacionales_piso"
+    },
+    {
+      "objeto": "ESTADOS_FINANCIEROS",
+      "nombre_canonico": "Estados financieros",
+      "alias": [
+        "estados financieros",
+        "estado de situacion financiera",
+        "estado de resultado",
+        "estado de resultados",
+        "auditoria externa",
+        "pasivo corriente"
+      ],
+      "categoria": "financiero",
+      "fuente": "paicol (numerales 3.9, C.)"
+    },
+    {
+      "objeto": "EXPERIENCIA_CONTRATOS",
+      "nombre_canonico": "Experiencia acreditada en contratos",
+      "alias": [
+        "experiencia",
+        "contratos acreditables",
+        "contratos acreditados",
+        "nsr-98",
+        "nsr-10",
+        "terminacion de contratos",
+        "inicio de ejecucion de contratos",
+        "area disenada o construida",
+        "magnitudes intervenidas",
+        "valores ejecutados",
+        "contratos entre particulares",
+        "subcontrato",
+        "cesion"
+      ],
+      "categoria": "experiencia",
+      "fuente": "paicol (numeral 3.5)"
+    },
+    {
+      "objeto": "UNSPSC",
+      "nombre_canonico": "Clasificador de Bienes y Servicios (UNSPSC)",
+      "alias": [
+        "unspsc",
+        "clasificador de bienes y servicios",
+        "clasificacion unspsc",
+        "segmento 72"
+      ],
+      "categoria": "experiencia",
+      "fuente": "paicol (numerales 1.4, 3.5.3)"
+    },
+    {
+      "objeto": "SUBCONTRATACION",
+      "nombre_canonico": "Subcontratación",
+      "alias": [
+        "subcontratacion",
+        "situaciones de subcontratacion"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "GARANTIA_SERIEDAD",
+      "nombre_canonico": "Garantía de seriedad de la oferta",
+      "alias": [
+        "garantia de seriedad"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral 7.1)"
+    },
+    {
+      "objeto": "GARANTIA_CUMPLIMIENTO",
+      "nombre_canonico": "Garantía de cumplimiento",
+      "alias": [
+        "garantia de cumplimiento",
+        "amparo cumplimiento",
+        "restablecimiento y ampliacion de la garantia"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral 7.2.1)"
+    },
+    {
+      "objeto": "GARANTIA_ESTABILIDAD",
+      "nombre_canonico": "Garantía de estabilidad de la obra",
+      "alias": [
+        "estabilidad de la obra",
+        "amparo estabilidad",
+        "recibo definitivo"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral 7.2.2)"
+    },
+    {
+      "objeto": "SEGURO_RCE",
+      "nombre_canonico": "Seguro de Responsabilidad Civil Extracontractual",
+      "alias": [
+        "responsabilidad civil extracontractual",
+        "responsabilidad civil",
+        "franquicias",
+        "coaseguros",
+        "deducibles"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral 7.2.2)"
+    },
+    {
+      "objeto": "CARTA_PRESENTACION",
+      "nombre_canonico": "Carta de presentación de la oferta",
+      "alias": [
+        "carta de presentacion"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "MANIFESTACION_INTERES",
+      "nombre_canonico": "Manifestación de interés",
+      "alias": [
+        "manifestacion de interes",
+        "manifestar interes",
+        "manifestaron interes"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "CONDICION_MIPYME",
+      "nombre_canonico": "Condición de Mipyme",
+      "alias": [
+        "condicion de mipyme",
+        "limitacion a mipyme"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 2.5) + Ley 2069/2020"
+    },
+    {
+      "objeto": "PROPONENTE_PLURAL",
+      "nombre_canonico": "Proponente plural",
+      "alias": [
+        "conformacion y clasificacion del proponente plural",
+        "conformacion de proponente plural",
+        "estructura plural",
+        "registro del proponente plural",
+        "composicion de proponentes plurales",
+        "nombramiento de representante del proponente plural"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.3.3)"
+    },
+    {
+      "objeto": "PROPONENTE_EXTRANJERO",
+      "nombre_canonico": "Proponente extranjero",
+      "alias": [
+        "proponente extranjero",
+        "sucursal de persona juridica extranjera",
+        "visa de residencia",
+        "traduccion oficial"
+      ],
+      "categoria": "juridico",
+      "fuente": "paicol (numeral 3.9.2)"
+    },
+    {
+      "objeto": "APOSTILLA",
+      "nombre_canonico": "Apostilla o legalización de documentos",
+      "alias": [
+        "apostilla",
+        "legalizacion de documentos publicos"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "IDIOMA_DOCUMENTOS",
+      "nombre_canonico": "Idioma de documentos y comunicaciones",
+      "alias": [
+        "idioma de documentos",
+        "idioma y comunicaciones"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "CONVERSION_MONEDA",
+      "nombre_canonico": "Conversión de moneda y presentación de valores",
+      "alias": [
+        "conversion de moneda",
+        "pesos colombianos",
+        "trm",
+        "valores en pesos"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "CONVERSION_SMMLV",
+      "nombre_canonico": "Conversión de valores a SMMLV",
+      "alias": [
+        "smmlv",
+        "salarios minimos"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral B.)"
+    },
+    {
+      "objeto": "PERSONAL_PROFESIONAL",
+      "nombre_canonico": "Personal profesional",
+      "alias": [
+        "personal profesional",
+        "titulos academicos",
+        "convalidacion de titulos"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol (numeral D.)"
+    },
+    {
+      "objeto": "TARJETA_PROFESIONAL",
+      "nombre_canonico": "Tarjeta profesional",
+      "alias": [
+        "tarjeta profesional"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "AVAL_INGENIERO",
+      "nombre_canonico": "Aval de ingeniero",
+      "alias": [
+        "aval de ingeniero"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol + Ley 842/2003"
+    },
+    {
+      "objeto": "EQUIPO_MINIMO",
+      "nombre_canonico": "Equipo y maquinaria mínima",
+      "alias": [
+        "equipo minimo",
+        "maquinaria de obra",
+        "maquinaria"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "APU",
+      "nombre_canonico": "Análisis de precios unitarios",
+      "alias": [
+        "analisis de precios unitarios",
+        "precios unitarios",
+        "apu"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "PROGRAMACION_OBRA",
+      "nombre_canonico": "Programación de obra",
+      "alias": [
+        "programacion de obra"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "PLAZO_EJECUCION",
+      "nombre_canonico": "Plazo de ejecución",
+      "alias": [
+        "plazo de ejecucion"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "OFERTA_ECONOMICA",
+      "nombre_canonico": "Oferta económica",
+      "alias": [
+        "valor total de la oferta",
+        "oferta no artificialmente bajo",
+        "presupuesto oficial"
+      ],
+      "categoria": "financiero",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "AIU",
+      "nombre_canonico": "AIU (Administración, Imprevistos y Utilidad)",
+      "alias": [
+        "aiu",
+        "componentes internos de la administracion"
+      ],
+      "categoria": "financiero",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "CRITERIO_AMBIENTAL",
+      "nombre_canonico": "Criterios ambientales",
+      "alias": [
+        "criterios ambientales",
+        "impacto ambiental",
+        "pma",
+        "transporte sostenible",
+        "reciclaje",
+        "gestion integral de residuos",
+        "residuos generados"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol (numeral 4.2.4)"
+    },
+    {
+      "objeto": "CRITERIO_SOCIAL",
+      "nombre_canonico": "Criterio social — tipo poblacional",
+      "alias": [
+        "criterio social",
+        "tipo poblacional"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol (numeral 4.2.5)"
+    },
+    {
+      "objeto": "TRATO_NACIONAL",
+      "nombre_canonico": "Servicios nacionales o con trato nacional",
+      "alias": [
+        "servicios nacionales",
+        "trato nacional",
+        "componente nacional",
+        "industria nacional"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol (numeral 4.3) + Decreto 1082/2015"
+    },
+    {
+      "objeto": "EMPLEADOS_COLOMBIANOS",
+      "nombre_canonico": "Porcentaje mínimo de empleados colombianos",
+      "alias": [
+        "empleados o contratistas colombianos",
+        "empleados colombianos"
+      ],
+      "categoria": "tecnico",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "SECOP_II",
+      "nombre_canonico": "Presentación de oferta en SECOP II",
+      "alias": [
+        "secop ii",
+        "usuario secop"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol"
+    },
+    {
+      "objeto": "SUBSANABILIDAD",
+      "nombre_canonico": "Reglas de subsanabilidad",
+      "alias": [
+        "subsanacion",
+        "subsanabilidad",
+        "subsanar",
+        "subsanable",
+        "no subsanabilidad",
+        "subsanaciones"
+      ],
+      "categoria": "procedimental",
+      "fuente": "ternera 1.6 'REGLAS DE SUBSANABILIDAD' + paicol — 9 requisitos entre los dos pliegos. Ley 1150/2007 art. 5 par. 1"
+    },
+    {
+      "objeto": "CRITERIOS_DESEMPATE",
+      "nombre_canonico": "Criterios de desempate",
+      "alias": [
+        "criterio de desempate",
+        "criterios de desempate",
+        "desempate"
+      ],
+      "categoria": "procedimental",
+      "fuente": "ternera — 22 requisitos ('Criterio de desempate – Mujer cabeza de familia', étnica, discapacidad, reincorporación, Mipyme, BIC, ICBF)"
+    },
+    {
+      "objeto": "EMPRESAS_MUJERES",
+      "nombre_canonico": "Emprendimientos y empresas de mujeres",
+      "alias": [
+        "empresa de mujer",
+        "empresas de mujeres",
+        "emprendimientos y empresas de mujeres",
+        "mujer cabeza de familia",
+        "madre cabeza de familia",
+        "mujeres victimas",
+        "mujer victima"
+      ],
+      "categoria": "puntaje",
+      "fuente": "paicol + ternera — 'Acreditación de emprendimientos y empresas de mujeres (puntaje)', Formato 12"
+    },
+    {
+      "objeto": "POBLACION_VULNERABLE",
+      "nombre_canonico": "Criterios diferenciales por población",
+      "alias": [
+        "discapacidad",
+        "poblacion etnica",
+        "reintegracion",
+        "reincorporacion",
+        "poblacion vulnerable",
+        "egresados del icbf",
+        "jovenes egresados"
+      ],
+      "categoria": "puntaje",
+      "fuente": "ternera — criterios de desempate por población (10% nómina, antigüedad de vinculación, certificación Ministerio del Interior)"
+    },
+    {
+      "objeto": "FORMA_OFERTA",
+      "nombre_canonico": "Forma y presentación de la oferta",
+      "alias": [
+        "oferta no condicionada",
+        "una sola oferta",
+        "presentacion oportuna de la oferta",
+        "tachadura",
+        "tachaduras",
+        "enmendadura",
+        "enmendaduras",
+        "diligenciamiento completo",
+        "diligenciamiento de formatos",
+        "constancia de proceso",
+        "salvamento"
+      ],
+      "categoria": "procedimental",
+      "fuente": "ternera — 'Oferta sin tachaduras o enmendaduras no autorizadas', 'Una sola oferta por proponente', 'Oferta no condicionada'"
+    },
+    {
+      "objeto": "PRECIO_OFERTA",
+      "nombre_canonico": "Precio y oferta económica",
+      "alias": [
+        "precio unitario",
+        "oferta economica",
+        "precio artificialmente bajo",
+        "puntaje oferta economica",
+        "precio artificialmente"
+      ],
+      "categoria": "economico",
+      "fuente": "ternera — 'Precio unitario diferente de cero', 'Rechazo por precio artificialmente bajo', 'Puntaje oferta económica'"
+    },
+    {
+      "objeto": "FACTOR_CALIDAD",
+      "nombre_canonico": "Factor de calidad",
+      "alias": [
+        "factor de calidad",
+        "plan de calidad",
+        "programa de gerencia de proyectos",
+        "gerencia de proyectos",
+        "certificacion pmp"
+      ],
+      "categoria": "puntaje",
+      "fuente": "ternera — 'Factor de calidad – Plan de calidad', Formato 7A/7C"
+    },
+    {
+      "objeto": "DOCUMENTO_IDENTIDAD",
+      "nombre_canonico": "Documento de identidad",
+      "alias": [
+        "documento de identidad",
+        "documento de identificacion",
+        "fotocopia del documento de identificacion",
+        "cedula de ciudadania"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol + ternera — 'Documento de identidad - persona natural colombiana', 'Copia documento de identificación del representante'"
+    },
+    {
+      "objeto": "VERACIDAD_INFORMACION",
+      "nombre_canonico": "Veracidad de la información aportada",
+      "alias": [
+        "veracidad de la informacion",
+        "veracidad",
+        "informacion inexacta"
+      ],
+      "categoria": "procedimental",
+      "fuente": "ternera — 'Veracidad de la información aportada', numeral 1.11"
+    },
+    {
+      "objeto": "FECHAS_EJECUCION",
+      "nombre_canonico": "Fechas de ejecución del contrato acreditado",
+      "alias": [
+        "fecha de iniciacion de ejecucion",
+        "fecha de terminacion de ejecucion",
+        "certificaciones sin dia",
+        "sin dia de suscripcion"
+      ],
+      "categoria": "documental",
+      "fuente": "paicol + ternera — 'Tratamiento de certificaciones sin día de suscripción o inicio', 'Fecha de terminación de ejecución'"
+    },
+    {
+      "objeto": "PERSONAL_EQUIPO",
+      "nombre_canonico": "Personal y equipo de trabajo",
+      "alias": [
+        "profesional tiempo completo",
+        "titulo profesional",
+        "matricula profesional",
+        "matricula vigente",
+        "pensum academico",
+        "equipo de trabajo",
+        "personal propuesto"
+      ],
+      "categoria": "tecnico",
+      "fuente": "ternera — 'Profesional tiempo completo en Ingeniería o Arquitectura con matrícula vigente'"
+    }
+  ],
+  "sujetos": [
+    {
+      "sujeto": "proponente_plural",
+      "alias": [
+        "proponente plural",
+        "proponentes plurales",
+        "consorcio",
+        "union temporal",
+        "estructura plural",
+        "contratista plural",
+        "contratistas plurales",
+        "integrante",
+        "integrantes"
+      ],
+      "fuente": "paicol (23 req) + ternera (37 req) — numerales 3.3.3, 3.5"
+    },
+    {
+      "sujeto": "persona_natural",
+      "alias": [
+        "persona natural",
+        "personas naturales"
+      ],
+      "fuente": "paicol 3.3.1/3.4.2 + ternera — 'Existencia y representación legal - Persona natural colombiana'"
+    },
+    {
+      "sujeto": "persona_juridica",
+      "alias": [
+        "persona juridica",
+        "personas juridicas",
+        "sucursal",
+        "sociedad",
+        "entidad sin animo de lucro"
+      ],
+      "fuente": "paicol 3.3.2 + ternera — 'Duración de la persona jurídica no inferior al plazo del contrato más un año'"
+    },
+    {
+      "sujeto": "entidad_estatal",
+      "alias": [
+        "entidad estatal",
+        "entidad contratante",
+        "entidad publica"
+      ],
+      "fuente": "paicol/ternera — 'Acto de creación de entidad estatal'"
+    },
+    {
+      "sujeto": "extranjero",
+      "alias": [
+        "extranjero",
+        "extranjera",
+        "extranjeros",
+        "extranjeras",
+        "sin domicilio en colombia",
+        "sin sucursal en colombia",
+        "expedidos en el exterior",
+        "pais de origen",
+        "apostilla",
+        "apostillado",
+        "convalidacion de titulo extranjero",
+        "traduccion oficial"
+      ],
+      "fuente": "paicol (23 req) + ternera (27 req) — apostilla, traducción, país de origen"
+    }
+  ]
+}

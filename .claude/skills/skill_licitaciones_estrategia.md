@@ -45,8 +45,13 @@ La Oferta Económica (errores numéricos que alteren el valor o falta de firma)
 Documentos que otorgan puntaje (ej. certificado de industria nacional o personal con discapacidad)
 .
 - Referencia explícita a plazos legales:
-  Observaciones al pliego: durante período de publicación (mínimo 10 días hábiles)
-  Subsanaciones: 3-5 días hábiles según modalidad
+  Observaciones al PROYECTO de pliego (Decreto 1082/2015 art. 2.2.1.1.2.1.4):
+    10 días hábiles en licitación pública; 5 en selección abreviada y
+    concurso de méritos. No afirmar "10 días" sin decir la modalidad.
+  Subsanación de habilitantes: la ley NO fija un número de días. El plazo
+    lo fija la entidad en el pliego; el límite legal es hasta el traslado
+    del informe de evaluación (Ley 1150/2007 art. 5 par. 1, modificado por
+    la Ley 1882/2018 art. 5), salvo mínima cuantía y subasta.
   Recursos de reposición: 5 días hábiles post-adjudicación (Ley 1437)
   
 - Modalidades de selección y sus umbrales 2026:

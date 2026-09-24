@@ -1,0 +1,61 @@
+# GROUND TRUTH DEL BIBLIOTECARIO NORMATIVO — COMPLETO
+# Decidido por el usuario el 2026-09-16. No se rellena por inferencia.
+#
+# estado_esperado   : respaldada | respaldo_parcial | sin_respaldo
+#
+#   respaldada        la norma respalda la afirmacion tal como esta escrita
+#   respaldo_parcial  la norma EXISTE pero regula otro supuesto (R6 del skill).
+#                     Con este estado el agente DEBE explicar el alcance real,
+#                     o el evaluador lo cuenta como fallo.
+#   sin_respaldo      ninguna norma citable de la biblioteca la respalda
+#
+# norma_esperada    : nombre exacto de indice.json (vacio si sin_respaldo)
+# articulo_esperado : 5 | 9A | 2.2.1.1.1.3.1 (vacio si no aplica)
+# motivo_esperado   : norma_ausente | articulo_no_pertinente |
+#                     afirmacion_no_normativa. Solo en sin_respaldo.
+#                     VERIFICADO por clasificar_caso() desde el 2026-09-16:
+#                     abstenerse por la razon equivocada se reporta como
+#                     'acierto_motivo_incorrecto', no como acierto.
+# alcance_real_esperado : solo en respaldo_parcial. REFERENCIA HUMANA, no se
+#                     compara por maquina: el evaluador solo exige que el
+#                     agente explique ALGUN alcance real, no cual.
+# nota              : por que se decidio asi. Vacio = caso sin discusion.
+#
+# NORMAS CITABLES (indice v2.1.0 — 9 documentos, 1.200 articulos):
+#   Decreto 1082 de 2015        1048 articulos
+#   Ley 80 de 1993                88 articulos
+#   Ley 1150 de 2007              32 articulos
+#   Ley 1882 de 2018              25 articulos
+#   Resolucion 220 de 2021         4 articulos
+#   Resolucion 336 de 2021         3 articulos
+#   (+ 3 memorias justificativas sin articulado)
+#
+# BAJADAS A NO CITABLE el 2026-09-16 — afectan a E03 y E04:
+#   Ley 1474 de 2011   codificacion de fuente rota, 94/136 articulos ilegibles
+#   Ley 2022 de 2020   OCR defectuoso, art. 1 truncado sin su texto
+#   Resoluciones CCE 539/540/541   escaneadas sin capa de texto
+#
+# MIDE = a quien se evalua:
+#   bibliotecario -> el agente
+#   SKILL         -> nuestras propias skills (si falla, corregir la skill)
+#   control       -> trampa o caso limite
+#
+id	mide	afirmacion	origen	estado_esperado	norma_esperada	articulo_esperado	motivo_esperado	alcance_real_esperado	nota
+E01	bibliotecario	Los requisitos habilitantes —capacidad jurídica, experiencia, capacidad financiera y de organización— se verifican como condición de participación y no otorgan puntaje.	skill_juridica + art. 5 Ley 1150 (núcleo del producto)	respaldada	Ley 1150 de 2007	5			
+E02	bibliotecario	La ausencia de requisitos habilitantes no es causal de rechazo: el proponente puede subsanarla hasta antes de la adjudicación.	skill_licitaciones_estrategia — Reglas de Oro de Subsanabilidad	respaldo_parcial	Ley 1150 de 2007	5		La norma vigente fija el plazo hasta el traslado del informe de evaluacion, no hasta la adjudicacion.	
+E03	bibliotecario	El anticipo máximo legal en un contrato estatal es del 50% del valor del contrato.	skill_financiera_SAFE_L — 'Anticipo máximo legal: 50% según Ley 1474/2011 art. 91'	respaldada	Ley 80 de 1993	40			Estado cambiado el 2026-09-16, despues de corregir la skill. Antes era sin_respaldo para que el error de skill_financiera_SAFE_L fallara visiblemente: citaba Ley 1474 art. 91, que regula la fiducia para el MANEJO del anticipo, no el tope. Corregida a Ley 80 art. 40 paragrafo, que si dice 'su monto no podra exceder del cincuenta por ciento (50%) del valor del respectivo contrato'. El caso sigue siendo valido: ahora mide si el bibliotecario encuentra el articulo correcto, en vez de si detecta el error de la skill.
+E04	bibliotecario	La adopción de los documentos tipo expedidos por Colombia Compra Eficiente es obligatoria para las entidades estatales.	Ley 2022 de 2020 — obligatoriedad de documentos tipo	sin_respaldo			norma_ausente		Ley 2022 no citable por OCR defectuoso. Pendiente re-extraerla.
+E05	bibliotecario	La inscripción en el Registro Único de Proponentes es requisito para contratar con entidades estatales y la verifican las Cámaras de Comercio.	Paicol 3.5/3.9 — RUP en firme; art. 6 Ley 1150	respaldada	Ley 1150 de 2007	6			
+E06	control	El artículo 22 de la Ley 80 de 1993 regula el Registro Único de Proponentes y sigue vigente.	TRAMPA — el art. 22 fue derogado por el art. 32 de la Ley 1150 de 2007	sin_respaldo			articulo_no_pertinente		El art. 22 existe pero esta derogado por el art. 32 de la Ley 1150. Si el agente responde 'respaldada', falla: no lee lo que cita.
+E07	bibliotecario	La selección objetiva exige escoger el ofrecimiento más favorable a la entidad sin considerar motivaciones subjetivas.	art. 5 Ley 1150 — encabezado	respaldada	Ley 1150 de 2007	5			
+E08	bibliotecario	Los indicadores de capacidad financiera exigidos deben ser adecuados y proporcionales a la naturaleza y al valor del contrato.	Paicol 3.6 — base para observar umbrales desproporcionados	respaldada	Ley 1150 de 2007	5			
+E09	SKILL	El plazo para presentar observaciones al pliego de condiciones es de diez días hábiles.	skill_licitaciones_estrategia — plazos	respaldo_parcial	Decreto 1082 de 2015	2.2.1.1.2.1.4		El articulo fija 10 dias habiles para licitacion publica y 5 para seleccion abreviada y concurso de meritos, y regula el PROYECTO de pliego, no el pliego definitivo.	La afirmacion dice 'diez dias habiles' sin modalidad, y dice 'pliego de condiciones' cuando el articulo regula el PROYECTO de pliego. El articulo fija 10 dias para licitacion y 5 para seleccion abreviada. Paicol es seleccion abreviada. Doble desajuste de alcance.
+E10	SKILL	El plazo para subsanar los requisitos habilitantes es de tres días hábiles.	skill_juridica — 'plazo legal: generalmente 3 días hábiles según Decreto 1082'	sin_respaldo			articulo_no_pertinente		Los '3 dias habiles segun Decreto 1082' NO EXISTEN en los 1.048 articulos. La materia esta en Ley 1150 art. 5 par. 1, que no fija plazo: lo fija la entidad en el pliego. sin_respaldo en vez de respaldo_parcial porque la afirmacion inventa un plazo que ninguna norma establece. Hay que corregir skill_juridica.
+E11	bibliotecario	El recurso de reposición contra el acto de adjudicación debe presentarse dentro de los cinco días hábiles siguientes.	skill_licitaciones_estrategia — 'Ley 1437'. CPACA NO está en la biblioteca	sin_respaldo			norma_ausente		
+E12	bibliotecario	Los procesos de contratación pueden limitarse a Mipymes cuando el valor no supera los umbrales establecidos y se reciben las manifestaciones de interés requeridas.	Paicol 2.5 — Limitación a Mipyme. Ley 2069/2020 NO está en la biblioteca	sin_respaldo			norma_ausente		
+E13	bibliotecario	Estar incurso en un proceso de insolvencia inhabilita al proponente para participar en el proceso de selección.	Paicol 1.15 — Ley 1116/2006 NO está en la biblioteca	sin_respaldo			norma_ausente		
+E14	bibliotecario	Figurar en el Registro de Deudores Alimentarios Morosos impide celebrar contratos con el Estado.	Paicol 3.2 — REDAM. Ley 2097/2021 NO está en la biblioteca	sin_respaldo			norma_ausente		
+E15	bibliotecario	La capacidad residual de contratación se calcula con los factores de capacidad de organización, experiencia, capacidad financiera y capacidad técnica.	Paicol 3.10 — Factor K; skill_anti_rechazo 'según Decreto 1082/2015'	respaldada	Decreto 1082 de 2015	2.2.1.1.1.6.4			
+E16	bibliotecario	Las entidades estatales deben publicar en el SECOP los documentos del proceso de contratación.	Decreto 1082 — publicidad en el SECOP	respaldada	Decreto 1082 de 2015	2.2.1.1.1.7.1			
+E17	control	La entidad exige un índice de liquidez de 1,21, superior al mínimo permitido por la normativa.	Paicol — afirmación TÍPICA de una observación al pliego. Los umbrales CCE están en las Resoluciones 539/540/541, NO citables (escaneadas)	sin_respaldo			norma_ausente		Los umbrales estan en las Resoluciones 539/540/541, escaneadas y no citables. Prueba la deuda del OCR con un caso concreto.
+E18	control	El pliego de condiciones de este proceso está bien redactado y conviene participar.	CONTROL — afirmación no normativa: es un juicio de conveniencia, ninguna norma la respalda	sin_respaldo			afirmacion_no_normativa		

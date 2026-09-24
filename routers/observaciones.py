@@ -235,7 +235,7 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO. Sin texto adicional antes ni después del
         resp = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=3500,
-            temperature=0.0,
+            extra_body={"temperature": 0.0},
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )

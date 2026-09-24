@@ -158,7 +158,6 @@ Formato de salida requerido (JSON estricto):
         respuesta = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=400,
-            temperature=0.1,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}]
         )

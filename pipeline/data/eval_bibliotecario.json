@@ -1,0 +1,198 @@
+{
+  "_meta": {
+    "version": "1.0.0-candidatos",
+    "fecha": "2026-09-14",
+    "estado": "PENDIENTE DE GROUND TRUTH — norma_esperada, articulo_esperado y estado_esperado los completa el operador",
+    "descripcion": "Casos de evaluación del bibliotecario normativo. Mezcla afirmaciones que la biblioteca SÍ puede respaldar con otras cuya norma NO está indexada: las segundas prueban que el agente se abstiene, y valen tanto como los aciertos.",
+    "fuentes": {
+      "skills": "Afirmaciones normativas que las skills del repo dan por ciertas (.claude/skills/*.md).",
+      "paicol": "Requisitos extraídos de resultados_evaluacion/paicol_2026_resultado.json — exigencias reales de un pliego.",
+      "nota_fuente_a": "No hay análisis guardado con concepto_juridico ni riesgos_juridicos: el paso 6 del pipeline (agentes de redacción) nunca se completó por falta de saldo. Cuando corra, esas afirmaciones se añadirán aquí."
+    },
+
+    "QUE_SE_MIDE_EN_CADA_CASO": {
+      "advertencia": "No todos los casos miden al bibliotecario. Algunos miden nuestras propias skills. Confundirlos llevaría a 'arreglar' el bibliotecario cuando el error está en el prompt que alimenta a otro agente.",
+      "mide_al_bibliotecario": [
+        "E01", "E02", "E04", "E05", "E07", "E08", "E15", "E16",
+        "E11", "E12", "E13", "E14", "E17", "E18", "E06"
+      ],
+      "mide_a_nuestras_skills": {
+        "E03": "skill_financiera_SAFE_L.md afirma 'anticipo máximo legal: 50% según Ley 1474/2011 art. 91'. La Ley 1474 SÍ está indexada (136 artículos). Si el bibliotecario no encuentra respaldo, el hallazgo es que la skill cita de memoria — y esa skill alimenta al agente financiero en CADA análisis. Corregir la skill, no el bibliotecario.",
+        "E09": "skill_licitaciones_estrategia.md da por cierto '10 días hábiles para observaciones al pliego' sin indicar artículo. Si no hay norma que lo respalde en la biblioteca, hay que corregir la skill o añadir la norma.",
+        "E10": "skill_juridica_licitaciones.md.md dice 'plazo legal: generalmente 3 días hábiles según Decreto 1082'. El 'generalmente' ya delata una cita aproximada. El Decreto 1082 está indexado con 1.048 artículos: si el plazo no aparece en ninguno, la skill afirma de más."
+      },
+      "casos_de_control": {
+        "E06": "Trampa: el art. 22 de la Ley 80 fue derogado por el art. 32 de la Ley 1150. El .md conserva la nota de derogatoria. Mide si el agente LEE lo que cita en vez de reconocer el número.",
+        "E18": "Afirmación no normativa (juicio de conveniencia). Debe devolver motivo=afirmacion_no_normativa.",
+        "E17": "Mide la deuda del OCR con un caso concreto: los umbrales del CCE viven en las Resoluciones 539/540/541, escaneadas y citable=false. Es la afirmación típica de una observación al pliego y hoy no tiene respaldo posible."
+      }
+    },
+
+    "COMO_COMPLETAR": {
+      "estado_esperado": "'respaldada' si alguna norma de la biblioteca la respalda · 'sin_respaldo' si ninguna la respalda",
+      "norma_esperada": "Nombre exacto como aparece en indice.json, p. ej. 'Ley 1150 de 2007'. Dejar en null si estado_esperado es 'sin_respaldo'.",
+      "articulo_esperado": "Número tal como lo indexa el catálogo: '5', '9A', '2.2.1.1.1.3.1'. null si no aplica.",
+      "normas_citables_hoy": {
+        "Ley 80 de 1993": 88,
+        "Ley 1150 de 2007": 32,
+        "Ley 1474 de 2011": 136,
+        "Ley 1882 de 2018": 25,
+        "Decreto 1082 de 2015": 1048,
+        "Ley 2022 de 2020": 3,
+        "Resolución 220 de 2021": 4,
+        "Resolución 336 de 2021": 3
+      }
+    },
+    "biblioteca_al_momento": {
+      "citables": ["Ley 80 de 1993", "Ley 1150 de 2007", "Ley 1474 de 2011", "Ley 1882 de 2018", "Decreto 1082 de 2015", "Ley 2022 de 2020", "Resolución 220 de 2021", "Resolución 336 de 2021"],
+      "no_citables": ["Resolución CCE 539 de 2025", "Resolución CCE 540 de 2025", "Resolución CCE 541 de 2025"],
+      "ausentes_conocidas": ["Ley 1437 de 2011 (CPACA)", "Ley 2069 de 2020", "Ley 1116 de 2006", "Ley 2097 de 2021", "Ley 842 de 2003", "Ley 610 de 2000", "Ley 789 de 2002"]
+    }
+  },
+  "casos": [
+    {
+      "id": "E01",
+      "afirmacion": "Los requisitos habilitantes —capacidad jurídica, experiencia, capacidad financiera y de organización— se verifican como condición de participación y no otorgan puntaje.",
+      "origen": "skill_juridica + art. 5 Ley 1150 (núcleo del producto)",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E02",
+      "afirmacion": "La ausencia de requisitos habilitantes no es causal de rechazo: el proponente puede subsanarla hasta antes de la adjudicación.",
+      "origen": "skill_licitaciones_estrategia — Reglas de Oro de Subsanabilidad",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E03",
+      "afirmacion": "El anticipo máximo legal en un contrato estatal es del 50% del valor del contrato.",
+      "origen": "skill_financiera_SAFE_L — 'Anticipo máximo legal: 50% según Ley 1474/2011 art. 91'",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E04",
+      "afirmacion": "La adopción de los documentos tipo expedidos por Colombia Compra Eficiente es obligatoria para las entidades estatales.",
+      "origen": "Ley 2022 de 2020 — obligatoriedad de documentos tipo",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E05",
+      "afirmacion": "La inscripción en el Registro Único de Proponentes es requisito para contratar con entidades estatales y la verifican las Cámaras de Comercio.",
+      "origen": "Paicol 3.5/3.9 — RUP en firme; art. 6 Ley 1150",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E06",
+      "afirmacion": "El artículo 22 de la Ley 80 de 1993 regula el Registro Único de Proponentes y sigue vigente.",
+      "origen": "TRAMPA — el art. 22 fue derogado por el art. 32 de la Ley 1150 de 2007",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E07",
+      "afirmacion": "La selección objetiva exige escoger el ofrecimiento más favorable a la entidad sin considerar motivaciones subjetivas.",
+      "origen": "art. 5 Ley 1150 — encabezado",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E08",
+      "afirmacion": "Los indicadores de capacidad financiera exigidos deben ser adecuados y proporcionales a la naturaleza y al valor del contrato.",
+      "origen": "Paicol 3.6 — base para observar umbrales desproporcionados",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E09",
+      "afirmacion": "El plazo para presentar observaciones al pliego de condiciones es de diez días hábiles.",
+      "origen": "skill_licitaciones_estrategia — plazos",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E10",
+      "afirmacion": "El plazo para subsanar los requisitos habilitantes es de tres días hábiles.",
+      "origen": "skill_juridica — 'plazo legal: generalmente 3 días hábiles según Decreto 1082'",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E11",
+      "afirmacion": "El recurso de reposición contra el acto de adjudicación debe presentarse dentro de los cinco días hábiles siguientes.",
+      "origen": "skill_licitaciones_estrategia — 'Ley 1437'. CPACA NO está en la biblioteca",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E12",
+      "afirmacion": "Los procesos de contratación pueden limitarse a Mipymes cuando el valor no supera los umbrales establecidos y se reciben las manifestaciones de interés requeridas.",
+      "origen": "Paicol 2.5 — Limitación a Mipyme. Ley 2069/2020 NO está en la biblioteca",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E13",
+      "afirmacion": "Estar incurso en un proceso de insolvencia inhabilita al proponente para participar en el proceso de selección.",
+      "origen": "Paicol 1.15 — Ley 1116/2006 NO está en la biblioteca",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E14",
+      "afirmacion": "Figurar en el Registro de Deudores Alimentarios Morosos impide celebrar contratos con el Estado.",
+      "origen": "Paicol 3.2 — REDAM. Ley 2097/2021 NO está en la biblioteca",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E15",
+      "afirmacion": "La capacidad residual de contratación se calcula con los factores de capacidad de organización, experiencia, capacidad financiera y capacidad técnica.",
+      "origen": "Paicol 3.10 — Factor K; skill_anti_rechazo 'según Decreto 1082/2015'",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E16",
+      "afirmacion": "Las entidades estatales deben publicar en el SECOP los documentos del proceso de contratación.",
+      "origen": "Decreto 1082 — publicidad en el SECOP",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E17",
+      "afirmacion": "La entidad exige un índice de liquidez de 1,21, superior al mínimo permitido por la normativa.",
+      "origen": "Paicol — afirmación TÍPICA de una observación al pliego. Los umbrales CCE están en las Resoluciones 539/540/541, NO citables (escaneadas)",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    },
+    {
+      "id": "E18",
+      "afirmacion": "El pliego de condiciones de este proceso está bien redactado y conviene participar.",
+      "origen": "CONTROL — afirmación no normativa: es un juicio de conveniencia, ninguna norma la respalda",
+      "norma_esperada": null,
+      "articulo_esperado": null,
+      "estado_esperado": null
+    }
+  ]
+}

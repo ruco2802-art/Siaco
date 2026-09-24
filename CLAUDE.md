@@ -10,6 +10,12 @@ Crea el archivo CLAUDE.md en la raíz del proyecto con el siguiente contenido:
 - Python 3.13, Streamlit 1.40.0 (NO actualizar)
 - claude-sonnet-4-6, sentence-transformers all-MiniLM-L6-v2
 - Sin bases de datos vectoriales externas
+- SDK: anthropic>=1,<2 — el 1.x quitó `temperature`/`top_p`/`top_k` de las
+  firmas de los métodos (no de la API). Las 14 llamadas que dependen del
+  determinismo lo pasan como `extra_body={"temperature": 0.0}`.
+  **Acople con la línea de modelo:** `extra_body={'temperature': 0.0}`
+  funciona con la línea 4.6/4.5. Opus 4.7+ y Sonnet 5 rechazan valores
+  no-default. Al migrar de modelo hay que quitarlo.
 
 ## Reglas críticas Streamlit
 - st.form() en TODOS los widgets interactivos

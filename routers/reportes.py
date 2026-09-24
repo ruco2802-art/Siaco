@@ -5,7 +5,26 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from pipeline.src.estados import SIN_VEREDICTO, desde_fila, etiqueta, texto_detalle
+
 router = APIRouter(tags=["reportes"])
+
+# Fondos por estado. El COLOR es refuerzo, nunca el portador del significado:
+# el informe se imprime en blanco y negro y la etiqueta tiene que bastar.
+_FONDO = {
+    "cumple":         (242, 250, 242),
+    "no_cumple":      (253, 240, 240),
+    "dato_faltante":  (253, 248, 235),
+    "revisar_manual": (240, 246, 253),
+    "no_aplica":      (247, 247, 247),
+}
+_TINTA = {
+    "cumple":         (20, 95, 20),
+    "no_cumple":      (150, 20, 20),
+    "dato_faltante":  (140, 95, 0),
+    "revisar_manual": (25, 70, 140),
+    "no_aplica":      (110, 110, 110),
+}
 
 
 def limpiar_texto_pdf(texto: str) -> str:
@@ -231,8 +250,16 @@ def _section_header(pdf, titulo: str):
 
 
 def _tabla_checklist(pdf, checklist: list):
-    col_w = [65, 40, 50, 20]
-    headers = ["Requisito", "Exigido", "Empresa tiene", "Cumple"]
+    """
+    Checklist financiero con los CINCO estados, no con SI/NO.
+
+    Antes: `"SI" if cumple else "NO"`. Los 8 indicadores de Paicol sin dato
+    salían como "NO" — el informe afirmaba un incumplimiento que nadie había
+    verificado. La columna ahora dice DATO FALTANTE y, debajo, qué documento
+    lo aportaría.
+    """
+    col_w = [58, 33, 38, 46]
+    headers = ["Requisito", "Exigido", "Empresa tiene", "Estado"]
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(210, 210, 210)
     pdf.set_text_color(20, 20, 20)
@@ -242,25 +269,39 @@ def _tabla_checklist(pdf, checklist: list):
 
     pdf.set_font("Helvetica", "", 8)
     for item in checklist[:12]:
-        cumple = item.get("cumple", False)
-        pdf.set_fill_color(240, 255, 240) if cumple else pdf.set_fill_color(255, 240, 240)
-        pdf.set_text_color(20, 100, 20) if cumple else pdf.set_text_color(150, 20, 20)
+        estado = desde_fila(item)
+        pdf.set_fill_color(*_FONDO.get(estado, (247, 247, 247)))
+        pdf.set_text_color(*_TINTA.get(estado, (60, 60, 60)))
 
-        req = limpiar_texto_pdf(str(item.get("requisito", ""))[:35])
-        exig = limpiar_texto_pdf(str(item.get("valor_pliego", ""))[:20])
-        tiene = limpiar_texto_pdf(str(item.get("valor_empresa", ""))[:28])
-        ok = "SI" if cumple else "NO"
+        req = limpiar_texto_pdf(str(item.get("requisito", ""))[:32])
+        exig = limpiar_texto_pdf(str(item.get("valor_pliego", ""))[:18])
+        tiene = limpiar_texto_pdf(str(item.get("valor_empresa", "")) or "-")[:20]
 
         pdf.cell(col_w[0], 6, req, border=1, fill=True)
         pdf.cell(col_w[1], 6, exig, border=1, fill=True)
         pdf.cell(col_w[2], 6, tiene, border=1, fill=True)
-        pdf.cell(col_w[3], 6, ok, border=1, fill=True, align="C")
+        pdf.cell(col_w[3], 6, limpiar_texto_pdf(etiqueta(estado)),
+                 border=1, fill=True, align="C")
         pdf.ln()
+
+        # El detalle, debajo y en gris: qué documento falta, cuánto falta,
+        # qué umbrales alternativos hay. Es lo que hace accionable el estado.
+        detalle = texto_detalle(item)
+        if detalle:
+            pdf.set_font("Helvetica", "I", 7)
+            pdf.set_text_color(105, 105, 105)
+            pdf.cell(col_w[0], 5, "", border="LR", fill=True)
+            pdf.cell(sum(col_w[1:]), 5,
+                     limpiar_texto_pdf(f"  {detalle}")[:78],
+                     border="LR", fill=True)
+            pdf.ln()
+            pdf.set_font("Helvetica", "", 8)
 
 
 def _tabla_requisitos(pdf, requisitos: list):
-    col_w = [55, 40, 45, 25, 22]
-    headers = ["Requisito", "Exigido", "Cliente tiene", "Cumple", "Subsanable"]
+    """Requisitos jurídicos. Mismo mapa de estados que el checklist."""
+    col_w = [52, 33, 38, 42, 22]
+    headers = ["Requisito", "Exigido", "Cliente tiene", "Estado", "Subsanable"]
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(210, 210, 210)
     pdf.set_text_color(20, 20, 20)
@@ -272,19 +313,31 @@ def _tabla_requisitos(pdf, requisitos: list):
     for item in requisitos[:12]:
         if not isinstance(item, dict):
             continue
-        cumple = item.get("cumple", False)
-        pdf.set_fill_color(240, 255, 240) if cumple else pdf.set_fill_color(255, 240, 240)
-        pdf.set_text_color(20, 100, 20) if cumple else pdf.set_text_color(150, 20, 20)
+        estado = desde_fila(item)
+        pdf.set_fill_color(*_FONDO.get(estado, (247, 247, 247)))
+        pdf.set_text_color(*_TINTA.get(estado, (60, 60, 60)))
 
-        req = limpiar_texto_pdf(str(item.get("requisito", ""))[:28])
-        exig = limpiar_texto_pdf(str(item.get("exigido", ""))[:20])
-        tiene = limpiar_texto_pdf(str(item.get("cliente_tiene", ""))[:22])
-        ok = "SI" if cumple else "NO"
-        sub = "Si" if item.get("subsanable", True) else "NO"
+        req = limpiar_texto_pdf(str(item.get("requisito", ""))[:26])
+        exig = limpiar_texto_pdf(str(item.get("exigido", ""))[:18])
+        tiene = limpiar_texto_pdf(str(item.get("cliente_tiene", "")) or "-")[:20]
+        # Sin dato verificado no se afirma nada sobre la subsanabilidad.
+        sub = "-" if estado in SIN_VEREDICTO else ("Si" if item.get("subsanable", True) else "NO")
 
         pdf.cell(col_w[0], 6, req, border=1, fill=True)
         pdf.cell(col_w[1], 6, exig, border=1, fill=True)
         pdf.cell(col_w[2], 6, tiene, border=1, fill=True)
-        pdf.cell(col_w[3], 6, ok, border=1, fill=True, align="C")
+        pdf.cell(col_w[3], 6, limpiar_texto_pdf(etiqueta(estado)),
+                 border=1, fill=True, align="C")
         pdf.cell(col_w[4], 6, sub, border=1, fill=True, align="C")
         pdf.ln()
+
+        detalle = texto_detalle(item)
+        if detalle:
+            pdf.set_font("Helvetica", "I", 7)
+            pdf.set_text_color(105, 105, 105)
+            pdf.cell(col_w[0], 5, "", border="LR", fill=True)
+            pdf.cell(sum(col_w[1:]), 5,
+                     limpiar_texto_pdf(f"  {detalle}")[:78],
+                     border="LR", fill=True)
+            pdf.ln()
+            pdf.set_font("Helvetica", "", 8)

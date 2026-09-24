@@ -547,7 +547,7 @@ def analizar_contratos(body: AnalizarBody, authorization: str = Header(None)):
             resp = client.messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=200,
-                temperature=0.0,
+                extra_body={"temperature": 0.0},
                 system=(
                     f"Eres SIACO, experto en licitaciones SECOP II Colombia. "
                     f"El cliente trabaja en: {objeto_cliente}. "

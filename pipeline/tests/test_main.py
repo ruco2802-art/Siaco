@@ -96,7 +96,7 @@ class TestMainPersistencia:
         resultado = _resultado_minimo()
         ruta_capturada: list[Path | None] = []
 
-        def fake_extraer(markdown, chunks, api_key=None, ruta_salida=None):
+        def fake_extraer(markdown, chunks, api_key=None, ruta_salida=None, pliego_sha256=""):
             ruta_capturada.append(ruta_salida)
             if ruta_salida is not None:
                 ruta_salida.parent.mkdir(parents=True, exist_ok=True)
@@ -189,7 +189,7 @@ class TestMainAvisoVerificacion:
         resultado = _resultado_minimo(n_no_verif=2)
         ruta_capturada: list[Path | None] = []
 
-        def fake_extraer(markdown, chunks, api_key=None, ruta_salida=None):
+        def fake_extraer(markdown, chunks, api_key=None, ruta_salida=None, pliego_sha256=""):
             ruta_capturada.append(ruta_salida)
             if ruta_salida is not None:
                 ruta_salida.parent.mkdir(parents=True, exist_ok=True)
@@ -272,7 +272,7 @@ class TestMainMarcarIndicesConectado:
 
         ruta_capturada: list = []
 
-        def fake_extraer(markdown, chunks, api_key=None, ruta_salida=None):
+        def fake_extraer(markdown, chunks, api_key=None, ruta_salida=None, pliego_sha256=""):
             ruta_capturada.append(ruta_salida)
             if ruta_salida is not None:
                 ruta_salida.parent.mkdir(parents=True, exist_ok=True)

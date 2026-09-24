@@ -32,6 +32,10 @@ pipeline/src/__pycache__/
 # Datos de clientes (sensibles — nunca en repo público)
 clientes/
 
+# Almacen de corridas (FASE 0). Deberia vivir fuera del repo via
+# SIACO_DATA_DIR; esta ruta es el respaldo cuando no esta configurada.
+_datos_siaco/
+
 # Datos generados / temporales
 resultados_evaluacion/
 pliegos_evaluacion/

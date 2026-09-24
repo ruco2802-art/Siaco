@@ -27,7 +27,11 @@ try:
 except ImportError:
     import fitz  # type: ignore[import]
 
-_CACHE_DIR = Path(".pipeline_cache")
+# [B13] Ruta absoluta derivada de __file__, como artefactos.py. Con una ruta
+# relativa la caché sólo se encontraba al ejecutar desde la raíz del repo:
+# desde pipeline/ fallaba en silencio y el parser exigía marker-pdf.
+_REPO_ROOT = Path(__file__).parent.parent.parent
+_CACHE_DIR = _REPO_ROOT / ".pipeline_cache"
 _MIN_CHARS = 500
 _CHARS_POR_PAGINA_UMBRAL = 50
 
@@ -338,7 +342,7 @@ def _ocr_con_claude(pdf_path: Path, n_paginas: int) -> str:
             resp = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=8_000,
-                temperature=0.0,
+                extra_body={"temperature": 0.0},
                 system=_PROMPT_OCR,
                 messages=[{
                     "role": "user",

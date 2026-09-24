@@ -55,5 +55,9 @@ Análisis Predictivo: Utilizar datos históricos para predecir si el aumento en 
 - Capacidad Residual fórmula completa:
   K = (0.8 × Patrimonio Líquido) - Σ(valor_contratos_en_ejecución × %_pendiente)
   
-- Anticipo máximo legal: 50% según Ley 1474/2011 art. 91
+- Anticipo máximo legal: 50% según Ley 80/1993 art. 40, parágrafo
+  ("su monto no podrá exceder del cincuenta por ciento (50%) del valor
+  del respectivo contrato"). [no-citable] El art. 91 de la Ley 1474/2011 NO fija el
+  tope: obliga a constituir fiducia o patrimonio autónomo para el manejo
+  del anticipo.
 Criterios de Calidad: Aconsejar al proponente suscribir compromisos de factores ambientales y sociales (como programas de ahorro de agua o transporte alternativo) para obtener hasta 20 puntos adicionales que mejoren la competitividad de la oferta

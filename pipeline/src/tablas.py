@@ -674,7 +674,7 @@ def reparar_con_modelo(
             resp = client.messages.create(
                 model=modelo,
                 max_tokens=8_000,
-                temperature=0.0,
+                extra_body={"temperature": 0.0},
                 system=[{
                     "type": "text",
                     "text": system_text,

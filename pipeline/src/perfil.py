@@ -80,6 +80,11 @@ class PerfilJuridico(BaseModel):
     sin_redam: bool | None = None
     sin_redam_fecha: str | None = None
     sin_medidas_correctivas: bool | None = None
+    # Declaraciones habilitantes firmadas por el proponente
+    sin_insolvencia: bool | None = None                  # Ley 1116/2006
+    objeto_social_compatible: bool | None = None         # compatible con el objeto del contrato
+    sin_conflicto_interes: bool | None = None
+    sin_estudios_diseno_previos: bool | None = None      # no realizó estudios/diseños de la obra
     # Otros
     garantia_seriedad: bool | None = None
 
@@ -90,6 +95,8 @@ class PerfilTecnico(BaseModel):
     personal_disponible: int | None = None
     equipos: list[str] = Field(default_factory=list)
     certificaciones: list[str] = Field(default_factory=list)
+    titulo_profesional: Literal["arquitecto", "ingeniero", "ninguno"] | None = None
+    porcentaje_empleados_colombianos: float | None = None  # 0-100
 
 
 # ─── Componente social ─────────────────────────────────────────────────────
@@ -113,6 +120,7 @@ class PerfilEmpresa(BaseModel):
     es_mipyme: bool = False
     tamano_empresa: Literal["micro", "pequena", "mediana", "grande"] | None = None
     es_empresa_de_mujeres: bool = False
+    es_proponente_plural: bool = False  # True solo para consorcios/uniones temporales
     # Bloques de capacidad
     financiero: PerfilFinanciero | None = None
     experiencia: PerfilExperiencia | None = None

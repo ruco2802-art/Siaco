@@ -638,7 +638,6 @@ elif "Búsqueda" in pantalla:
                         resp_ia = _cli.messages.create(
                             model="claude-sonnet-4-6",
                             max_tokens=250,
-                            temperature=0.1,
                             system=(
                                 "Eres SIACO, experto en licitaciones SECOP II Colombia. "
                                 "Evalúa relevancia para empresas de obras civiles, HVAC y transporte. "
@@ -859,7 +858,7 @@ elif "Auditoría" in pantalla:
                 _r2 = _c2.messages.create(
                     model="claude-sonnet-4-6",
                     max_tokens=300,
-                    temperature=0.0,
+                    extra_body={"temperature": 0.0},
                     messages=[{"role": "user", "content": (
                         "Extrae del siguiente texto de pliego de licitación pública colombiana:\n"
                         "1) entidad contratante\n"

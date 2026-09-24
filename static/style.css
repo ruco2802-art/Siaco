@@ -586,6 +586,22 @@ tr.urgente  { background: rgba(248,81,73,.03); }
   font-size: .78rem; color: var(--info); font-family: var(--mono);
   display: inline-flex; align-items: center; gap: 6px;
 }
+/* Contador "Paso X de 6" — encabeza las fases reales del pipeline */
+.prog-contador {
+  font-family: var(--mono); font-size: .74rem; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--accent);
+  padding-bottom: 6px; margin-bottom: 2px;
+  border-bottom: 1px solid rgba(198,242,78,.15);
+}
+/* Mensaje que envía el backend con la fase actual */
+.prog-mensaje {
+  margin-top: 4px; font-size: .78rem; font-family: var(--mono);
+  color: var(--muted); font-style: italic;
+}
+/* Fase omitida por caché: ni completada ni pendiente */
+.prog-step.prog-pending em {
+  font-style: normal; font-size: .72rem; color: var(--info); opacity: .85;
+}
 
 /* ─── CHAT ASISTENTE FLOTANTE ────────────────────── */
 #chat-toggle {
@@ -649,6 +665,21 @@ tr.urgente  { background: rgba(248,81,73,.03); }
 }
 .chat-textarea:focus { outline: none; border-color: rgba(198,242,78,.4); }
 .chat-send-btn { flex-shrink: 0; padding: 8px 14px; font-size: .82rem; }
+
+/* Indicador de fuente de contexto */
+.chat-fuente {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; font-size: .72rem; color: var(--muted);
+  border-top: 1px solid #222; user-select: none; flex-shrink: 0;
+  min-height: 24px;
+}
+.chat-fuente-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.chat-fuente--pipeline .chat-fuente-dot { background: #C6F24E; }
+.chat-fuente--rag .chat-fuente-dot       { background: #E5A823; }
+.chat-fuente--pipeline { color: #9cbc4a; }
+.chat-fuente--rag      { color: #b08020; }
 
 /* ─── BÚSQUEDA AVANZADA ───────────────────────────── */
 .busq-avanzada-wrap {
@@ -813,3 +844,41 @@ tr.urgente  { background: rgba(248,81,73,.03); }
 .oferta-doc-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
 .oferta-doc-name { font-size: .88rem; font-weight: 600; color: var(--fg); }
 .oferta-doc-sub  { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+
+/* ════════ ESTADOS DE UN REQUISITO ════════
+   Los cinco estados del evaluador. Sustituyen a row-ok/row-fail, que sólo
+   distinguían dos y presentaban `dato_faltante` como incumplimiento.
+
+   Cada estado se distingue por FORMA además de color: el informe se imprime
+   en blanco y negro y no todo el mundo separa rojo de verde. El color es
+   refuerzo, nunca el único portador del significado. */
+.estado-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .62rem; font-weight: 700; letter-spacing: .04em;
+  padding: 2px 7px; border-radius: 3px; white-space: nowrap;
+  border: 1px solid currentColor;
+}
+.estado-icono {
+  font-family: var(--mono); font-size: .72rem; line-height: 1;
+}
+.estado-detalle {
+  font-size: .64rem; color: var(--muted); margin-top: 3px;
+  font-family: var(--mono);
+}
+
+.estado-cumple         { color: var(--ok); }
+.estado-cumple td      { background: rgba(63,185,80,.03); }
+.estado-no-cumple      { color: var(--danger); }
+.estado-no-cumple td   { background: rgba(248,81,73,.04); }
+/* Ámbar, no rojo: falta un dato, no hay incumplimiento probado. */
+.estado-dato-faltante    { color: var(--warn); }
+.estado-dato-faltante td { background: rgba(240,165,0,.04); }
+/* Azul: exige una decisión humana, no es un veredicto del sistema. */
+.estado-revisar-manual    { color: var(--info); }
+.estado-revisar-manual td { background: rgba(88,166,255,.05); }
+.estado-no-aplica      { color: var(--muted); }
+.estado-desconocido    { color: var(--muted); }
+
+/* Compatibilidad con resultados del historial anteriores al cambio. */
+.row-ok  td { background: rgba(63,185,80,.03); }
+.row-fail td { background: rgba(248,81,73,.04); }

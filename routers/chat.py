@@ -117,11 +117,16 @@ def chat_asistente(body: ChatBody, authorization: str = Header(None)):
 
     # Inyectar contexto documental (RAG si > 5 000 chars, completo si menor)
     # Se hace por concatenación para evitar que llaves en el pliego rompan .format()
-    fragmento = contexto_para_chat(cid, body.mensaje) if cid else ""
+    if cid:
+        fragmento, fuente_contexto = contexto_para_chat(cid, body.mensaje)
+    else:
+        fragmento, fuente_contexto = "", "sin_pliego"
+
     if fragmento:
         system_prompt += _BLOQUE_CON_PLIEGO + fragmento
     else:
         system_prompt += _BLOQUE_SIN_PLIEGO
+        fuente_contexto = "sin_pliego"
 
     # Historial: últimos 10 mensajes
     hist = _chat_histories.setdefault(token, [])
@@ -137,10 +142,17 @@ def chat_asistente(body: ChatBody, authorization: str = Header(None)):
         )
         reply = resp.content[0].text
         hist.append({"role": "assistant", "content": reply})
+        import logging
+        logging.getLogger("siaco").info(
+            "[CHAT] fuente=%s cliente=%s tokens_in=%d tokens_out=%d",
+            fuente_contexto, cid,
+            resp.usage.input_tokens, resp.usage.output_tokens,
+        )
         return {
-            "respuesta":    reply,
-            "historial_len": len(hist),
-            "tiene_pliego": bool(fragmento),
+            "respuesta":       reply,
+            "historial_len":   len(hist),
+            "tiene_pliego":    bool(fragmento),
+            "fuente_contexto": fuente_contexto,
         }
     except Exception as e:
         if hist and hist[-1]["role"] == "user":
