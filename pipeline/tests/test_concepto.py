@@ -251,3 +251,57 @@ def test_un_booleano_sin_umbral_si_es_una_respuesta():
     req = _req("Certificado REDAM", categoria="juridico")
     assert _evaluar_item(req, si)["estado"] == "cumple"
     assert _evaluar_item(req, no)["estado"] == "no_cumple"
+
+
+# ── 4 · La cuarta categoría: reglas del pliego ─────────────────────────────
+
+def test_una_regla_del_pliego_no_es_hueco_de_nadie():
+    """
+    «Subsanabilidad de experiencia insuficiente» no es un dato de la empresa ni
+    un campo que falte: es una regla del procedimiento. Hoy contaminaba las dos
+    listas — pedía confirmación al cliente y contaba como limitación nuestra.
+    """
+    from src.perfil import PerfilEmpresa
+    p = PerfilEmpresa.model_validate({"nombre": "X"})
+    assert concepto.origen_dato_faltante(
+        _req("Subsanabilidad de experiencia insuficiente",
+             categoria="experiencia"), p) == "no_se_responde_con_un_campo"
+    assert concepto.ORIGENES["no_se_responde_con_un_campo"]["dueno"] == "nadie"
+
+
+def test_unspsc_no_es_una_regla_aunque_lo_parezca():
+    """
+    En la primera lectura lo clasificamos como regla. No lo es:
+    `PerfilExperiencia.codigos_unspsc` existe y «los contratos deben estar
+    clasificados en alguno de estos códigos» se responde comparando conjuntos.
+    Le falta el criterio de comparación, que es [D27], no esta categoría.
+    """
+    assert "UNSPSC" not in concepto.OBJETOS_REGLA
+
+
+def test_el_resumen_cuenta_las_reglas_aparte():
+    filas = ([{"origen": "no_preguntado"}] * 30
+             + [{"origen": "no_se_responde_con_un_campo"}] * 5)
+    r = concepto.resumen_origenes(filas)
+    assert r["reglas"] == 5
+    assert r["pendientes_de_captura"] == 30
+
+
+# ── 5 · Por qué falló una verificación ─────────────────────────────────────
+
+def test_una_cita_con_simbolo_transformado_no_es_un_error_de_extraccion():
+    """
+    El «≥» del pliego llega como «>=» al extraerse, así que la comparación
+    literal falla aunque la cita sea exactamente la del pliego. Decirle al
+    cliente «cita no verificada» ahí es jerga que asusta sin informar.
+    """
+    from src.verifier import causa_no_verificada
+    assert causa_no_verificada(
+        "Capital de trabajo ≥ 450.000.000") == "simbolo_transformado"
+    assert causa_no_verificada("A − B ∗ C") == "simbolo_transformado"
+
+
+def test_una_cita_sin_simbolos_que_no_verifica_si_hay_que_revisarla():
+    from src.verifier import causa_no_verificada
+    assert causa_no_verificada(
+        "Los contratos aportados deben estar clasificados") == "texto_ausente"

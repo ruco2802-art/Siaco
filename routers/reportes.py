@@ -328,7 +328,12 @@ def _tabla_requisitos(pdf, requisitos: list):
         exig = limpiar_texto_pdf(str(item.get("exigido", ""))[:18])
         tiene = limpiar_texto_pdf(str(item.get("cliente_tiene", "")) or "-")[:20]
         # Sin dato verificado no se afirma nada sobre la subsanabilidad.
-        sub = "-" if estado in SIN_VEREDICTO else ("Si" if item.get("subsanable", True) else "NO")
+        # [I10] Sin dato, guion: el pliego no dijo si admite subsanar. Escribir
+        # "Si" por defecto es afirmar que hay una segunda oportunidad que nadie
+        # verificó, sobre un requisito que puede dejar la oferta fuera.
+        _subs = item.get("subsanable")
+        sub = ("-" if estado in SIN_VEREDICTO or _subs is None
+               else ("Si" if _subs else "NO"))
 
         pdf.cell(col_w[0], 6, req, border=1, fill=True)
         pdf.cell(col_w[1], 6, exig, border=1, fill=True)

@@ -92,6 +92,37 @@ def verificar_citas(
     return resultado
 
 
+# ─── Por qué falló una verificación ──────────────────────────────────────────
+
+# Símbolos que un PDF transforma al extraerse: el «≥» del pliego llega como
+# «>=», el «∗» como «*», la raya larga como guion. La comparación literal falla
+# por eso aunque el texto sea exactamente el del pliego.
+SIMBOLOS_TRANSFORMABLES = "≥≤∗×÷−–—≠≈±·º°‰′″“”‘’…"
+_RX_SIMBOLO = re.compile(f"[{SIMBOLOS_TRANSFORMABLES}]")
+
+
+def causa_no_verificada(literal: str | None) -> str:
+    """
+    Separa las dos razones por las que una cita no verifica, que tienen
+    consecuencias opuestas.
+
+    - `simbolo_transformado` — el literal trae un símbolo que el PDF convirtió
+      al extraerse. **La cita es correcta; lo que falla es la comparación.**
+      No es información para el cliente: es una limitación de nuestro
+      verificador, y va a la trazabilidad.
+    - `texto_ausente` — el literal no aparece en el documento por ninguna razón
+      identificable. **Eso sí puede ser un error de extracción** y tiene que
+      verse junto al requisito.
+
+    Medido en Paicol el 2026-09-27: de 8 citas no verificadas, **6 son de
+    símbolo** (≥ en capital de trabajo, − y ∗ en capacidad residual, rayas
+    largas en cuatro más) y **2 de texto ausente**, que son las que hay que
+    revisar a mano.
+    """
+    return ("simbolo_transformado" if _RX_SIMBOLO.search(literal or "")
+            else "texto_ausente")
+
+
 def tasa_verificacion(resultado: ResultadoExtraccion) -> float:
     """Porcentaje de citas verificadas sobre el total de requisitos."""
     total = len(resultado.requisitos)

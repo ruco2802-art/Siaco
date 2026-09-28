@@ -126,6 +126,12 @@ adjudicación anual del segmento; de esos dos números depende la viabilidad eco
 
 1. **El pliego manda sobre la normativa.** Un campo vacío es correcto; uno inventado es un
    error grave. Aplica también a la UI: no rellenar ni aparentar datos que no existen.
+   **Regla operativa [I10]: ningún campo que sostenga una afirmación puede tener valor
+   por defecto. La ausencia se declara; nunca se rellena.** Los tres errores más graves
+   encontrados —cita sin norma que se inventa, umbral sin unidad que se pone en «meses»,
+   valor sin umbral que se declara CUMPLE— son el mismo patrón: ante la falta de un dato,
+   el código produce una respuesta en vez de decir que no sabe. Ver `ESTADO_PIPELINE.md`
+   → I10 para cómo se aplica.
 2. **Ningún fallo silencioso.** Si el análisis se degrada, la interfaz debe decirlo — el
    aviso llega a la pantalla del usuario, no solo a los logs.
 3. **El experto en el loop es una fortaleza, no un parche.** El producto potencia el

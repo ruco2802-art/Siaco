@@ -136,6 +136,43 @@ Todos ≥ 99%. Sin alertas.
 | I9b | Aborta ANTES de gastar si ruta no escribible | TestMainValidacionEscritura | — | **Solo integración** |
 | 2.3 | marcar_indices() conectado al flujo | TestMainMarcarIndicesConectado | TestMarcarIndices | Bajo |
 | FASE D | generar_aviso_verificacion() se muestra | TestMainAvisoVerificacion | — | **Solo integración** |
+| **I10** | **Ningún campo que sostenga una afirmación tiene valor por defecto** | — | TestConcepto, TestEstados (`test_un_numero_sin_umbral_no_puede_salir_como_cumple`, `test_los_umbrales_proporcionales_siguen_sin_fijarse`) | **El más caro de violar** |
+
+### I10 — La ausencia se declara; nunca se rellena
+
+**Enunciado.** Ningún campo que sostenga una afirmación puede tener valor por
+defecto. La ausencia se declara; nunca se rellena.
+
+Se escribe como invariante y no como corrección puntual porque **los tres
+errores más graves encontrados hasta hoy son el mismo patrón**, y aparecieron
+de a uno, con meses de distancia:
+
+| dato ausente | lo que el código producía | dónde |
+|---|---|---|
+| cita sin norma que la sostenga | **inventaba una** — `"Decreto 1082/2015 art. 2.2.1.2.1.5.8"`, inexistente | `routers/auditoria.py:154` · [D14] |
+| umbral sin unidad en el texto | **ponía «meses»** cuando la magnitud parecía temporal | prompt de extracción · [D25] |
+| valor sin umbral contra el que compararlo | **declaraba CUMPLE** — `bool(1.85)` es `True` | `evaluator._evaluar_item()` · [D31] |
+
+En los tres, **ante la ausencia de un dato el código PRODUCE una respuesta en
+vez de declarar que no sabe**. Los tres pasaron revisión de código y tests: no
+fallan, responden. Por eso hace falta el invariante y no basta el criterio.
+
+**Cómo se aplica.** Un campo que sostiene una afirmación es el que, si está
+mal, hace que el informe afirme algo falso sobre la empresa o sobre la norma:
+`criticidad`, `estado`, `valor_umbral`, `operador`, `unidad`, `norma`, `cita`,
+`estado_verificacion`, `concepto`. Para esos:
+
+- **vacío es un resultado válido** y se propaga hasta la pantalla y el informe;
+- **un estado que nombra la ausencia** (`dato_faltante`, `revisar_manual`,
+  `indeterminado`, `SIN CONCEPTO`) es preferible a cualquier valor plausible;
+- **un booleano que responde SÍ o NO sí es una respuesta**; un número, un
+  string no vacío o una lista con elementos **no lo son** por el hecho de
+  existir. `bool(valor)` sobre algo que no es booleano es la firma del error.
+
+**La prueba para saber si un default es legítimo:** si el campo vacío produjera
+una frase en el informe del tipo «no se pudo determinar», el default está mal.
+Si el campo vacío no cambia ninguna afirmación —un color, un orden, un ancho de
+columna— el default es una comodidad y está bien.
 
 ⚠️ **I6 solo tiene test unitario** — el invariante más crítico (no usar eval()) no tiene test de integración que verifique que la ruta de producción no llama al modelo para aritmética. Este es el tipo de gap que dejó pasar bugs tres veces.
 
@@ -249,6 +286,7 @@ En orden estricto de dependencia:
 | D30 | **El lookup del perfil enruta por `categoria` y pierde campos que sí existen** | `_valor_perfil()` elige el mapa de palabras clave según `req.categoria`, así que un requisito de RUP que el extractor clasificó como `experiencia` o `financiero` **no alcanza `PerfilJuridico.rup_en_firme`, que existe**. Medido en Paicol: de los 38 sin dato, **2 son este caso** —«RUP vigente y en firme antes del cierre» (categoría `experiencia`) y «RUP vigente y en firme para evaluación financiera y organizacional» (categoría `financiero`)—. Se buscaron los 38 contra los cuatro mapas ignorando la categoría: 10 dieron coincidencia, pero **8 son colisiones espurias** (`plazo`→`antiguedad_meses`, `certificacion`→`certificaciones`, `personal`→`personal_disponible`), lo que confirma que la coincidencia de subcadena entre mapas **no es señal fiable** y por eso NO se convirtió en un origen automático: habría producido 8 datos inventados con apariencia de dato medido. **La solución no es más palabras clave: es enrutar por el `objeto` del catálogo**, que ya identifica el concepto con independencia de la categoría que le puso el extractor y de cómo lo redacte el pliego | **RESUELTA 2026-09-27** — `catalogo.objeto_para_evaluar()` (sólo coincidencia por NOMBRE, nunca por el literal: eso inmuniza contra D29) + `evaluator.CAMPO_POR_OBJETO` con `ASPECTO_REQUERIDO`. Los 2 casos de RUP se resuelven. **De los 38 sin dato, 3 salen de la lista**: 2 a CUMPLE (los RUP) y 1 a `revisar_manual` (capacidad organizacional, por D31). Quedan 35. El resto NO es enrutado: son conceptos sin campo en el perfil, que es D27. Ver D32 por qué el mapa no se amplió más. ~~Se resuelve junto a D27~~, porque el formulario nuevo necesita exactamente esa clave. Los 2 casos quedan hoy como `no_preguntado`, que es conservador: pide confirmar un documento que la empresa probablemente tiene, y eso no afirma nada falso |
 | D31 | **PRESENCIA PRESENTADA COMO CUMPLIMIENTO — 11 de los 47 habilitantes en CUMPLE de Paicol** | Encontrado el 2026-09-27 al implementar D30. `_evaluar_item()` cerraba con `cumple = bool(valor)` cuando el requisito no traía umbral numérico. `bool(1.85)` es `True`, así que **«Índice de liquidez» salía CUMPLE sin haber comparado 1,85 contra nada**: el umbral del pliego no se extrajo. Lo mismo con capital de trabajo (450.000.000), cobertura de intereses (3,2), rentabilidad del activo (0,09), capacidad organizacional (4.000.000.000) y personal (15). **Es el mismo error de clase que la cita fabricada y la unidad por defecto**: un valor con apariencia de medición. Y era el peor de los tres, porque afirmaba ante el cliente que cumplía un requisito HABILITANTE. **No lo introdujo D30: estaba en producción y el informe lo entregaba.** | **CORREGIDO 2026-09-27** — un BOOLEANO sigue siendo una respuesta (el perfil afirma que lo tiene o que no); un NÚMERO sin umbral pasa a `revisar_manual` con el motivo explícito, porque el dato de la empresa existe y lo que falta es leer el numeral del pliego: **tarea del OPERADOR, no del cliente**. Efecto en Paicol: habilitantes en CUMPLE 47 -> 28, `revisar_manual` 4 -> 14, puntos abiertos 17 -> 29. El concepto NO cambia (VIABLE CON SALVEDADES): sigue sin haber incumplidos |
 | D32 | **Un mapa objeto->campo sin filtro de aspecto fabrica veredictos** | Al implementar D30 la primera versión cubría 30 objetos y resolvía 11 de los 38 sin dato. **9 de esos 11 eran falsos**: `EXISTENCIA_REPRESENTACION -> camara_comercio` daba CUMPLE a «duración de la persona jurídica no inferior al plazo del contrato más un año» (tener el certificado no dice cuánto dura la sociedad); `SEGURIDAD_SOCIAL -> paz_y_salvo_seguridad_social` lo daba a «declaración juramentada de no obligación de aportes» (estar al día no es no tener obligación); `UNSPSC -> bool(codigos_unspsc)` lo daba a «los contratos deben estar clasificados en ALGUNO DE ESTOS códigos» (tener códigos no dice que sean ésos). **Se probó filtrar por el `aspecto` del catálogo y NO separa**: bajo `acreditacion` conviven «Certificación de pagos de seguridad social» —que el campo sí contesta— y la declaración juramentada —que no—. **Los dos ejes del catálogo sirven para AGRUPAR, no para decidir un veredicto**: una bolsa mal formada se revisa, un CUMPLE falso se entrega | **CONTENIDO 2026-09-27** — el mapa se recortó a los indicadores numéricos (donde el campo ES la magnitud que el pliego compara, y un emparejamiento malo sale como número disparatado, no como CUMPLE silencioso) y al `RUP` **sólo en aspecto `vigencia`**. `ASPECTO_REQUERIDO` deja la puerta para los que necesiten el filtro. **Añadir un objeto exige comprobar que el campo contesta la pregunta con CUALQUIER aspecto**, no que suene parecido |
+| D33 | **AUDITORÍA I10 — siete sitios más con el mismo patrón** | Búsqueda hecha el 2026-09-27 tras escribir I10, porque los tres primeros aparecieron de a uno y con meses de distancia. **(a) `routers/auditoria.py:176` — `subsanable` por defecto `True`. El PEOR de los nuevos**: el extractor deja el campo en `null` A PROPÓSITO (su prompt dice *«subsanable=true solo si el fragmento lo dice EXPLÍCITAMENTE»*), y la API lo convertía en `True`, así que la pantalla ponía la etiqueta «Subsanable» y el PDF escribía «Si» sobre un habilitante del que el pliego no dijo nada. Decirle a un cliente que puede subsanar algo que no puede es perder la oferta. **(b) `routers/auditoria.py:172` — los requisitos jurídicos no llevaban `estado`**: la mitad financiera de la misma tabla sí lo llevaba, así que un `dato_faltante` jurídico llegaba como `cumple=False` y se pintaba NO CUMPLE — el bug original que `estados.py` existe para impedir, vivo en la otra mitad. **(c) `routers/reportes.py:331` — `subsanable` por defecto «Si» en el PDF.** **(d) `routers/calculadora.py:336` — `dias` por defecto **30***: un mes completo de costo laboral inventado en el Excel de la oferta. **(e) `cantidad` por defecto **1*** en `routers/calculadora.py:335`, `routers/generador_oferta.py:319` y `calculadora_apu.py:176`, usada en el total. **(f) `unidad` por defecto **«und»*** en `calculadora_apu.py:213`, `routers/generador_oferta.py:318` y `routers/calculadora.py:307` — mismo patrón que [D25], en el documento que se presenta con la oferta. **(g) `evaluar_tarea7.py:151,309` — `estado` por defecto `"completo"`**, script sin llamador en producción | **(a), (b) y (c) CORREGIDOS 2026-09-27** — `subsanable` viaja sin valor y la pantalla no pinta etiqueta, el PDF escribe guion; los jurídicos llevan `estado`. **(d), (e) y (f) ABIERTOS — la calculadora y el generador de oferta necesitan su propia verificación**, no se tocan de paso: mueven dinero en un documento que se presenta. **(g) ABIERTO, sin impacto** |
 
 ---
 

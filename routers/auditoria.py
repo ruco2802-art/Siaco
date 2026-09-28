@@ -170,10 +170,24 @@ def _enriquecer_resultado(resultado: dict) -> dict:
             "exigido": item.get("exigido", ""),
             "cliente_tiene": item.get("cliente_tiene", ""),
             "cumple": bool(item.get("cumple", False)),
+            # [I10] El estado real acompaña al booleano también aquí. La mitad
+            # financiera lo llevaba y la jurídica no, así que un requisito en
+            # `dato_faltante` llegaba a la pantalla como `cumple=False` y se
+            # pintaba NO CUMPLE: exactamente el bug que `estados.py` existe
+            # para impedir, vivo en la otra mitad de la misma tabla.
+            "estado": item.get("estado", "cumple" if item.get("cumple") else "no_cumple"),
             # Igual que arriba: sin norma concreta, vacío. "Ley 80/1993"
             # como relleno sugiere un fundamento que nadie verificó.
             "norma": item.get("norma", ""),
-            "subsanable": bool(item.get("subsanable", True)),
+            # [I10] SIN VALOR POR DEFECTO. Aquí decía `True`, y el extractor
+            # deja este campo en `null` A PROPÓSITO —su prompt dice
+            # «subsanable=true solo si el fragmento lo dice EXPLÍCITAMENTE»—,
+            # así que el default destruía justo lo que el prompt cuidaba. El
+            # efecto: la pantalla ponía la etiqueta «Subsanable» y el PDF
+            # escribía «Si» sobre un requisito habilitante del que el pliego
+            # no dijo nada. Decirle a un cliente que puede subsanar algo que
+            # no puede subsanar es perder la oferta.
+            "subsanable": item.get("subsanable"),
         })
 
     # Citas normativas
@@ -185,7 +199,9 @@ def _enriquecer_resultado(resultado: dict) -> dict:
     # Checklist documentos
     docs_faltantes = resultado.get("documentos_faltantes", resultado.get("pdf_documentos", []))
     checklist_docs = [
-        {"documento": d, "estado": "falta", "subsanable": True}
+        # [I10] `subsanable` va sin valor: que falte un documento no dice nada
+        # sobre si el pliego admite aportarlo después del cierre.
+        {"documento": d, "estado": "falta", "subsanable": None}
         for d in docs_faltantes if d
     ]
 

@@ -175,7 +175,56 @@ ORIGENES: dict[str, dict[str, str]] = {
                     "concepto — es una limitación nuestra, no un dato de la "
                     "empresa"),
     },
+    "no_se_responde_con_un_campo": {
+        "etiqueta": "CONDICIÓN DEL PLIEGO",
+        "dueno": "nadie",
+        "que_es": "regla, no pregunta",
+        "interno": ("no es un dato de la empresa ni un campo que falte: es una "
+                    "regla del procedimiento, y ningún perfil podría "
+                    "responderla"),
+    },
 }
+
+# Objetos del catálogo que son REGLAS del pliego, no preguntas sobre la
+# empresa. No son hueco nuestro —no hay campo que construir— ni tarea del
+# cliente —no hay nada que confirmar—, y hoy contaminan las dos listas.
+#
+# Medido sobre Paicol y Ternera: de los 9 requisitos que la heurística del
+# formulario no pudo tipificar, **5 son reglas**:
+#
+#   «Subsanabilidad de experiencia insuficiente»          (Paicol 3.5.8)
+#   «Cumplimiento de todos los requisitos habilitantes»   (Ternera 3.1)
+#   «Máximo de actividades exigidas»                      (Paicol 3.5.1)
+#       — este último es un límite a la ENTIDAD: ni siquiera es un requisito
+#         del oferente
+#   «Requisitos habilitantes en proponentes plurales»     (Ternera 3.1)
+#   «Condiciones técnicas no inferiores al Anexo»         (Ternera 1.15)
+#       — texto de una causal de rechazo
+#
+# `UNSPSC` **NO entra**, aunque en la primera lectura lo pusimos aquí:
+# `PerfilExperiencia.codigos_unspsc` existe y «los contratos deben estar
+# clasificados en alguno de estos códigos» se responde comparando conjuntos.
+# No es una regla: es un requisito que necesita un criterio de comparación
+# que todavía no está escrito. Pertenece a [D27], no a esta categoría.
+#
+# COBERTURA HONESTA: sólo dos de las cinco tienen un objeto de catálogo
+# fiable con el que reconocerlas. De las otras tres, dos vienen de objetos
+# MAL asignados [D29] y una no tiene objeto. Reconocerlas todas exige que el
+# extractor las marque en origen —un campo `es_regla_del_pliego`—, que es un
+# cambio de prompt y se aplica en la próxima re-extracción junto a [D20] y
+# [D25]. Hasta entonces esta categoría reconoce lo que puede y **no adivina
+# el resto**: lo que no reconoce se queda en `no_preguntado`, que pide
+# confirmar un documento de más y no afirma nada falso.
+OBJETOS_REGLA: frozenset[str] = frozenset({
+    "SUBSANABILIDAD",
+    "CRITERIOS_DESEMPATE",
+    "FORMA_OFERTA",
+    "VERACIDAD_INFORMACION",
+    "PRESENTACION_MULTIPLE",
+    "IDIOMA_DOCUMENTOS",
+    "CONVERSION_MONEDA",
+    "CONVERSION_SMMLV",
+})
 
 # Lo que ve el cliente es lo mismo en los tres casos en que no hay veredicto:
 # no afirmamos que lo tenga ni que le falte, y le damos una tarea, no una
@@ -188,6 +237,9 @@ def origen_dato_faltante(req: Any, perfil: Any) -> str:
     """
     Separa las dos razones por las que un requisito llega a `dato_faltante`.
 
+    - `no_se_responde_con_un_campo` — es una REGLA del pliego. Ni hueco
+                         nuestro ni tarea del cliente: ningún perfil podría
+                         responderla.
     - `no_preguntado`  — el perfil no tiene ningún campo para este concepto.
                          Hueco NUESTRO.
     - `campo_sin_respuesta` — el campo existe y está vacío. Hueco del perfil.
@@ -196,6 +248,12 @@ def origen_dato_faltante(req: Any, perfil: Any) -> str:
     el evaluador produce `no_cumple`, no `dato_faltante`. Está en `ORIGENES`
     porque el informe cuenta los tres juntos en la sección de trazabilidad.
     """
+    try:
+        from .catalogo import objeto_para_evaluar
+        if objeto_para_evaluar(req) in OBJETOS_REGLA:
+            return "no_se_responde_con_un_campo"
+    except Exception:
+        pass
     from .evaluator import campo_del_perfil
     return "campo_sin_respuesta" if campo_del_perfil(req) else "no_preguntado"
 
@@ -220,6 +278,7 @@ def resumen_origenes(
         "hallazgos": hallazgos,
         "pendientes_de_captura": cuenta.get("no_preguntado", 0),
         "sin_responder": cuenta.get("campo_sin_respuesta", 0),
+        "reglas": cuenta.get("no_se_responde_con_un_campo", 0),
         "produce_hallazgos": hallazgos > 0,
     }
 
