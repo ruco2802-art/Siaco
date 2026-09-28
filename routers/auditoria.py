@@ -524,6 +524,19 @@ def _construir_resultado(
                 "es_causal_rechazo_explicita": req.get("es_causal_rechazo_explicita", False),
                 "pagina_origen":               req.get("pagina_origen"),
                 "estado_verificacion":         req.get("estado_verificacion", "no_verificada"),
+                # El pliego define más de un umbral y el sistema NO elige: el
+                # bloque de revisión manual del front los muestra para que el
+                # operador decida cuál aplica a su tipo de proponente.
+                "conflicto_umbral":            bool(req.get("conflicto_umbral", False)),
+                "umbrales_alternativos":       req.get("umbrales_alternativos") or [],
+                # Umbral y unidad para poder mostrar QUÉ se exige sin recalcular
+                "valor_umbral":                req.get("valor_umbral"),
+                "operador":                    req.get("operador"),
+                "unidad":                      req.get("unidad", ""),
+                "subsanable":                  req.get("subsanable"),
+                # Nombres que absorbió la fusión: sin esto, un operador que
+                # busca "inhabilidades" no lo encuentra y lo verifica a mano [B12]
+                "nombres_absorbidos":          req.get("nombres_absorbidos") or [],
             }
             for req in artefactos.requisitos
         ],

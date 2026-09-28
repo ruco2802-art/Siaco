@@ -882,3 +882,204 @@ tr.urgente  { background: rgba(248,81,73,.03); }
 /* Compatibilidad con resultados del historial anteriores al cambio. */
 .row-ok  td { background: rgba(63,185,80,.03); }
 .row-fail td { background: rgba(248,81,73,.04); }
+
+/* ════════ REQUISITOS CON CITA ════════
+   Superficie APP: alta densidad, tema oscuro. El analista lee esto dos horas
+   seguidas, así que la jerarquía la llevan el peso y el espaciado, no el
+   color; el acento queda para la selección y el estado. */
+
+.ico { width: 13px; height: 13px; flex: 0 0 auto; }
+
+.card-requisitos .req-contador {
+  font-size: .95rem; color: var(--text2); margin: 0 0 4px;
+}
+.card-requisitos .req-contador strong {
+  color: var(--accent); font-variant-numeric: tabular-nums;
+}
+.req-traza {
+  font-size: .72rem; color: var(--muted); margin: 0 0 14px;
+  font-family: var(--mono);
+}
+
+/* Filtro por criticidad — segmentado, no pestañas: son un filtro sobre una
+   sola lista, no secciones distintas. */
+.filtros-crit {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.filtro-crit {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 500 .66rem/1 var(--mono); letter-spacing: .08em;
+  color: var(--text2); background: var(--bg3);
+  border: 1px solid var(--border2); border-radius: 3px;
+  padding: 7px 10px; cursor: pointer;
+  transition: background .16s ease, color .16s ease, border-color .16s ease;
+}
+.filtro-crit:hover { background: var(--bg4); color: var(--text); }
+.filtro-crit:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.filtro-crit.activo {
+  background: var(--accent); color: #0A0A0A; border-color: var(--accent);
+  font-weight: 700;
+}
+.filtro-n {
+  font-variant-numeric: tabular-nums; opacity: .72;
+  padding-left: 6px; border-left: 1px solid currentColor;
+}
+.filtro-crit.activo .filtro-n { opacity: .85; }
+
+/* Lista */
+.req-lista, .causal-lista, .revision-lista { list-style: none; margin: 0; padding: 0; }
+.req-item {
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+}
+.req-item:last-child { border-bottom: none; }
+
+.req-cab {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+}
+.req-numeral {
+  font: 500 .68rem/1.3 var(--mono); color: var(--muted);
+  letter-spacing: .02em; flex: 0 0 auto;
+  max-width: 17ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.req-nombre { font-weight: 600; color: var(--text); flex: 1 1 22ch; }
+.req-umbral {
+  font: 600 .78rem/1 var(--mono); color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Criticidad: etiqueta de texto, no color solo. El borde la separa del
+   nombre sin gritar. */
+.req-crit {
+  font: 700 .6rem/1 var(--mono); letter-spacing: .09em;
+  padding: 3px 6px; border-radius: 2px; border: 1px solid currentColor;
+  flex: 0 0 auto; cursor: help;
+}
+.crit-habilitante   .req-crit { color: var(--accent); }
+.crit-procedimental .req-crit { color: var(--info); }
+.crit-puntaje       .req-crit { color: var(--warn); }
+.crit-indeterminado .req-crit { color: var(--muted); }
+
+/* Badges — sólo aparecen cuando hay algo que decir */
+.badge-verif, .badge-causal {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 700 .58rem/1 var(--mono); letter-spacing: .07em;
+  padding: 3px 6px; border-radius: 2px; flex: 0 0 auto;
+}
+.badge-verif {
+  color: var(--warn); background: rgba(240,165,0,.09);
+  border: 1px solid rgba(240,165,0,.3); cursor: help;
+}
+.badge-causal {
+  color: var(--danger); background: rgba(248,81,73,.1);
+  border: 1px solid rgba(248,81,73,.34);
+}
+
+/* La cita textual: es lo que sostiene la afirmación, así que se lee como
+   cita, sangrada y en cursiva, no como un campo más. */
+.req-cita {
+  margin: 8px 0 0; padding: 0 0 0 13px;
+  border-left: 1px solid var(--border2);
+  font-size: .84rem; line-height: 1.58; color: var(--text2);
+  font-style: italic;
+}
+.req-cita cite {
+  display: block; margin-top: 5px; font-style: normal;
+  font: 500 .66rem/1 var(--mono); color: var(--muted);
+}
+.req-sin-cita {
+  margin: 8px 0 0; font-size: .8rem; color: var(--muted); font-style: italic;
+}
+
+/* [B12] Sub-condiciones absorbidas por la fusión, buscables */
+.req-absorbidos { margin-top: 8px; }
+.req-absorbidos summary {
+  font: 500 .68rem/1 var(--mono); color: var(--muted);
+  cursor: pointer; padding: 3px 0; letter-spacing: .04em;
+}
+.req-absorbidos summary:hover { color: var(--text2); }
+.req-absorbidos summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px;
+}
+.req-absorbidos ul {
+  margin: 6px 0 0; padding-left: 16px;
+  font-size: .78rem; line-height: 1.55; color: var(--text2);
+}
+
+/* Causales de rechazo y revisión manual: bloques propios porque responden
+   preguntas distintas — "¿me pueden sacar?" y "¿qué tengo que decidir yo?" */
+.card-nota {
+  font-size: .82rem; line-height: 1.55; color: var(--text2);
+  margin: 0 0 14px;
+}
+.card-causales { border-color: rgba(248,81,73,.28); }
+.card-causales .card-title { color: var(--danger); }
+.causal-lista > li, .revision-lista > li {
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.causal-lista > li:last-child, .revision-lista > li:last-child { border-bottom: none; }
+.causal-nombre { font-weight: 600; color: var(--text); }
+
+.card-revision { border-color: rgba(88,166,255,.26); }
+.card-revision .card-title {
+  color: var(--info); display: inline-flex; align-items: center; gap: 7px;
+}
+.alts {
+  margin: 8px 0 0; padding-left: 16px;
+  font: 500 .8rem/1.6 var(--mono); color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.revision-motivo {
+  margin: 7px 0 0; font-size: .78rem; color: var(--muted); line-height: 1.5;
+}
+
+/* Superficies del navegador que también son diseño */
+.card-requisitos ::selection, .card-causales ::selection, .card-revision ::selection {
+  background: rgba(198,242,78,.26); color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .req-numeral { max-width: 100%; white-space: normal; }
+  .req-cab { gap: 6px; }
+  .filtro-crit { font-size: .6rem; padding: 6px 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filtro-crit { transition: none; }
+}
+
+/* Los títulos de tarjeta de la vista de auditoría llevan icono dibujado, no
+   emoji: un emoji trae su propio espaciado y no hereda `currentColor`. */
+.card-title { display: flex; align-items: center; gap: 8px; }
+.card-title .ico { opacity: .82; }
+.doc-faltante { display: flex; align-items: center; gap: 7px; }
+.btn .ico { margin-right: -1px; }
+.riesgos-list li { padding-left: 0; }
+
+/* [N7] Cita que el PDF trajo corrupta. No se publica la cadena: se dice que
+   no es legible y dónde buscarla. Se distingue de una cita real por el trazo
+   discontinuo del borde, no sólo por color. */
+.req-cita-ilegible {
+  border-left-style: dashed;
+  border-left-color: var(--warn);
+  color: var(--warn);
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: .76rem;
+}
+
+/* [N8] Umbral cuya unidad contradice el texto del pliego. Se muestran ambos
+   datos: el valor no se corrige, la discrepancia se señala. Trazo discontinuo
+   además de color, para que se vea sin depender del tono. */
+.req-umbral-dudoso {
+  border-bottom: 1px dashed var(--info);
+  color: var(--info);
+}
+.req-unidad-alerta {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 600 .62rem/1 var(--mono); letter-spacing: .05em;
+  color: var(--info); cursor: help;
+}

@@ -252,3 +252,324 @@ El movimiento pertenece al mundo del expediente: hojas que llegan, márgenes que
 - **Don't** apoyar tarjetas iguales de icono+título+texto como estructura de página; preferir índices reglados y pestañas del expediente.
 - **Don't** usar paneles o texto en `rgba()` translúcido sobre un campo de color: ensucia el campo y baja el contraste.
 - **Don't** repartir efectos de hover sueltos sin gramática; cada respuesta al cursor imita un gesto del expediente (marcar margen, entintar, levantar hoja).
+
+---
+
+## Surfaces: una identidad, tres soportes
+
+SIACO se ve en tres sitios y **no comparten fondo a propósito**. Un banco no usa
+el mismo fondo en su app que en sus estados de cuenta impresos, y nadie duda de
+que es el mismo banco.
+
+| | LANDING | APP | DOCUMENTOS |
+|---|---|---|---|
+| función | vender la agencia | operar dos horas seguidas | firmarse ante una entidad |
+| quién lo ve | prospecto | analista de SIACO | cliente y entidad contratante |
+| fondo | papel manila `#ECE3D0` | oscuro `#0A0A0A` | blanco de impresión |
+| densidad | editorial, aireada | alta, tablas densas | de documento oficial |
+| acento | rojo foliación `#B23324` | lima `#C6F24E` | tinta + rojo foliación |
+| estado | **no se toca** | sólo se añaden tarjetas | se construye ahora |
+
+**Lo que viaja entre las tres:**
+
+- **Tipografía.** Archivo para titulares, Public Sans para cuerpo, JetBrains Mono
+  para dato tabular. Sin excepciones.
+- **Jerarquía y ritmo.** Cómo se titula, cuánto aire va encima de un título frente
+  a debajo, la medida de lectura de 62ch o menos.
+- **Tono.** Preciso y auditable, sin prometer lo que el sistema no garantiza.
+- **Logotipo** y su tratamiento.
+- **El ROL del acento**, no su valor hexadecimal (ver la regla siguiente).
+
+### The Travelling-Accent Rule
+
+El acento cumple **el mismo trabajo** en las tres superficies —marcar el acto
+oficial: un veredicto, un sello, la acción principal— pero **su valor cambia con
+el soporte**, porque un color no se comporta igual sobre papel que sobre negro.
+
+Medido:
+
+| color | vs blanco | vs tinta `#211C15` | gris al imprimir en B/N |
+|---|---|---|---|
+| `#C6F24E` | **1,30:1** | 13,06:1 | **88%** |
+| `#ECE3D0` papel | 1,28:1 | 13,26:1 | 89% |
+| `#B23324` | 6,19:1 | 2,73:1 | **38%** |
+| `#1E3A5F` | 11,50:1 | 1,47:1 | 23% |
+
+`#C6F24E` sobre blanco da **1,30:1** —por debajo del 3:1 que exige un elemento
+gráfico— y al imprimir en blanco y negro cae a un **88% de gris, indistinguible
+del papel manila (89%)**. En pantalla oscura es excelente: 13:1 contra la tinta.
+Por eso es el acento de la APP y **nunca** el de un documento.
+
+En DOCUMENTOS el rol lo asume el **rojo de foliación `#B23324`**: 6,19:1 sobre
+blanco y 38% de gris, que sobrevive a la fotocopia. Es además el acento de la
+landing, así que el eje impreso y el comercial ya coinciden.
+
+## Iconografía de la APP: inventario
+
+**Esto es un inventario, no una nota.** La app tiene DOS vocabularios de icono
+conviviendo, y la mezcla **es deliberada**: se migra por vista completa, no
+símbolo por símbolo. Sin este inventario, alguien lee la regla del trazo en seis
+meses, asume que toda la app cumple y deshace la decisión — que es exactamente
+lo que pasó con `CLAUDE.md` y el tema oscuro.
+
+### La regla del trazo
+
+Todo icono de la app se dibuja en **SVG inline**, lienzo **16×16**, trazo
+**1,7px**, `stroke-linecap` y `stroke-linejoin` redondeados, `fill="none"` salvo
+en las masas deliberadas (el círculo lleno de `cumple`, el punto de la
+interrogación). El color siempre viene de `currentColor`: un icono nunca declara
+el suyo, así hereda el del estado o la criticidad que lo contiene.
+
+Un trazo distinto es un icono de otro sistema. Verificable:
+`grep -o 'stroke-width="[\d.]*"' static/app.js | sort -u` debe devolver un solo
+valor.
+
+### The Distinguishable-Shape Rule
+
+Los iconos de ESTADO se rigen por una exigencia que los funcionales no tienen:
+**cada estado debe distinguirse de los demás sin color**. El informe se imprime
+en blanco y negro y no todo el mundo separa rojo de verde, así que el color es
+refuerzo y la forma es el portador.
+
+| estado | forma | por qué esa |
+|---|---|---|
+| `cumple` | círculo lleno | masa sólida: la única forma rellena del juego |
+| `no_cumple` | cruz | dos diagonales, sin curvas |
+| `dato_faltante` | interrogación | pregunta, no negación: no afirma incumplimiento |
+| `revisar_manual` | triángulo | señal de atención, pide acción humana |
+| `no_aplica` | guion | trazo horizontal único, el más neutro |
+
+`pipeline/src/estados.py` es la fuente canónica del campo `forma`; `app.js` mapea
+cada nombre a su SVG. Un test verifica que las cinco formas son distintas entre
+sí y que cada una tiene SVG dibujado: una forma sin SVG cae al punto genérico y
+el estado se pierde.
+
+Los iconos FUNCIONALES (`financiero`, `juridico`, `documento`, `tabla`, `riesgo`,
+`norma`, `adjunto`, `plan`, `descargar`) rotulan una sección o una acción y viven
+en un mapa aparte. No pasan por la regla de forma distinguible porque su texto
+adyacente ya los identifica.
+
+### Qué vistas están migradas
+
+| vista | archivo | estado | emoji |
+|---|---|---|---|
+| **Resultado de auditoría** | `app.js::renderAuditResult` + los tres paneles de requisitos | **MIGRADA** 2026-09-23 | **0** |
+
+Es la vista del veredicto: la que el analista lee y de la que sale el informe
+firmado. Nueve iconos funcionales más las cinco formas de estado.
+
+### Qué vistas NO están migradas
+
+Siguen con emoji, de forma consistente dentro de cada una. **172 ocurrencias**:
+
+| vista | función / zona | emoji |
+|---|---|---|
+| Expedientes | `loadExpedientes` | 7 |
+| Estrategia de precio | `calcularEstrategiaPrecio` | 5 |
+| Análisis de pliego (progreso) | `analizarPliego` | 4 |
+| Observaciones | `generarObservaciones` | 4 |
+| Admin de clientes | `cargarListaClientes` | 4 |
+| Búsqueda SECOP | `renderBusquedaResult`, `renderTabla`, `renderTablaAvanzada` | 9 |
+| Extracción de pliego | `extraerPliego` | 3 |
+| Calculadora APU | `apu_*` (8 funciones) | 12 |
+| Perfil | `loadPerfil`, `_savePerfilImpl`, `loadDocumentos`, `_uploadDocImpl` | 5 |
+| Resto de `app.js` | 14 funciones más | 20 |
+| **`index.html`** | 31 en botones · 60 en encabezados y estados vacíos · 5 en títulos · 3 en pestañas | **99** |
+
+`landing.html` tiene **cero**: ya cumple con SVG dibujado.
+
+### Por qué la mezcla es deliberada
+
+**La unidad de coherencia es la VISTA, no la aplicación.** Un usuario que lee el
+informe de viabilidad no está mirando la búsqueda SECOP al mismo tiempo, así que
+dos pantallas con vocabularios distintos no se comparan entre sí. Lo que no se
+tolera es una pantalla con los dos a la vez.
+
+Migrar 7 de 186 símbolos habría creado un **tercer** frente —emoji, SVG nuevo y
+una vista a medias— en vez de cerrar uno. Migrar los 186 de golpe significa
+construir 47 iconos y tocar nav, pestañas, botones y estados vacíos de todas las
+vistas, con riesgo real de romper el progreso por fases, la búsqueda y el
+descarte por perfil.
+
+### Regla para lo nuevo
+
+**Cualquier vista o componente que se construya desde hoy usa SVG.** La deuda
+registrada cubre lo existente; no autoriza añadir un emoji más. Y cuando se
+rediseñe una vista de la tabla anterior, sus emoji se migran en el mismo trabajo:
+no es una tarea aparte, es parte de tocar esa pantalla. Ver `ESTADO_PIPELINE.md`
+→ D24.
+
+## Documentos
+
+Superficie nueva. El informe de viabilidad es la pieza que el cliente se lleva y
+que **el analista de SIACO firma ante una entidad**. Se imprime, se fotocopia, se
+adjunta a un expediente. Eso manda sobre cualquier consideración de pantalla.
+
+### Reglas propias
+
+**The Photocopy Rule.** Todo significado debe sobrevivir a una fotocopia en
+blanco y negro. El color es refuerzo, nunca el único portador: cada estado lleva
+además **etiqueta de texto** (`CUMPLE`, `DATO FALTANTE`) y **forma**
+distinguible. Si al pasar la página a grises se pierde una distinción, el diseño
+está mal.
+
+**The No-Icon Rule.** Sin iconografía. Ni emojis, ni SVG dibujados, ni
+`[OK]`/`[NO]`. La jerarquía se hace con tipografía y espaciado. Un icono en un
+documento que se presenta a una entidad lo hace parecer material promocional, no
+un concepto técnico.
+
+**The Full-Citation Rule.** La cita textual del pliego **no se trunca**. Es lo
+que sostiene cada afirmación: un requisito habilitante con su cita cortada a 35
+caracteres es indefendible. Si no cabe en la página, se pagina; no se recorta.
+
+**The Scope-Footer Rule.** Cada documento declara su alcance en el pie. Un
+informe sin alcance declarado invita a leerlo como más completo de lo que es.
+
+### Tokens
+
+| rol | valor | nota |
+|---|---|---|
+| papel | `#FFFFFF` | blanco de impresión, no manila: es tinta sobre hoja |
+| texto | `#211C15` tinta | 16,91:1 |
+| texto secundario | `#5E5647` tinta 2 | metadatos, notas al pie |
+| acento / veredicto | `#B23324` rojo foliación | 6,19:1 · 38% en B/N |
+| contrapunto | `#1E3A5F` azul oficial | encabezados de tabla |
+| regla | `#C6B187` línea reglada | filas, divisiones |
+| fondo de fila tenue | `#F4EDDD` papel claro | alternancia de tabla |
+
+Las tramas de fondo por estado (`#F2FAF2`, `#FDF0F0`, `#FDF8EB`, `#F0F6FD`) son
+**refuerzo sobre la etiqueta**, no sustituto. Todas caen entre 94% y 98% de gris
+al imprimir: informan en color y desaparecen sin romper nada.
+
+### Tipografía impresa
+
+| nivel | fuente | uso |
+|---|---|---|
+| título de documento | Archivo 900, 20pt | «INFORME DE VIABILIDAD» |
+| sección | Archivo 800, 13pt, mayúsculas | «REQUISITOS HABILITANTES» |
+| subsección | Archivo 700, 11pt | nombre del requisito |
+| cuerpo | Public Sans 400, 9,5pt, 1,45 | concepto, razones |
+| **cita del pliego** | Public Sans 400, 9pt, cursiva, sangrada | texto literal, con su numeral |
+| dato tabular | JetBrains Mono 8,5pt | numerales, umbrales, fechas |
+| etiqueta de estado | JetBrains Mono 8pt, mayúsculas | `CUMPLE`, `DATO FALTANTE` |
+| pie | Public Sans 400, 7,5pt | alcance, foliación |
+
+### El informe de viabilidad: nueve secciones
+
+El orden no es de conveniencia. **La limitación va antes del concepto** [P5,
+ISA 700]: quien lee un veredicto ya no lee igual las salvedades que vienen
+después.
+
+| # | sección | de quién es |
+|---|---|---|
+| 1 | Identificación | qué documento es y con qué versiones se produjo |
+| 2 | Alcance y limitaciones | **antes del concepto**, no después |
+| 3 | Concepto | la escala de cuatro grados, con su motivo numérico |
+| 4 | Requisitos habilitantes | cita textual sin truncar, con numeral |
+| 5 | Causales de rechazo | transcritas literalmente: su redacción es lo que se puede observar |
+| 6 | Documentos que debe confirmar | **tareas del CLIENTE** |
+| 7 | Puntos que requieren decisión | **tareas del OPERADOR** |
+| 8 | Procedimentales y de puntaje | el resto del pliego |
+| 9 | Trazabilidad | **lo nuestro**: qué no sabemos y por qué |
+
+**Las secciones 6 y 7 son dos listas con dueños distintos.** Confundirlas es
+pedirle al cliente que resuelva algo nuestro, o quedarnos nosotros con una
+tarea que es suya. Por eso **la columna de tiempo de gestión va en la 6 y sólo
+en la 6**: en la 7 no hay nada que gestionar, hay que decidir.
+
+**La sección 9 es donde va lo nuestro.** Un documento que falta puede ser un
+hallazgo sobre la empresa o un hueco de nuestro formulario. Al cliente se le
+pide lo mismo en los dos casos —*«Debe confirmar que cuenta con estos
+documentos»*, sin mencionar nunca el formulario, que no es asunto suyo— porque
+no afirmamos ni que lo tenga ni que le falte. La diferencia se declara en la 9,
+contada: cuántos son hallazgo confirmado y cuántos están pendientes de captura.
+
+### Pie y foliación: por qué no son CSS
+
+[The Scope-Footer Rule] pide el alcance en el pie de toda página, y un informe
+de 21 folios que se fotocopia necesita numerarlos. **Chromium no implementa las
+cajas de margen de `@page`**, así que `content: counter(page)` no existe en el
+motor que renderiza, y `position: fixed` no lo sustituye: se coloca fuera del
+área imprimible y se superpone al contenido de la página siguiente —medido, el
+pie pisando la cabecera de tabla de dos folios—.
+
+El pie y el folio **se estampan sobre el PDF ya renderizado**. Eso añade lo que
+el CSS no podía dar de ninguna forma: **«folio N de M»**, con el total. En un
+documento que se adjunta a un expediente, saber cuántas páginas debería haber
+es lo que delata una fotocopia incompleta.
+
+### Familia documental
+
+Cuatro documentos previstos. **Sólo el primero se construye ahora**; los otros
+tres se declaran para que compartan estructura desde el principio en vez de
+divergir cuando se hagan.
+
+1. **Informe de viabilidad** — ¿puede y le conviene ofertar? *Se construye ahora.*
+2. **Observaciones al pliego** — cuando se integre el bibliotecario normativo.
+3. **Propuesta de servicios** — comercial, después.
+4. **Comunicaciones** — cartas y oficios, después.
+
+**Elementos comunes a los cuatro:**
+
+- **Encabezado**: logotipo SIACO, tipo de documento, entidad y número de proceso,
+  fecha y **versión del análisis** (versión del catálogo y de la biblioteca: un
+  informe reproducible dice con qué se produjo).
+- **Quién firma**: nombre y rol del analista. El modelo es de agencia; el
+  documento tiene autor humano responsable.
+- **Numeración de páginas**: `folio N de M`, en monoespaciada.
+- **Pie de alcance**: ver abajo.
+
+### Pie de alcance
+
+Aprobado por el fundador el 2026-09-23.
+
+> Este informe analiza el pliego de condiciones identificado en el encabezado y
+> los datos del perfil de la empresa disponibles a la fecha indicada. El análisis
+> cubrió el X% de los requisitos del pliego; los no evaluados se señalan en el
+> bloque de revisión manual. Cada requisito se cita textualmente del pliego con su
+> numeral; las citas marcadas como no verificadas no pudieron confrontarse contra
+> el documento fuente. Un requisito señalado como DATO FALTANTE no significa
+> incumplimiento: significa que la información no estaba disponible para
+> evaluarlo. El análisis no sustituye el criterio profesional del abogado o
+> contador responsable.
+
+**El X% se rellena con `cobertura_global` del evaluador**, que es
+`total_con_datos / total_evaluados`: cuántos requisitos se pudieron evaluar
+contra el perfil de la empresa. **No con la cobertura del catálogo**, que mide
+otra cosa —qué fracción de los requisitos extraídos reconoce el catálogo de
+objetos— y es un dato interno del pipeline que al cliente no le dice nada.
+
+⚠ **Trampa de nombres.** En la respuesta de la API ese valor viaja como
+`cobertura_pliego` (`routers/auditoria.py:509`), que sugiere «cobertura del
+pliego» y NO lo es: contiene la cobertura de la EVALUACIÓN. El campo del
+catálogo vive aparte, en `consolidacion.catalogo.cobertura`. Quien rellene este
+pie debe tomar `cobertura_pliego`/`cobertura_global`, no el del catálogo.
+
+Dos cosas que hace esta redacción, por si se reescribe: **declara la cobertura**
+—un informe que no la declara parece completo, y si un día no lo está nadie se
+entera; es la misma decisión que se tomó con el score que marcaba 100 sobre el
+23% de los requisitos— y **distingue `DATO FALTANTE` de incumplimiento**, que es
+la afirmación falsa que el sistema no puede permitirse.
+
+Se quitó a propósito «ni garantiza la adjudicación del proceso»: nadie espera que
+un análisis de requisitos garantice ganar una licitación, y la aclaración sonaba
+a letra pequeña restando seriedad al resto.
+
+### Do's and Don'ts de documentos
+
+**Do:**
+- **Do** imprimir una prueba en blanco y negro antes de dar por bueno un cambio.
+- **Do** dar a los habilitantes la cita textual completa; son lo que responde
+  «¿me pueden sacar?».
+- **Do** comprimir procedimentales y puntaje en tabla de tres columnas
+  (numeral, nombre, estado): son contexto, no el veredicto.
+- **Do** separar las causales de rechazo en su propio bloque.
+- **Do** declarar los umbrales alternativos cuando el pliego define más de uno,
+  en vez de elegir por el cliente.
+
+**Don't:**
+- **Don't** usar `#C6F24E` en un documento: 1,30:1 sobre blanco y 88% de gris.
+- **Don't** usar iconos, emojis ni `[OK]`/`[NO]`.
+- **Don't** truncar una cita del pliego.
+- **Don't** apoyar un estado sólo en el color de fondo de la fila.
+- **Don't** presentar `DATO FALTANTE` ni `REVISIÓN MANUAL` como incumplimiento.

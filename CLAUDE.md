@@ -34,10 +34,33 @@ Crea el archivo CLAUDE.md en la raíz del proyecto con el siguiente contenido:
 - Comentarios en español, nombres de variables/funciones en inglés
 - Sin duplicar funciones existentes en analizador.py
 
-## Diseño visual
-- Tema dark: bg #0A0A0A, accent #C6F24E
-- Fuentes: Inter + JetBrains Mono
+## Diseño visual — TRES SUPERFICIES, DECISIÓN DELIBERADA
+
+Los fondos distintos NO son una inconsistencia: no los "corrijas".
+Fuente canónica: DESIGN.md y PRODUCT.md (sistema Impeccable en .impeccable/).
+
+| superficie | archivos | fondo | acento |
+|---|---|---|---|
+| LANDING | static/landing.html | papel manila #ECE3D0 | rojo foliación #B23324 |
+| APP | static/index.html + style.css | oscuro #0A0A0A | lima #C6F24E |
+| DOCUMENTOS | routers/reportes.py | blanco de impresión | rojo foliación #B23324 |
+
+RAZONAMIENTO (2026-09-23):
+- La APP conserva el tema oscuro porque el analista lee tablas densas durante
+  dos horas seguidas. En modelo de agencia la app la opera el equipo, no el
+  cliente: lo que el cliente recibe es el documento.
+- Los DOCUMENTOS van sobre blanco porque se imprimen y se fotocopian. #C6F24E
+  da 1,30:1 sobre blanco y 88% de gris en B/N, indistinguible del papel: NO se
+  usa en documentos. Ver *The Travelling-Accent Rule* en DESIGN.md.
+- La LANDING está cerrada. No se toca.
+
+LO QUE SÍ COMPARTEN las tres: Archivo (titulares) + Public Sans (cuerpo) +
+JetBrains Mono (dato tabular), la jerarquía y el ritmo, el tono de los textos,
+el logotipo, y el ROL del acento — no su valor hexadecimal.
+
+- Los DOCUMENTOS no llevan iconos: ni emojis, ni SVG, ni [OK]/[NO].
 - Si detectas mejoras de UX/UI que no rompen funcionalidad, impleméntalas
+  DENTRO de la superficie que corresponda.
 
 ## Seguridad
 - NUNCA hardcodear API keys

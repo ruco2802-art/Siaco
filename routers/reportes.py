@@ -5,7 +5,14 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from pipeline.src.estados import SIN_VEREDICTO, desde_fila, etiqueta, texto_detalle
+from pipeline.src.estados import (
+    SIN_VEREDICTO,
+    desde_fila,
+    etiqueta,
+    literal_ilegible,
+    texto_cita,
+    texto_detalle,
+)
 
 router = APIRouter(tags=["reportes"])
 

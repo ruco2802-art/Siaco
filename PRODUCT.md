@@ -135,6 +135,68 @@ adjudicación anual del segmento; de esos dos números depende la viabilidad eco
 5. **Claridad sobre jerga.** El valor para MiPymes está en traducir la complejidad de la
    contratación pública a decisiones entendibles.
 
+## Audience, Purpose and Constraint
+
+Precisado el 2026-09-23. No reemplaza a *Users* ni a *Product Purpose*: los cierra
+en una frase cada uno, para que una decisión de diseño pueda resolverse sin leer
+el documento entero.
+
+**PÚBLICO.** Contratistas PYME colombianos y sus abogados. Modelo de agencia: **el
+analista de SIACO firma el informe ante el cliente**. No es un producto que el
+cliente opera solo; es el trabajo de un equipo experto, apalancado por software.
+
+**PROPÓSITO.** Decidir si una empresa **puede** y **le conviene** ofertar. Las dos
+mitades importan, y **hoy sólo la primera está construida**:
+
+- **«puede»** = habilitación: requisitos, umbrales, causales de rechazo. Es lo que
+  el pipeline resuelve, con cita y numeral.
+- **«le conviene»** = precio, competencia y capacidad residual. Existen piezas
+  sueltas —APU, Monte Carlo de competidores, calculadora de flujo de caja— pero
+  **el score de competitividad no está construido**.
+
+Consecuencia para el diseño: ni la interfaz ni el informe pueden presentar un
+veredicto de conveniencia. Un «CONDICIONAL» que el usuario lea como «me conviene
+a medias» estaría prometiendo un cálculo que no existe. Mientras el score no
+exista, el producto responde «¿puede ofertar?» y deja la conveniencia al criterio
+del analista.
+
+**RESTRICCIÓN CENTRAL.** Cada afirmación debe poder defenderse con **numeral y
+cita textual del pliego**. Es la restricción que gobierna las demás: si una
+pantalla o un informe presenta algo que no se puede sostener con una cita, el
+diseño está mal, por bien que se vea.
+
+**TONO.** Rigor y claridad. Herramienta profesional, no producto de consumo. Se
+traduce la jerga de la contratación pública sin banalizarla.
+
+**ANTI-REFERENCIAS.** Lo que SIACO no es, dicho para poder rechazar propuestas
+concretas:
+
+- dashboards SaaS genéricos —donde vive toda la competencia
+- gradientes
+- iconos decorativos
+- mascotas o personajes
+- métricas de vanidad: el éxito se mide en contratos adjudicados, no en uso
+
+## Surfaces
+
+Tres superficies, **fondos distintos por decisión deliberada** (2026-09-23). La
+identidad viaja en tipografía, jerarquía, tono, logotipo y el *rol* del acento;
+el fondo y la densidad cambian con el trabajo de cada una. Ver
+`DESIGN.md → Surfaces` y *The Travelling-Accent Rule*.
+
+| superficie | trabajo | fondo | estado |
+|---|---|---|---|
+| **LANDING** | captación de prospectos | papel manila | cerrada, no se toca |
+| **APP** | operar 2 h por cliente | oscuro | se le añaden tarjetas |
+| **DOCUMENTOS** | firmarse ante una entidad | blanco de impresión | se construye |
+
+El tema oscuro de la app **no es deuda de diseño**: está justificado por uso —el
+analista lee tablas densas durante horas— y por el modelo de agencia, en el que
+la app la opera el equipo, no el cliente. Lo que el cliente recibe es el
+documento. Migrar la app al tema claro sólo tendría sentido si los clientes
+pasaran a usarla directamente; queda registrado con esa condición de disparo en
+`ESTADO_PIPELINE.md` (D23), no como pendiente abierto.
+
 ## Accessibility & Inclusion
 
 Requisito específico del producto: **lenguaje claro en español** para usuarios MiPymes sin

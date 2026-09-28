@@ -24,13 +24,89 @@ let _selIdx      = -1;   // índice del contrato seleccionado en el panel
 // sistema afirmaba que la empresa no cumplía cuando lo que pasaba era que
 // faltaba el dato. El operador firma ese informe.
 const ESTADOS = {
-  cumple:         { etiqueta: 'CUMPLE',          icono: '✓', forma: 'circulo-lleno', clase: 'estado-cumple',         detalle: '' },
-  no_cumple:      { etiqueta: 'NO CUMPLE',       icono: '✕', forma: 'cruz',          clase: 'estado-no-cumple',      detalle: 'diferencia' },
-  dato_faltante:  { etiqueta: 'DATO FALTANTE',   icono: '?', forma: 'interrogacion', clase: 'estado-dato-faltante',  detalle: 'documento_requerido' },
-  revisar_manual: { etiqueta: 'REVISIÓN MANUAL', icono: '!', forma: 'triangulo',     clase: 'estado-revisar-manual', detalle: 'umbrales_alternativos' },
-  no_aplica:      { etiqueta: 'NO APLICA',       icono: '–', forma: 'guion',         clase: 'estado-no-aplica',      detalle: '' },
+  cumple:         { etiqueta: 'CUMPLE',          forma: 'circulo-lleno', clase: 'estado-cumple',         detalle: '' },
+  no_cumple:      { etiqueta: 'NO CUMPLE',       forma: 'cruz',          clase: 'estado-no-cumple',      detalle: 'diferencia' },
+  dato_faltante:  { etiqueta: 'DATO FALTANTE',   forma: 'interrogacion', clase: 'estado-dato-faltante',  detalle: 'documento_requerido' },
+  revisar_manual: { etiqueta: 'REVISIÓN MANUAL', forma: 'triangulo',     clase: 'estado-revisar-manual', detalle: 'umbrales_alternativos' },
+  no_aplica:      { etiqueta: 'NO APLICA',       forma: 'guion',         clase: 'estado-no-aplica',      detalle: '' },
 };
-const _ESTADO_DESCONOCIDO = { etiqueta: 'SIN CLASIFICAR', icono: '·', forma: 'punto', clase: 'estado-desconocido', detalle: '' };
+const _ESTADO_DESCONOCIDO = { etiqueta: 'SIN CLASIFICAR', forma: 'punto', clase: 'estado-desconocido', detalle: '' };
+
+// [N7] Literal ilegible. COPIA de pipeline/src/estados.py; el test de paridad
+// compara las dos y falla si divergen. La codificación rota de un PDF sustituye
+// cada letra por un símbolo y deja el literal como una cadena de basura — que
+// llegaría al informe firmado como "cita textual del pliego".
+//
+// Literal de expresión regular a propósito, no `new RegExp("...")`: construirla
+// desde un string obliga a escapar dos veces y ahí es donde se rompe.
+// Calibrado sobre los dos pliegos: marca 1 de 218 literales en Paicol —el de la
+// fórmula del CRPC— y 0 de 340 en Ternera. Cero falsos positivos sobre fórmulas
+// legítimas ("CT = AC - PC ≥ CTd", "IL = AC/PC ≥ 1,21", "Mipyme | 0,25").
+const _RACHA_SIMBOLOS = /[^\w\s.,;:()\[\]%°/+=<>≥≤$'"*∗×\-–—]{3,}|[!?*+%&#@~^`|\\]{4,}/;
+const AVISO_ILEGIBLE = 'texto no legible en el documento fuente — revisar numeral';
+
+function literalIlegible(literal) {
+  return _RACHA_SIMBOLOS.test(literal || '');
+}
+
+/** La cita que se muestra, o el aviso. Nunca la cadena corrupta. */
+function textoCita(fila) {
+  const lit = (fila.exigido_literal || '').trim();
+  if (!lit) return '';
+  if (literalIlegible(lit)) {
+    return `${AVISO_ILEGIBLE} ${fila.fuente_numeral || 'sin numeral'}`;
+  }
+  return lit;
+}
+
+// [N8] Unidad del umbral vs unidad del texto del pliego.
+// COPIA de pipeline/src/estados.py; el test de paridad compara las dos.
+//
+// El extractor pone 'meses' por defecto cuando la magnitud es temporal y no
+// resuelve cuál. "mínimo un AÑO de existencia" quedó como 1.0 meses: daría por
+// válida a una empresa de seis meses. Un falso positivo —decirle al cliente que
+// califica cuando va a ser rechazado— es peor que un falso negativo.
+//
+// Es DETECCIÓN, no corrección: se muestran AMBOS datos y decide el operador.
+const _UNIDAD_EN_TEXTO = {
+  anios:      /\ba[ñn]os?\b/i,
+  meses:      /\bmes(?:es)?\b/i,
+  dias:       /\bd[ií]as?\b/i,
+  smmlv:      /\bsmmlv\b|\bsmlmv\b|salarios?\s+m[ií]nimos?/i,
+  porcentaje: /por\s+ciento|%|porcentaje/i,
+  metros2:    /\bm2\b|\bm²\b|metros\s+cuadrados/i,
+};
+const _UNIDAD_EN_CAMPO = {
+  anios:      ['anios', 'años', 'año', 'ano', 'years'],
+  meses:      ['meses', 'mes', 'months'],
+  dias:       ['dias', 'días', 'dia', 'día', 'dias_habiles', 'días hábiles', 'dias habiles'],
+  smmlv:      ['smmlv', 'smlmv'],
+  porcentaje: ['porcentaje', '%', 'por_ciento', 'pct'],
+  metros2:    ['m2', 'm²', 'metros_cuadrados'],
+};
+const _ETIQUETA_FAMILIA = {
+  anios: 'años', meses: 'meses', dias: 'días',
+  smmlv: 'SMMLV', porcentaje: 'porcentaje', metros2: 'm²',
+};
+
+/** {etiquetaCampo, etiquetaTexto} si la unidad contradice el pliego, o null. */
+function unidadDiscordante(fila) {
+  const u = String(fila.unidad || '').trim().toLowerCase();
+  if (!u || fila.valor_umbral === null || fila.valor_umbral === undefined) return null;
+
+  const familiaCampo = Object.keys(_UNIDAD_EN_CAMPO)
+    .find(f => _UNIDAD_EN_CAMPO[f].includes(u));
+  if (!familiaCampo) return null;
+
+  const lit = fila.exigido_literal || '';
+  const enTexto = Object.keys(_UNIDAD_EN_TEXTO).filter(f => _UNIDAD_EN_TEXTO[f].test(lit));
+  if (!enTexto.length || enTexto.includes(familiaCampo)) return null;
+
+  return {
+    etiquetaCampo: _ETIQUETA_FAMILIA[familiaCampo] || familiaCampo,
+    etiquetaTexto: enTexto.map(f => _ETIQUETA_FAMILIA[f] || f).sort().join(' o '),
+  };
+}
 
 /** Estado de una fila, tolerando resultados viejos que sólo traen `cumple`. */
 function estadoDeFila(fila) {
@@ -982,6 +1058,9 @@ async function analizarPliego() {
         stEl.innerHTML = `<div class="progress-steps">${allDone}${pipeBadge}</div>`;
         resEl.style.display = '';
         resEl.innerHTML = renderAuditResult(data);
+        // La lista de requisitos nace vacía y la pinta el filtro: así el
+        // estado del filtro vive en un sitio y no se duplica en el HTML.
+        pintarRequisitos();
         resEl.scrollIntoView({ behavior: 'smooth' });
         window._lastAnalisis = data;
         sessionStorage.setItem('siaco_pliego_sesion_cid', CLIENTE_ID);
@@ -1013,6 +1092,273 @@ async function analizarPliego() {
   }
 }
 
+// ════════════ ICONOS DE ESTADO ════════════
+// SVG dibujados con trazo consistente de 1.7px, no glifos unicode: un glifo
+// hereda la métrica de la fuente, no se alinea igual entre plataformas y no es
+// un sistema de iconos. Cada estado se distingue por FORMA además de color —
+// el informe se imprime en blanco y negro y no todo el mundo separa rojo de
+// verde. `forma` en pipeline/src/estados.py nombra cada una.
+const _SVG_ESTADO = {
+  'circulo-lleno':  '<circle cx="8" cy="8" r="5.2" fill="currentColor" stroke="none"/>',
+  'cruz':           '<path d="M4.6 4.6 11.4 11.4M11.4 4.6 4.6 11.4"/>',
+  'interrogacion':  '<path d="M5.9 5.9a2.1 2.1 0 1 1 2.1 2.6v1.1"/><circle cx="8" cy="12" r=".85" fill="currentColor" stroke="none"/>',
+  'triangulo':      '<path d="M8 3.4 13.6 12.6H2.4Z"/><path d="M8 6.9v2.6"/>',
+  'guion':          '<path d="M4.4 8h7.2"/>',
+  'punto':          '<circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/>',
+};
+
+function iconoEstado(forma) {
+  const d = _SVG_ESTADO[forma] || _SVG_ESTADO['punto'];
+  return `<svg class="ico" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+    fill="none" stroke="currentColor" stroke-width="1.7"
+    stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+}
+
+// ════════════ ICONOS FUNCIONALES ════════════
+// Dibujados al mismo trazo de 1,7px que las formas de estado, en un lienzo de
+// 16×16. Distintos de `_SVG_ESTADO` en su papel: una FORMA de estado es
+// requisito de accesibilidad —tiene que distinguir el veredicto sin depender
+// del color— mientras que estos rotulan una sección o una acción. Por eso
+// viven en mapas separados y sólo las formas pasan por el test de paridad.
+//
+// Alcance: SÓLO la vista de auditoría está migrada a SVG. Las demás vistas
+// siguen con emoji, deliberadamente y por vista completa. Ver DESIGN.md →
+// «Iconografía de la APP: inventario». Todo componente nuevo usa SVG.
+const _SVG_ICONO = {
+  // Moneda de canto, con su pila: capacidad financiera
+  financiero: '<ellipse cx="8" cy="5" rx="4.6" ry="2.2"/><path d="M3.4 5v3.2c0 1.2 2 2.2 4.6 2.2s4.6-1 4.6-2.2V5"/><path d="M3.4 8.6v2.6c0 1.2 2 2.2 4.6 2.2s4.6-1 4.6-2.2V8.6"/>',
+  // Balanza de dos platos: capacidad jurídica
+  juridico: '<path d="M8 2.6v10.8M4.6 13.4h6.8M3 6.2h10"/><path d="M3 6.2 1.5 9.4h3zM13 6.2l-1.5 3.2h3"/>',
+  // Hoja con esquina doblada
+  documento: '<path d="M9.4 2.2H4.4a1 1 0 0 0-1 1v9.6a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V5.2z"/><path d="M9.4 2.2v3h3.2"/>',
+  // Rejilla: tabla comparativa
+  tabla: '<rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1"/><path d="M2.4 6.6h11.2M2.4 9.6h11.2M6.6 6.6v6"/>',
+  // Triángulo de aviso: riesgo
+  riesgo: '<path d="M8 3.2 13.8 12.8H2.2Z"/><path d="M8 6.6v2.6"/><circle cx="8" cy="11" r=".7" fill="currentColor" stroke="none"/>',
+  // Libro abierto: fundamento normativo
+  norma: '<path d="M8 4.4v8.8"/><path d="M8 4.4C6.8 3.4 5.3 3 2.6 3v8.4c2.7 0 4.2.4 5.4 1.4"/><path d="M8 4.4c1.2-1 2.7-1.4 5.4-1.4v8.4c-2.7 0-4.2.4-5.4 1.4"/>',
+  // Clip: documentos por gestionar
+  adjunto: '<path d="M12.3 7.6 7.2 12.7a3.1 3.1 0 0 1-4.4-4.4l5.6-5.6a2.1 2.1 0 0 1 3 3l-5.6 5.6a1.1 1.1 0 0 1-1.5-1.5l5.1-5.1"/>',
+  // Lista con marca: plan de acción
+  plan: '<path d="M6.4 4.2h7.2M6.4 8h7.2M6.4 11.8h4.4"/><path d="M2.4 4.2l1.3 1.3L2.4 4.2zM2.2 7.8l1 1 1.6-1.8"/>',
+  // Flecha a bandeja: descargar
+  descargar: '<path d="M8 2.6v7.2"/><path d="M5.2 7.2 8 10l2.8-2.8"/><path d="M2.8 11.6v1a.9.9 0 0 0 .9.9h8.6a.9.9 0 0 0 .9-.9v-1"/>',
+};
+
+/** Icono funcional por nombre. Mismo trazo que las formas de estado. */
+function icono(nombre) {
+  const d = _SVG_ICONO[nombre];
+  if (!d) return '';
+  return `<svg class="ico" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+    fill="none" stroke="currentColor" stroke-width="1.7"
+    stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+}
+
+// ════════════ CRITICIDAD ════════════
+// Lo que responde "¿me pueden sacar?". El orden es el de la decisión: primero
+// lo que impide ofertar, al final lo que no se pudo clasificar.
+const CRITICIDAD = {
+  habilitante:   { etiqueta: 'HABILITANTE',   clase: 'crit-habilitante',
+                   ayuda: 'Condición para que la oferta sea evaluada. No otorga puntaje.' },
+  procedimental: { etiqueta: 'PROCEDIMENTAL', clase: 'crit-procedimental',
+                   ayuda: 'Regla del procedimiento: forma, plazos, presentación.' },
+  puntaje:       { etiqueta: 'PUNTAJE',       clase: 'crit-puntaje',
+                   ayuda: 'Otorga puntos. No habilita ni descalifica.' },
+  indeterminado: { etiqueta: 'SIN CLASIFICAR', clase: 'crit-indeterminado',
+                   ayuda: 'El extractor no pudo determinar la criticidad. Revisar a mano.' },
+};
+const _ORDEN_CRIT = ['habilitante', 'procedimental', 'puntaje', 'indeterminado'];
+
+let _REQS = [];          // requisitos_con_cita del último análisis
+let _FILTRO_CRIT = 'habilitante';
+
+function _esc(s) {
+  return String(s ?? '').replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+}
+
+/** Fila de un requisito: numeral, nombre, criticidad y la cita textual. */
+function _filaRequisito(req, i) {
+  const crit = CRITICIDAD[req.criticidad] || CRITICIDAD.indeterminado;
+  const numeral = req.fuente_numeral || '—';
+  const pagina = req.pagina_origen ? `folio ${req.pagina_origen}` : '';
+
+  // El badge de verificación aparece SOLO cuando la cita no se pudo confrontar
+  // contra el documento. Marcar las 275 verificadas sería ruido; marcar las 65
+  // que no lo están es información.
+  const sinVerificar = req.estado_verificacion && req.estado_verificacion !== 'verificada';
+  const badgeVerif = sinVerificar
+    ? `<span class="badge-verif" title="La cita no pudo confrontarse contra el documento fuente">
+         ${iconoEstado('interrogacion')}SIN VERIFICAR</span>`
+    : '';
+
+  // [N8] Si la unidad del campo contradice la del pliego, se muestran AMBAS.
+  // El valor no se corrige: el operador ve la discrepancia y decide.
+  const disc = unidadDiscordante(req);
+  const umbral = (req.valor_umbral !== null && req.valor_umbral !== undefined)
+    ? `<span class="req-umbral${disc ? ' req-umbral-dudoso' : ''}">${_esc(req.operador || '')} ${_esc(req.valor_umbral)}${req.unidad ? ' ' + _esc(req.unidad) : ''}</span>${
+        disc ? `<span class="req-unidad-alerta" title="La unidad del umbral no coincide con el texto del pliego">
+          ${iconoEstado('triangulo')}el pliego dice ${_esc(disc.etiquetaTexto)}</span>` : ''}`
+    : '';
+
+  // [B12] Los nombres que absorbió la fusión, para que sean buscables: un
+  // operador que no encuentra "inhabilidades" asume que no se revisó.
+  const absorbidos = (req.nombres_absorbidos || []).length
+    ? `<details class="req-absorbidos">
+         <summary>${req.nombres_absorbidos.length} sub-condiciones agrupadas</summary>
+         <ul>${req.nombres_absorbidos.map(n => `<li>${_esc(n)}</li>`).join('')}</ul>
+       </details>`
+    : '';
+
+  return `<li class="req-item ${crit.clase}">
+    <div class="req-cab">
+      <span class="req-numeral" title="Numeral del pliego">${_esc(numeral)}</span>
+      <span class="req-nombre">${_esc(req.nombre)}</span>
+      ${umbral}
+      <span class="req-crit" title="${_esc(crit.ayuda)}">${crit.etiqueta}</span>
+      ${badgeVerif}
+      ${req.es_causal_rechazo_explicita
+        ? `<span class="badge-causal" title="El pliego lo declara causal de rechazo">${iconoEstado('cruz')}CAUSAL DE RECHAZO</span>`
+        : ''}
+    </div>
+    ${(() => {
+      const cita = textoCita(req);
+      if (!cita) return `<p class="req-sin-cita">Sin cita textual registrada.</p>`;
+      // [N7] Un literal corrupto se señala como tal: la cadena no se publica.
+      const roto = literalIlegible(req.exigido_literal);
+      return `<blockquote class="req-cita${roto ? ' req-cita-ilegible' : ''}">${_esc(cita)}
+           ${pagina && !roto ? `<cite>${_esc(pagina)}</cite>` : ''}</blockquote>`;
+    })()}
+    ${absorbidos}
+  </li>`;
+}
+
+/** Repinta la lista según el filtro activo. No re-consulta la API. */
+function pintarRequisitos() {
+  const cont = document.getElementById('req-lista');
+  const vacio = document.getElementById('req-vacio');
+  if (!cont) return;
+
+  const lista = _FILTRO_CRIT === 'todos'
+    ? _REQS.slice()
+    : _REQS.filter(r => (r.criticidad || 'indeterminado') === _FILTRO_CRIT);
+
+  // Dentro del filtro, los habilitantes primero y las causales antes que el resto
+  lista.sort((a, b) => {
+    const ca = _ORDEN_CRIT.indexOf(a.criticidad || 'indeterminado');
+    const cb = _ORDEN_CRIT.indexOf(b.criticidad || 'indeterminado');
+    if (ca !== cb) return ca - cb;
+    return (b.es_causal_rechazo_explicita ? 1 : 0) - (a.es_causal_rechazo_explicita ? 1 : 0);
+  });
+
+  cont.innerHTML = lista.map(_filaRequisito).join('');
+  if (vacio) vacio.hidden = lista.length > 0;
+
+  document.querySelectorAll('.filtro-crit').forEach(b => {
+    const activo = b.dataset.crit === _FILTRO_CRIT;
+    b.classList.toggle('activo', activo);
+    b.setAttribute('aria-pressed', activo ? 'true' : 'false');
+  });
+}
+
+function filtrarCriticidad(crit) {
+  _FILTRO_CRIT = crit;
+  pintarRequisitos();
+}
+
+/** Panel de requisitos con cita: filtro, contador y lista. */
+function _panelRequisitos(r) {
+  const reqs = r.requisitos_con_cita || [];
+  if (!reqs.length) return '';
+  _REQS = reqs;
+  _FILTRO_CRIT = 'habilitante';
+
+  const cuenta = _ORDEN_CRIT.reduce((acc, k) => {
+    acc[k] = reqs.filter(x => (x.criticidad || 'indeterminado') === k).length;
+    return acc;
+  }, {});
+  const cons = r.consolidacion || {};
+  const crudos = cons.antes_total;
+
+  const botones = [
+    ...(_ORDEN_CRIT
+      .filter(k => cuenta[k] > 0)
+      .map(k => `<button type="button" class="filtro-crit" data-crit="${k}"
+          aria-pressed="false" onclick="filtrarCriticidad('${k}')">
+          ${CRITICIDAD[k].etiqueta}<span class="filtro-n">${cuenta[k]}</span></button>`)),
+    `<button type="button" class="filtro-crit" data-crit="todos" aria-pressed="false"
+       onclick="filtrarCriticidad('todos')">TODOS<span class="filtro-n">${reqs.length}</span></button>`,
+  ].join('');
+
+  // Trazabilidad: de cuántos fragmentos crudos salió este conjunto. Sin esto,
+  // 154 requisitos parecen los que trae el pliego en vez de un consolidado.
+  const traza = crudos
+    ? `<p class="req-traza">Consolidados desde ${crudos} fragmentos extraídos del pliego.</p>`
+    : '';
+
+  return `<div class="card card-requisitos">
+    <div class="card-title">Requisitos del pliego, con su cita</div>
+    <p class="req-contador"><strong>${cuenta.habilitante} habilitantes</strong>
+      de ${reqs.length} requisitos</p>
+    ${traza}
+    <div class="filtros-crit" role="group" aria-label="Filtrar por criticidad">${botones}</div>
+    <ul class="req-lista" id="req-lista"></ul>
+    <p class="empty-state" id="req-vacio" hidden>Ningún requisito en esta categoría.</p>
+  </div>`;
+}
+
+/** Causales de rechazo explícitas: lo que responde "¿me pueden sacar?". */
+function _panelCausales(r) {
+  const causales = (r.requisitos_con_cita || []).filter(x => x.es_causal_rechazo_explicita);
+  if (!causales.length) return '';
+  return `<div class="card card-causales">
+    <div class="card-title">Causales de rechazo declaradas en el pliego</div>
+    <p class="card-nota">${causales.length} ${causales.length === 1 ? 'causal que el pliego declara' : 'causales que el pliego declara'} de forma expresa. Incumplir cualquiera excluye la oferta.</p>
+    <ul class="causal-lista">
+      ${causales.map(c => `<li>
+        <span class="req-numeral">${_esc(c.fuente_numeral || '—')}</span>
+        <span class="causal-nombre">${_esc(c.nombre)}</span>
+        ${textoCita(c) ? `<blockquote class="req-cita${literalIlegible(c.exigido_literal) ? ' req-cita-ilegible' : ''}">${_esc(textoCita(c))}</blockquote>` : ''}
+      </li>`).join('')}
+    </ul>
+  </div>`;
+}
+
+/**
+ * Revisión manual: el pliego define más de un umbral y el sistema NO elige.
+ * Elegir por el operador sería afirmar que un umbral aplica a su tipo de
+ * proponente sin saberlo.
+ */
+function _panelRevisionManual(r) {
+  const deReqs = (r.requisitos_con_cita || [])
+    .filter(x => x.conflicto_umbral && (x.umbrales_alternativos || []).length)
+    .map(x => ({ nombre: x.nombre, numeral: x.fuente_numeral,
+                 alts: x.umbrales_alternativos, motivo: '' }));
+  const deChecklist = (r.checklist_financiero || [])
+    .filter(x => x.estado === 'revisar_manual' && (x.umbrales_alternativos || []).length)
+    .map(x => ({ nombre: x.requisito, numeral: x.fuente_numeral,
+                 alts: x.umbrales_alternativos, motivo: x.motivo || '' }));
+
+  const items = [...deReqs, ...deChecklist];
+  if (!items.length) return '';
+
+  return `<div class="card card-revision">
+    <div class="card-title">${iconoEstado('triangulo')}Requiere revisión manual</div>
+    <p class="card-nota">El pliego define más de un umbral para ${items.length === 1 ? 'este requisito' : 'estos requisitos'}.
+      El sistema no elige por ti: verifica cuál aplica a tu tipo de proponente antes de ofertar.</p>
+    <ul class="revision-lista">
+      ${items.map(it => `<li>
+        <div class="req-cab">
+          <span class="req-numeral">${_esc(it.numeral || '—')}</span>
+          <span class="req-nombre">${_esc(it.nombre)}</span>
+        </div>
+        <ul class="alts">${it.alts.map(a => `<li>${_esc(a)}</li>`).join('')}</ul>
+        ${it.motivo ? `<p class="revision-motivo">${_esc(it.motivo)}</p>` : ''}
+      </li>`).join('')}
+    </ul>
+  </div>`;
+}
+
 function renderAuditResult(r) {
   const concepto = r.concepto_global || 'CONDICIONAL';
   const color    = r.concepto_color  || 'amber';
@@ -1028,13 +1374,13 @@ function renderAuditResult(r) {
     const pres   = presentacionEstado(estado);
     const extra  = detalleEstado(row);
     const sub    = row.subsanable ? '<span class="sub-tag">Subsanable</span>' : '';
-    const tipo   = row.tipo === 'financiero' ? '💰' : '⚖️';
+    const tipo   = icono(row.tipo === 'financiero' ? 'financiero' : 'juridico');
     return `<tr class="${pres.clase}">
       <td>${tipo}</td><td>${row.requisito||'—'}</td><td>${row.exigido||'—'}</td>
       <td>${row.cliente_tiene||'—'}</td>
       <td class="td-center">
         <span class="estado-badge ${pres.clase}" data-forma="${pres.forma}">
-          <span class="estado-icono" aria-hidden="true">${pres.icono}</span>${pres.etiqueta}
+          ${iconoEstado(pres.forma)}${pres.etiqueta}
         </span>${sub}
         ${extra ? `<div class="estado-detalle">${extra}</div>` : ''}
       </td>
@@ -1046,7 +1392,7 @@ function renderAuditResult(r) {
     || '<div class="empty-state">—</div>';
   const docsFalt = (r.checklist_documentos||[]).filter(d => d.estado === 'falta');
   const docsHtml = docsFalt.length
-    ? docsFalt.map(d => `<div class="doc-faltante">📄 ${d.documento}${d.subsanable ? ' <span class="sub-tag">Subsanable</span>':''}</div>`).join('')
+    ? docsFalt.map(d => `<div class="doc-faltante">${icono('documento')}${d.documento}${d.subsanable ? ' <span class="sub-tag">Subsanable</span>':''}</div>`).join('')
     : '<div class="empty-state">Sin documentos faltantes</div>';
   const recs = [...(r.recomendaciones||[]), ...(r.acciones_inmediatas||[])];
   const riesgos = r.riesgos_juridicos || r.riesgos || [];
@@ -1082,27 +1428,30 @@ function renderAuditResult(r) {
         <div class="score-card"><div class="score-big">${scoreJ}</div><div class="score-label">Jurídico</div></div>
       </div>
     </div>
-    ${analisisFin ? `<div class="card"><div class="card-title">💰 Análisis Financiero</div><div class="analisis-texto">${analisisFin}</div></div>` : ''}
-    ${tablaRows ? `<div class="card"><div class="card-title">📋 Habilitantes — Tabla Comparativa</div>
+    ${analisisFin ? `<div class="card"><div class="card-title">${icono('financiero')}Análisis Financiero</div><div class="analisis-texto">${analisisFin}</div></div>` : ''}
+    ${tablaRows ? `<div class="card"><div class="card-title">${icono('tabla')}Habilitantes — Tabla Comparativa</div>
       <div class="table-wrap"><table class="req-table">
         <thead><tr><th></th><th>Requisito</th><th>Exigido</th><th>Empresa</th><th>¿Cumple?</th><th>Norma</th></tr></thead>
         <tbody>${tablaRows}</tbody>
       </table></div></div>` : ''}
-    ${analisisJur ? `<div class="card"><div class="card-title">⚖️ Análisis Jurídico</div><div class="analisis-texto">${analisisJur}</div></div>` : ''}
+    ${analisisJur ? `<div class="card"><div class="card-title">${icono('juridico')}Análisis Jurídico</div><div class="analisis-texto">${analisisJur}</div></div>` : ''}
     <!-- "Fundamento del concepto", no "Citas Normativas": el contenido son
          razones del agente filtradas por palabras clave ("Ley", "Decreto",
          "art."), no citas verificadas contra la biblioteca normativa. Tiene
          valor como razonamiento; no puede prometer precisión de cita.
          Pasará a citas reales cuando el bibliotecario normativo entregue
          normas_citadas con fragmento verificado. -->
-    <div class="card"><div class="card-title">📖 Fundamento del concepto</div>${citas}</div>
-    ${docsFalt.length ? `<div class="card"><div class="card-title">📎 Documentos a Gestionar</div>${docsHtml}</div>` : ''}
-    ${riesgos.length ? `<div class="card"><div class="card-title">⚠ Riesgos</div><ul class="riesgos-list">${riesgos.map(x=>`<li>⚠ ${x}</li>`).join('')}</ul></div>` : ''}
-    ${recs.length ? `<div class="card"><div class="card-title">✅ Plan de Acción</div><ul>${recs.map(x=>`<li>${x}</li>`).join('')}</ul></div>` : ''}
+    ${_panelRequisitos(r)}
+    ${_panelCausales(r)}
+    ${_panelRevisionManual(r)}
+    <div class="card"><div class="card-title">${icono('norma')}Fundamento del concepto</div>${citas}</div>
+    ${docsFalt.length ? `<div class="card"><div class="card-title">${icono('adjunto')}Documentos a Gestionar</div>${docsHtml}</div>` : ''}
+    ${riesgos.length ? `<div class="card"><div class="card-title">${icono('riesgo')}Riesgos</div><ul class="riesgos-list">${riesgos.map(x=>`<li>${x}</li>`).join('')}</ul></div>` : ''}
+    ${recs.length ? `<div class="card"><div class="card-title">${icono('plan')}Plan de Acción</div><ul>${recs.map(x=>`<li>${x}</li>`).join('')}</ul></div>` : ''}
     <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-secondary" onclick="descargarPDF(event)">⬇ Descargar PDF Ejecutivo</button>
-      <button id="btn-obs-pliego" class="btn btn-primary" onclick="generarObservaciones(event)">📋 Generar Observaciones al Pliego</button>
-      <button class="btn btn-secondary" onclick="navigateTo('oferta')">📄 Generar documentos de oferta</button>
+      <button class="btn btn-secondary" onclick="descargarPDF(event)">${icono('descargar')}Descargar PDF Ejecutivo</button>
+      <button id="btn-obs-pliego" class="btn btn-primary" onclick="generarObservaciones(event)">${icono('documento')}Generar Observaciones al Pliego</button>
+      <button class="btn btn-secondary" onclick="navigateTo('oferta')">${icono('documento')}Generar documentos de oferta</button>
     </div>
     <div id="obs-result" style="margin-top:16px"></div>
   </div>`;

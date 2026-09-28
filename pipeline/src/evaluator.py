@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
+from .estados import motivo_unidad_discordante, unidad_discordante
 from .extractor import Requisito
 from .perfil import (  # esquema canónico — única fuente de verdad
     PerfilEmpresa,
@@ -177,6 +178,16 @@ _MAP_JUR: list[tuple[str, Callable[[PerfilJuridico], Any]]] = [
 ]
 
 
+_MAP_TEC: list[tuple[str, Callable[[Any], Any]]] = [
+    ("titulo",                      lambda p: None if p.titulo_profesional is None
+                                              else (p.titulo_profesional != "ninguno")),
+    ("colombianos",                 lambda p: p.porcentaje_empleados_colombianos),
+    ("personal",                    lambda p: p.personal_disponible),
+    ("equipo",                      lambda p: bool(p.equipos)),
+    ("certificacion",               lambda p: bool(p.certificaciones)),
+]
+
+
 def _valor_perfil(req: Requisito, perfil: PerfilEmpresa) -> Any:
     """
     Busca el valor del perfil correspondiente al requisito.
@@ -214,19 +225,40 @@ def _valor_perfil(req: Requisito, perfil: PerfilEmpresa) -> Any:
     if req.categoria == "tecnico":
         if perfil.tecnico is None:
             return None
-        if "titulo" in nombre_n:
-            tp = perfil.tecnico.titulo_profesional
-            return None if tp is None else (tp != "ninguno")
-        if "colombianos" in nombre_n:
-            return perfil.tecnico.porcentaje_empleados_colombianos
-        if "personal" in nombre_n:
-            return perfil.tecnico.personal_disponible
-        if "equipo" in nombre_n:
-            return bool(perfil.tecnico.equipos)
-        if "certificacion" in nombre_n:
-            return bool(perfil.tecnico.certificaciones)
+        for kw, fn in _MAP_TEC:
+            if _strip_accents(kw) in nombre_n:
+                return fn(perfil.tecnico)
         return None
 
+    return None
+
+
+# Qué mapa gobierna cada categoría. Lo consume `concepto.py` para distinguir
+# «el perfil tiene el campo y está vacío» de «el formulario no lo pregunta»:
+# sin esta tabla habría que duplicar las palabras clave y se desincronizarían.
+MAPAS_POR_CATEGORIA: dict[str, list] = {
+    "financiero": _MAP_FIN,
+    "experiencia": _MAP_EXP,
+    "juridico": _MAP_JUR,
+    "documental": _MAP_JUR,
+    "tecnico": _MAP_TEC,
+}
+
+
+def campo_del_perfil(req: Requisito) -> str | None:
+    """
+    Devuelve la palabra clave del mapa que captura este requisito, o None si
+    ninguna lo captura.
+
+    None significa **que el perfil no tiene ningún campo para este concepto**:
+    no es que la empresa no haya respondido, es que no se le preguntó. Los dos
+    casos llegan al evaluador como `valor is None` y producen el mismo
+    `dato_faltante`; esta función es la que los separa.
+    """
+    nombre_n = _strip_accents(req.nombre.lower())
+    for kw, _fn in MAPAS_POR_CATEGORIA.get(req.categoria or "", []):
+        if _strip_accents(kw) in nombre_n:
+            return kw
     return None
 
 
@@ -297,6 +329,36 @@ def _evaluar_item(
                 "El pliego define más de un umbral para este requisito. "
                 "Verifica cuál aplica a tu tipo de proponente antes de ofertar."
             ),
+        }
+
+    # [N8] La unidad del umbral contradice la que nombra el pliego. El
+    # extractor pone "meses" por defecto cuando la magnitud es temporal y no
+    # resuelve cuál: "mínimo un AÑO de existencia" quedó como 1.0 meses, que
+    # daría por válida a una empresa de seis meses. Ese falso positivo —decirle
+    # al cliente que califica cuando va a ser rechazado— es peor que un falso
+    # negativo, así que el requisito se reporta en vez de evaluarse.
+    #
+    # DETECCIÓN, no corrección: el valor no se toca. Deducir que "20 meses"
+    # quería decir "20 años" sería inventar.
+    _disc = unidad_discordante({
+        "unidad": req.unidad, "valor_umbral": req.valor_umbral,
+        "exigido_literal": req.exigido_literal,
+        "fuente_numeral": req.fuente_numeral,
+    })
+    if _disc is not None:
+        return {
+            "requisito":  req.nombre,
+            "estado":     "revisar_manual",
+            "categoria":  req.categoria,
+            "fuente_numeral": req.fuente_numeral,
+            # Ambos datos, para que el operador vea la discrepancia y decida
+            "unidad_registrada": _disc["etiqueta_campo"],
+            "unidad_en_el_pliego": _disc["etiqueta_texto"],
+            "valor_umbral": req.valor_umbral,
+            "motivo": motivo_unidad_discordante({
+                "valor_umbral": req.valor_umbral,
+                "fuente_numeral": req.fuente_numeral,
+            }, _disc),
         }
 
     # ── Camino con criterio estructurado ───────────────────────────────────
