@@ -460,6 +460,7 @@ function pintarDocumentosExpediente(docs) {
   const cj = d.capacidad_juridica;
   setVal('d-capacidad-juridica',
          cj === true ? 'true' : cj === false ? 'false' : '');
+  setVal('d-duracion-sociedad-hasta', d.duracion_sociedad_hasta || '');
 }
 
 /**
@@ -478,6 +479,7 @@ function buildDocumentosBody() {
   }
   const cj = val('d-capacidad-juridica');
   out.capacidad_juridica = cj === 'true' ? true : cj === 'false' ? false : null;
+  out.duracion_sociedad_hasta = val('d-duracion-sociedad-hasta') || null;
   return out;
 }
 

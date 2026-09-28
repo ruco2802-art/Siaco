@@ -511,3 +511,54 @@ def test_el_formulario_conserva_el_tri_estado_hasta_el_perfil():
     for clave in ("d-rup-tiene", "d-rup-fecha", "d-capacidad-juridica",
                   "d-documento-identidad-tiene"):
         assert f'id="{clave}"' in html, f"falta el campo {clave} en el formulario"
+
+
+# ── 7 · [D34] La duración de la sociedad ───────────────────────────────────
+
+def test_sin_el_plazo_del_pliego_la_culpa_cambia_de_dueno():
+    """
+    [D34] El cliente YA respondió cuánto dura su sociedad. Si el requisito
+    vuelve a «dato_faltante» parece que falta algo suyo, cuando lo que falta es
+    el plazo del contrato, que sale del pliego. Va a revisión manual, que es
+    tarea del operador, y el motivo nombra el dato que falta.
+    """
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    p = PerfilEmpresa.model_validate(
+        {"nombre": "X", "documentos": {"duracion_sociedad_hasta": "2030-12-31"}})
+    r = _evaluar_item(
+        _req_doc("Duración de la persona jurídica no inferior al plazo del contrato",
+                 categoria="juridico"), p)
+    assert r["estado"] == "revisar_manual"
+    assert "no pudo extraer el plazo del contrato" in r["motivo"]
+
+
+def test_con_el_plazo_del_pliego_la_duracion_se_resuelve():
+    from datetime import date
+
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    req = _req_doc("Duración de la persona jurídica no inferior al plazo del contrato",
+                   categoria="juridico")
+    hoy = date(2026, 9, 28)
+    # plazo 2 meses + 1 año = 425 días exigidos
+    larga = PerfilEmpresa.model_validate(
+        {"nombre": "X", "documentos": {"duracion_sociedad_hasta": "2030-12-31"}})
+    corta = PerfilEmpresa.model_validate(
+        {"nombre": "X", "documentos": {"duracion_sociedad_hasta": "2027-01-31"}})
+
+    ok = _evaluar_item(req, larga, {"plazo_meses": 2}, hoy)
+    assert ok["estado"] == "cumple"
+
+    mal = _evaluar_item(req, corta, {"plazo_meses": 2}, hoy)
+    assert mal["estado"] == "no_cumple"
+    assert "2 meses" in mal["motivo"] and "un año" in mal["motivo"]
+
+
+def test_el_certificado_sigue_sin_contestar_la_duracion():
+    """[D32] Tener el certificado y durar lo suficiente son preguntas distintas."""
+    from src.evaluator import _pregunta_por_duracion
+    assert _pregunta_por_duracion(_req_doc(
+        "Duración de la persona jurídica no inferior al plazo del contrato"))
+    assert not _pregunta_por_duracion(_req_doc(
+        "Certificado de existencia y representación legal sucursal extranjera"))

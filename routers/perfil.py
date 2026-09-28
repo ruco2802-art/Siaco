@@ -95,6 +95,7 @@ class PerfilBodyDocumentos(BaseModel):
     documento_identidad: PerfilBodyDocumento = PerfilBodyDocumento()
     subcontratacion: PerfilBodyDocumento = PerfilBodyDocumento()
     capacidad_juridica: bool | None = None
+    duracion_sociedad_hasta: str | None = None   # [D34]
 
 
 class PerfilBody(BaseModel):
@@ -132,6 +133,8 @@ class PerfilBody(BaseModel):
         for clave, v in docs.items():
             if isinstance(v, dict) and isinstance(v.get("fecha_expedicion"), str)                     and not v["fecha_expedicion"].strip():
                 v["fecha_expedicion"] = None
+        if isinstance(docs.get("duracion_sociedad_hasta"), str)                 and not docs["duracion_sociedad_hasta"].strip():
+            docs["duracion_sociedad_hasta"] = None
 
         # Normalizar strings vacíos → None en campos de fecha
         for d in (jur,):

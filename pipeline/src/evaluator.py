@@ -283,6 +283,11 @@ CAMPO_POR_OBJETO: dict[str, Callable[[PerfilEmpresa], Any]] = {
                                      if p.documentos else None),
 }
 
+# [D34] `EXISTENCIA_REPRESENTACION` se evalúa aparte, no por este mapa: lo
+# que los pliegos preguntan es la DURACIÓN de la sociedad contra el plazo
+# del contrato, y eso necesita un dato del PLIEGO además del perfil.
+OBJETO_DURACION_SOCIEDAD = "EXISTENCIA_REPRESENTACION"
+
 # Objetos cuyo campo sólo contesta UN aspecto concreto. Fuera de él, el mapa no
 # se aplica: «RUP en firme (acreditación condición Mipyme)» pregunta por la
 # inscripción como Mipyme, no por que el RUP esté en firme.
@@ -511,6 +516,67 @@ def _evaluar_documento(
             "umbral": dias_max, "operador": "<=", "unidad": "dias"}
 
 
+def _pregunta_por_duracion(req: Requisito) -> bool:
+    """
+    Si el requisito pregunta por cuánto dura la sociedad. Se mira el NOMBRE,
+    no el objeto del catálogo: bajo `EXISTENCIA_REPRESENTACION` conviven la
+    duración y el certificado, que son preguntas distintas [D32].
+    """
+    n = _strip_accents((req.nombre or "").lower())
+    return "duracion" in n and ("plazo" in n or "contrato" in n)
+
+
+def _evaluar_duracion_sociedad(
+    req: Requisito,
+    hasta: str,
+    plazo_meses: float | None,
+    fecha_referencia: date | None = None,
+) -> dict:
+    """
+    ¿Dura la sociedad al menos el plazo del contrato más un año?
+
+    Necesita DOS datos de fuentes distintas: la duración, que da el cliente, y
+    el plazo del contrato, que da el pliego. Si falta el del pliego, el
+    requisito NO vuelve a «no se le preguntó al cliente» —el cliente ya
+    respondió— sino que nombra el dato que falta y de quién es. Es la
+    diferencia entre una tarea del cliente y una del operador.
+    """
+    base = {"requisito": req.nombre, "categoria": req.categoria,
+            "fuente_numeral": req.fuente_numeral}
+    try:
+        vence = date.fromisoformat(str(hasta)[:10])
+    except (TypeError, ValueError):
+        return {**base, "estado": "dato_faltante",
+                "documento_requerido": "fecha de duración de la sociedad"}
+
+    if plazo_meses is None:
+        return {
+            **base, "estado": "revisar_manual",
+            "valor_empresa": vence.isoformat(),
+            "motivo": ("la sociedad está constituida hasta "
+                       f"{vence.isoformat()}, pero el análisis no pudo extraer "
+                       "el plazo del contrato del pliego: compáralo a mano "
+                       "contra el plazo más un año"),
+        }
+
+    hoy = fecha_referencia or date.today()
+    # El plazo corre desde la suscripción del acta de inicio, que no se conoce:
+    # se mide desde hoy, que es la lectura MÁS EXIGENTE y por tanto la segura.
+    dias_exigidos = int(plazo_meses * 30) + 365
+    dias_restantes = (vence - hoy).days
+    if dias_restantes >= dias_exigidos:
+        return {**base, "estado": "cumple", "valor_empresa": vence.isoformat(),
+                "umbral": dias_exigidos, "operador": ">=", "unidad": "dias"}
+    return {
+        **base, "estado": "no_cumple", "valor_empresa": vence.isoformat(),
+        "umbral": dias_exigidos, "operador": ">=", "unidad": "dias",
+        "diferencia": dias_restantes - dias_exigidos,
+        "motivo": (f"la sociedad dura hasta {vence.isoformat()}; el pliego "
+                   f"exige el plazo del contrato ({plazo_meses:g} meses) más "
+                   "un año"),
+    }
+
+
 def _evaluar_item(
     req: Requisito,
     perfil: PerfilEmpresa,
@@ -524,6 +590,15 @@ def _evaluar_item(
     Si es None, usa el lookup por nombre (comportamiento anterior).
     [I6] Python puro: ninguna lógica de evaluación sale del LLM.
     """
+    # [D34] La duración de la sociedad: el único requisito que necesita un dato
+    # del perfil Y uno del pliego a la vez.
+    if (_pregunta_por_duracion(req)
+            and perfil.documentos is not None
+            and perfil.documentos.duracion_sociedad_hasta):
+        return _evaluar_duracion_sociedad(
+            req, perfil.documentos.duracion_sociedad_hasta,
+            (valores_pliego or {}).get("plazo_meses"), fecha_referencia)
+
     # [D20/D32] Un requisito cuyo propio NOMBRE anuncia que reparte puntaje no
     # es un habilitante, por mucho que el extractor lo haya clasificado así
     # —«Mayor puntaje CF por pasivo corriente igual a cero» está en el capítulo

@@ -185,6 +185,25 @@ class PerfilDocumental(BaseModel):
     # respuesta cubre los dos.
     capacidad_juridica: bool | None = None
 
+    # [D34] Hasta cuándo está constituida la sociedad, en ISO (`YYYY-MM-DD`).
+    #
+    # Es lo que de verdad preguntan los dos pliegos sobre la existencia y
+    # representación: *«deberán acreditar que su duración no será inferior a la
+    # del plazo del Contrato y un año más»*. Tener el certificado de Cámara de
+    # Comercio NO lo contesta [D32]; esta fecha sí, y está en ese mismo
+    # certificado, así que al cliente no le cuesta nada responderla.
+    #
+    # La comparación es contra el PLAZO DEL CONTRATO más un año, y ese plazo
+    # sale del pliego, no del perfil. Hoy el pipeline **no lo extrae**: está en
+    # el texto de Paicol («DOS MESES (02)») pero dentro de una tabla que el
+    # parser partió, y ningún campo estructurado lo recoge — `plazo_meses`
+    # existe como variable declarada en `resolucion_variables.py` y nada la
+    # puebla. Mientras siga así, este campo no resuelve ningún requisito, pero
+    # el estado que produce cambia de sitio la culpa: deja de ser «no se le
+    # preguntó al cliente» y pasa a ser «falta el plazo del pliego», que es
+    # tarea del operador.
+    duracion_sociedad_hasta: str | None = None
+
     def esta_vacio(self) -> bool:
         """True si no se respondió nada: el bloque no aporta sobre `None`."""
         return (self.capacidad_juridica is None
