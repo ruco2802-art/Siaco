@@ -562,3 +562,92 @@ def test_el_certificado_sigue_sin_contestar_la_duracion():
         "Duración de la persona jurídica no inferior al plazo del contrato"))
     assert not _pregunta_por_duracion(_req_doc(
         "Certificado de existencia y representación legal sucursal extranjera"))
+
+
+# ── 8 · Criterios asimétricos ──────────────────────────────────────────────
+
+def test_unspsc_no_declara_incumplimiento_con_la_lista_truncada():
+    """
+    De 6 requisitos de UNSPSC en los dos pliegos, sólo 1 conserva códigos y
+    está truncado. «No solapa» contra una lista incompleta no es un hallazgo:
+    es «no solapa con lo que logramos leer».
+    """
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    p = PerfilEmpresa.model_validate(
+        {"nombre": "X", "experiencia": {"codigos_unspsc": ["72151501"]}})
+    # el caso que SÍ trae códigos, y que aun así no puede afirmar
+    con = _evaluar_item(_req_doc(
+        "Clasificación UNSPSC para acreditación de experiencia",
+        categoria="experiencia",
+        exigido_literal="clasificados en alguno de los siguientes códigos: "
+                        "pintura 72151300 | albañilería 72151900"), p)
+    assert con["estado"] == "revisar_manual"
+    assert "puede estar incompleta" in con["motivo"]
+    # el caso sin códigos: nombra que falta el dato DEL PLIEGO
+    sin = _evaluar_item(_req_doc(
+        "Clasificación UNSPSC de contratos de experiencia",
+        categoria="experiencia",
+        exigido_literal="deben estar clasificados en alguno de los siguientes "
+                        "códigos:"), p)
+    assert sin["estado"] == "revisar_manual"
+    assert "no sobrevivió a la extracción" in sin["motivo"]
+
+
+def test_la_limitacion_a_mipyme_solo_puede_afirmar_el_lado_positivo():
+    """
+    Criterio CONJUNTO y asimétrico: ser Mipyme del municipio basta para
+    cumplir; no serlo NO es incumplir, porque la limitación sólo se aplica si
+    un mínimo de Mipymes manifiesta interés.
+    """
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    req = _req_doc("Limitación a Mipyme colombianas domiciliadas en Paicol, Huila",
+                   categoria="juridico",
+                   exigido_literal="La presente convocatoria será limitada a la "
+                                   "participación de Mipymes colombianas "
+                                   "domiciliadas en el Municipio de Paicol, "
+                                   "departamento del Huila")
+    dentro = PerfilEmpresa.model_validate(
+        {"nombre": "X", "es_mipyme": True, "municipio_domicilio": "Paicol"})
+    assert _evaluar_item(req, dentro)["estado"] == "cumple"
+
+    for perfil, esperado in (
+        ({"nombre": "X", "es_mipyme": True, "municipio_domicilio": "Neiva"},
+         "domiciliada en Neiva"),
+        ({"nombre": "X", "es_mipyme": False, "municipio_domicilio": "Paicol"},
+         "no está registrada como Mipyme"),
+    ):
+        r = _evaluar_item(req, PerfilEmpresa.model_validate(perfil))
+        assert r["estado"] == "revisar_manual", perfil
+        assert esperado in r["motivo"]
+        assert "NO es un incumplimiento" in r["motivo"]
+
+
+def test_el_criterio_de_mipyme_exige_LAS_DOS_condiciones():
+    """Ser Mipyme no basta, y estar en el municipio tampoco: es conjunto."""
+    from src.evaluator import _evaluar_limitacion_mipyme
+    from src.perfil import PerfilEmpresa
+    req = _req_doc("Limitación a Mipyme", categoria="juridico",
+                   exigido_literal="limitada a Mipymes domiciliadas en el "
+                                   "Municipio de Paicol")
+    solo_mipyme = PerfilEmpresa.model_validate({"nombre": "X", "es_mipyme": True})
+    assert _evaluar_limitacion_mipyme(req, solo_mipyme)["estado"] == "revisar_manual"
+
+
+def test_aplica_a_manda_sobre_cualquier_criterio():
+    """
+    Si el requisito no le aplica a esta empresa, no hay nada que evaluar.
+    Los criterios nuevos quedaron por delante del filtro `aplica_a` al
+    escribirlos y un requisito marcado `no_mipyme` se evaluaba igual para una
+    Mipyme: un veredicto sobre algo que no le rige.
+    """
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    req = _req_doc("Limitación a Mipyme domiciliadas en Paicol",
+                   categoria="juridico", aplica_a="no_mipyme",
+                   exigido_literal="limitada a Mipymes domiciliadas en el "
+                                   "Municipio de Paicol")
+    mipyme = PerfilEmpresa.model_validate(
+        {"nombre": "X", "es_mipyme": True, "municipio_domicilio": "Paicol"})
+    assert _evaluar_item(req, mipyme)["estado"] == "no_aplica"

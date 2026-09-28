@@ -8,6 +8,7 @@ src/evaluator.py — contraste perfil ↔ requisitos, Python puro.
 """
 from __future__ import annotations
 
+import re
 import unicodedata
 from datetime import date
 from typing import Any, Callable
@@ -516,6 +517,104 @@ def _evaluar_documento(
             "umbral": dias_max, "operador": "<=", "unidad": "dias"}
 
 
+# ─── Criterios que no necesitan campos nuevos ─────────────────────────────
+#
+# Los dos usan datos que el perfil YA tiene. Los dos son **asimétricos**, y en
+# direcciones opuestas: cada uno sólo puede afirmar uno de los dos veredictos,
+# porque del otro lado el perfil no alcanza. Un criterio simétrico forzado aquí
+# produciría un CUMPLE que nadie comprobó [D32].
+
+_RX_UNSPSC = re.compile(r"\b\d{8}\b")
+
+
+def _codigos_unspsc_del_pliego(req: Requisito) -> list[str]:
+    """Códigos de 8 dígitos que el literal del requisito conserva."""
+    return _RX_UNSPSC.findall(req.exigido_literal or "")
+
+
+def _evaluar_unspsc(req: Requisito, perfil: PerfilEmpresa) -> dict:
+    """
+    «Los Contratos aportados deben estar clasificados en alguno de los
+    siguientes códigos».
+
+    **No se construye el criterio de comparación**, y la razón no es el
+    criterio sino el dato: la lista de códigos del pliego **no sobrevive a la
+    extracción**. Medido sobre los dos pliegos: de 6 requisitos de UNSPSC,
+    **sólo 1 conserva códigos** (Paicol, 72151300 y 72151900) y ese mismo está
+    truncado —el literal acaba en «:» o a media lista—. Los otros 5 traen cero.
+
+    Con la lista incompleta, «los códigos de la empresa no están entre los del
+    pliego» no es un hallazgo: es «no están entre los que logramos leer». El
+    perfil de prueba lo ilustra: tiene 72151501/72151502/72151601 y no solapa
+    con los dos códigos extraídos, pero basta que la lista real incluyera
+    721515 para que sí solape.
+
+    Va a `revisar_manual` nombrando el dato que falta, que es del PLIEGO y por
+    tanto tarea del OPERADOR, no del cliente.
+    """
+    codigos_pliego = _codigos_unspsc_del_pliego(req)
+    de_la_empresa = ((perfil.experiencia.codigos_unspsc or [])
+                     if perfil.experiencia else [])
+    base = {"requisito": req.nombre, "categoria": req.categoria,
+            "fuente_numeral": req.fuente_numeral, "estado": "revisar_manual"}
+    if not codigos_pliego:
+        return {**base, "motivo": (
+            "la lista de códigos UNSPSC del pliego no sobrevivió a la "
+            "extracción: léela en el numeral y compárala contra los "
+            f"{len(de_la_empresa)} códigos de la empresa")}
+    return {**base, "motivo": (
+        f"del pliego se extrajeron {len(codigos_pliego)} códigos "
+        f"({', '.join(codigos_pliego[:4])}) y la empresa tiene "
+        f"{len(de_la_empresa)}, pero la lista del pliego puede estar "
+        "incompleta: confírmala en el numeral antes de descartar")}
+
+
+def _evaluar_limitacion_mipyme(req: Requisito, perfil: PerfilEmpresa) -> dict:
+    """
+    «La convocatoria será limitada a Mipymes colombianas domiciliadas en el
+    Municipio de X».
+
+    Criterio CONJUNTO —las dos condiciones, no una— y **asimétrico**:
+
+    - Si la empresa es Mipyme Y está domiciliada en ese municipio, **cumple**
+      la limitación pase lo que pase. Ese lado es seguro.
+    - Si NO lo es, **no se declara incumplimiento**: la limitación a Mipyme
+      sólo se materializa cuando un número mínimo de Mipymes manifiesta
+      interés (Decreto 1082/2015 art. 2.2.1.2.4.2.2), y eso se sabe después
+      del plazo de manifestaciones, no al analizar el pliego. Paicol tiene de
+      hecho dos requisitos procedimentales sobre esa manifestación. Declarar
+      NO CUMPLE aquí sería descartar una oferta por una limitación que puede
+      no llegar a aplicarse.
+    """
+    base = {"requisito": req.nombre, "categoria": req.categoria,
+            "fuente_numeral": req.fuente_numeral}
+    m = re.search(r"[Mm]unicipio\s+de\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñ]*"
+                  r"(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*)?)",
+                  req.exigido_literal or "")
+    if not m:
+        return {**base, "estado": "revisar_manual", "motivo": (
+            "el literal no dice a qué municipio limita la convocatoria: "
+            "léelo en el numeral")}
+    municipio = m.group(1).strip()
+    propio = (perfil.municipio_domicilio or "").strip()
+    if perfil.es_mipyme and propio and _strip_accents(propio.lower()) == \
+            _strip_accents(municipio.lower()):
+        return {**base, "estado": "cumple",
+                "valor_empresa": f"Mipyme domiciliada en {propio}",
+                "umbral": f"Mipyme domiciliada en {municipio}"}
+    falta = []
+    if not perfil.es_mipyme:
+        falta.append("la empresa no está registrada como Mipyme")
+    if not propio:
+        falta.append("el perfil no dice el municipio de domicilio")
+    elif _strip_accents(propio.lower()) != _strip_accents(municipio.lower()):
+        falta.append(f"la empresa está domiciliada en {propio}, no en {municipio}")
+    return {**base, "estado": "revisar_manual", "motivo": (
+        " y ".join(falta) + ". NO es un incumplimiento: la limitación a Mipyme "
+        "sólo se aplica si un mínimo de Mipymes manifiesta interés, y eso se "
+        "sabe al cierre del plazo de manifestaciones")}
+
+
 def _pregunta_por_duracion(req: Requisito) -> bool:
     """
     Si el requisito pregunta por cuánto dura la sociedad. Se mira el NOMBRE,
@@ -590,14 +689,15 @@ def _evaluar_item(
     Si es None, usa el lookup por nombre (comportamiento anterior).
     [I6] Python puro: ninguna lógica de evaluación sale del LLM.
     """
-    # [D34] La duración de la sociedad: el único requisito que necesita un dato
-    # del perfil Y uno del pliego a la vez.
-    if (_pregunta_por_duracion(req)
-            and perfil.documentos is not None
-            and perfil.documentos.duracion_sociedad_hasta):
-        return _evaluar_duracion_sociedad(
-            req, perfil.documentos.duracion_sociedad_hasta,
-            (valores_pliego or {}).get("plazo_meses"), fecha_referencia)
+    # ORDEN DE LOS GUARDAS — `aplica_a` va PRIMERO, y no es cosmético: si el
+    # requisito no le rige a esta empresa no hay nada que evaluar, y cualquier
+    # guarda por delante produce un veredicto sobre algo que no le aplica.
+    # Encontrado midiendo: `no_aplica` bajó de 14 a 13 en Paicol cuando los
+    # criterios nuevos se colaron por delante de este filtro.
+    if req.aplica_a == "mipyme" and not perfil.es_mipyme:
+        return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
+    if req.aplica_a == "no_mipyme" and perfil.es_mipyme:
+        return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
 
     # [D20/D32] Un requisito cuyo propio NOMBRE anuncia que reparte puntaje no
     # es un habilitante, por mucho que el extractor lo haya clasificado así
@@ -628,11 +728,27 @@ def _evaluar_item(
                        "de las dos cosas es antes de usarlo"),
         }
 
-    # Respeta aplica_a
-    if req.aplica_a == "mipyme" and not perfil.es_mipyme:
-        return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
-    if req.aplica_a == "no_mipyme" and perfil.es_mipyme:
-        return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
+    # [D34] La duración de la sociedad: el único requisito que necesita un dato
+    # del perfil Y uno del pliego a la vez.
+    if (_pregunta_por_duracion(req)
+            and perfil.documentos is not None
+            and perfil.documentos.duracion_sociedad_hasta):
+        return _evaluar_duracion_sociedad(
+            req, perfil.documentos.duracion_sociedad_hasta,
+            (valores_pliego or {}).get("plazo_meses"), fecha_referencia)
+
+    # Criterios que leen el literal del pliego además del perfil.
+    _objeto = None
+    try:
+        from .catalogo import objeto_para_evaluar as _oe
+        _objeto = _oe(req)
+    except Exception:
+        pass
+    if _objeto == "UNSPSC":
+        return _evaluar_unspsc(req, perfil)
+    if _objeto == "CONDICION_MIPYME" and "limitac" in _strip_accents(
+            (req.nombre or "").lower()):
+        return _evaluar_limitacion_mipyme(req, perfil)
     # Extranjero sin domicilio → no aplica si la empresa es nacional (mipyme o con municipio)
     if req.aplica_a == "extranjero_sin_domicilio":
         es_nacional = perfil.es_mipyme or (perfil.municipio_domicilio is not None)
