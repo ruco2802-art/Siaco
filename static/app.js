@@ -429,8 +429,56 @@ async function loadPerfil() {
         rupAlert.innerHTML = `<div class="rup-alert">⚠ RUP vence el ${rv.fecha_vencimiento || 'pronto'}. Renuévalo antes de presentar propuestas.</div>`;
       } else { rupAlert.innerHTML = ''; }
     }
+    pintarDocumentosExpediente(p.documentos);
     loadDocumentos(data.documentos);
   } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── [D27] Documentos del expediente ───────────────────────────────────────
+//
+// Los seis documentos que los dos pliegos medidos exigen como habilitante, más
+// la capacidad jurídica. Lo que resuelven: que el informe pueda decir «le falta
+// esto» en vez de «no sabemos», que es el paso 3 de la cadena del servicio.
+//
+// El tri-estado es lo esencial: '' (sin responder) NO es false. Un formulario
+// cuyo valor por defecto fuera «No» convertiría cada casilla sin marcar en un
+// hallazgo falso contra la empresa.
+const DOCS_EXPEDIENTE = ['rup', 'existencia_representacion', 'estados_financieros',
+                         'seguridad_social', 'documento_identidad', 'subcontratacion'];
+
+const _idDoc = (clave, campo) => `d-${clave.replace(/_/g, '-')}-${campo}`;
+
+/** Vuelca el bloque documental del perfil en el formulario. */
+function pintarDocumentosExpediente(docs) {
+  const d = docs || {};
+  for (const clave of DOCS_EXPEDIENTE) {
+    const doc = d[clave] || {};
+    setVal(_idDoc(clave, 'tiene'),
+           doc.tiene === true ? 'true' : doc.tiene === false ? 'false' : '');
+    setVal(_idDoc(clave, 'fecha'), doc.fecha_expedicion || '');
+  }
+  const cj = d.capacidad_juridica;
+  setVal('d-capacidad-juridica',
+         cj === true ? 'true' : cj === false ? 'false' : '');
+}
+
+/**
+ * Lee el formulario. Devuelve `null` en `tiene` cuando no se respondió: es la
+ * diferencia entre «no lo tiene» (hallazgo) y «no se le preguntó» (hueco
+ * nuestro), y aplastarla a false sería inventar un incumplimiento [I10].
+ */
+function buildDocumentosBody() {
+  const out = {};
+  for (const clave of DOCS_EXPEDIENTE) {
+    const v = val(_idDoc(clave, 'tiene'));
+    out[clave] = {
+      tiene: v === 'true' ? true : v === 'false' ? false : null,
+      fecha_expedicion: val(_idDoc(clave, 'fecha')) || null,
+    };
+  }
+  const cj = val('d-capacidad-juridica');
+  out.capacidad_juridica = cj === 'true' ? true : cj === 'false' ? false : null;
+  return out;
 }
 
 function buildPerfilBody() {
@@ -460,6 +508,7 @@ function buildPerfilBody() {
       codigos_unspsc:       val('p-unspsc'),
       participacion_minima: parseFloat(val('p-exp-part'))  || 30,
     },
+    documentos: buildDocumentosBody(),
   };
 }
 
@@ -482,6 +531,9 @@ async function _savePerfilImpl() {
 }
 
 document.getElementById('btn-save-perfil').addEventListener('click', savePerfil);
+// El mismo guardado: los documentos viajan dentro del cuerpo del perfil, y el
+// botón propio existe sólo para no obligar a subir a la pestaña Empresa.
+document.getElementById('btn-save-documentos')?.addEventListener('click', savePerfil);
 document.getElementById('btn-save-financiero').addEventListener('click', savePerfil);
 document.getElementById('btn-save-experiencia').addEventListener('click', savePerfil);
 

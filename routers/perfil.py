@@ -74,6 +74,29 @@ class PerfilBodySocial(BaseModel):
     poblacion_etnica: bool | None = None            # [TODO-FORM]
 
 
+class PerfilBodyDocumento(BaseModel):
+    """
+    [D27] Un documento del expediente tal como llega del formulario.
+
+    `tiene` es tri-estado y los tres valores son distintos: `None` es «no se
+    respondió», `False` es «no lo tiene» —un HALLAZGO que el informe reporta— y
+    `True` es «lo tiene». Aplastar `None` a `False` inventaría un
+    incumplimiento contra la empresa [I10].
+    """
+    tiene: bool | None = None
+    fecha_expedicion: str | None = None
+
+
+class PerfilBodyDocumentos(BaseModel):
+    rup: PerfilBodyDocumento = PerfilBodyDocumento()
+    existencia_representacion: PerfilBodyDocumento = PerfilBodyDocumento()
+    estados_financieros: PerfilBodyDocumento = PerfilBodyDocumento()
+    seguridad_social: PerfilBodyDocumento = PerfilBodyDocumento()
+    documento_identidad: PerfilBodyDocumento = PerfilBodyDocumento()
+    subcontratacion: PerfilBodyDocumento = PerfilBodyDocumento()
+    capacidad_juridica: bool | None = None
+
+
 class PerfilBody(BaseModel):
     # Identificación
     nombre: str = ""
@@ -93,6 +116,7 @@ class PerfilBody(BaseModel):
     juridico: PerfilBodyJuridico = PerfilBodyJuridico()
     experiencia: PerfilBodyExperiencia = PerfilBodyExperiencia()
     social: PerfilBodySocial = PerfilBodySocial()      # [TODO-FORM] sección nueva
+    documentos: PerfilBodyDocumentos = PerfilBodyDocumentos()  # [D27]
 
     def to_perfil_empresa(self) -> dict:
         """
@@ -104,6 +128,10 @@ class PerfilBody(BaseModel):
         jur = self.juridico.model_dump()
         exp = self.experiencia.model_dump()
         soc = self.social.model_dump()
+        docs = self.documentos.model_dump()
+        for clave, v in docs.items():
+            if isinstance(v, dict) and isinstance(v.get("fecha_expedicion"), str)                     and not v["fecha_expedicion"].strip():
+                v["fecha_expedicion"] = None
 
         # Normalizar strings vacíos → None en campos de fecha
         for d in (jur,):
@@ -124,6 +152,9 @@ class PerfilBody(BaseModel):
             "juridico": jur if any(v is not None for v in jur.values() if not isinstance(v, str)) else None,
             "experiencia": exp if any(v is not None for v in exp.values() if not isinstance(v, list)) else None,
             "social": soc if any(v is not None for v in soc.values()) else None,
+            # [D27] El bloque documental viaja entero. Las fechas vacías pasan a
+            # None por el mismo motivo que el resto: "" no es una fecha.
+            "documentos": docs,
         }
 
 

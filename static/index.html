@@ -285,6 +285,96 @@
 
       <!-- Tab Documentos -->
       <div class="tab-panel" id="tab-documentos">
+        <div class="card" style="margin-bottom:18px">
+          <div class="card-title">Documentos del expediente</div>
+          <p class="text-muted" style="font-size:.82rem;margin-bottom:6px">
+            Marca los que la empresa tiene hoy. <strong>Sin responder</strong> no es
+            lo mismo que <strong>No lo tiene</strong>: lo primero deja el requisito
+            sin evaluar, lo segundo es un hallazgo que el informe reporta.</p>
+          <p class="text-muted" style="font-size:.78rem;margin-bottom:14px">
+            La fecha de expedición sólo hace falta cuando el pliego exige vigencia
+            —por ejemplo, expedido hace menos de 30 días—. Sin ella, un documento
+            no se da por vigente.</p>
+          <div class="doc-check">
+            <div class="doc-check-nombre">RUP
+              <span class="doc-check-glosa">vigente y en firme</span></div>
+            <select id="d-rup-tiene" class="doc-check-select">
+              <option value="">Sin responder</option>
+              <option value="true">Sí, lo tiene</option>
+              <option value="false">No lo tiene</option>
+            </select>
+            <input type="date" id="d-rup-fecha"
+                   class="doc-check-fecha" title="Fecha de expedición" />
+          </div>
+          <div class="doc-check">
+            <div class="doc-check-nombre">Certificado de existencia y representación
+              <span class="doc-check-glosa">Cámara de Comercio</span></div>
+            <select id="d-existencia-representacion-tiene" class="doc-check-select">
+              <option value="">Sin responder</option>
+              <option value="true">Sí, lo tiene</option>
+              <option value="false">No lo tiene</option>
+            </select>
+            <input type="date" id="d-existencia-representacion-fecha"
+                   class="doc-check-fecha" title="Fecha de expedición" />
+          </div>
+          <div class="doc-check">
+            <div class="doc-check-nombre">Estados financieros
+              <span class="doc-check-glosa">del último ejercicio</span></div>
+            <select id="d-estados-financieros-tiene" class="doc-check-select">
+              <option value="">Sin responder</option>
+              <option value="true">Sí, lo tiene</option>
+              <option value="false">No lo tiene</option>
+            </select>
+            <input type="date" id="d-estados-financieros-fecha"
+                   class="doc-check-fecha" title="Fecha de expedición" />
+          </div>
+          <div class="doc-check">
+            <div class="doc-check-nombre">Certificación de seguridad social
+              <span class="doc-check-glosa">aportes al sistema</span></div>
+            <select id="d-seguridad-social-tiene" class="doc-check-select">
+              <option value="">Sin responder</option>
+              <option value="true">Sí, lo tiene</option>
+              <option value="false">No lo tiene</option>
+            </select>
+            <input type="date" id="d-seguridad-social-fecha"
+                   class="doc-check-fecha" title="Fecha de expedición" />
+          </div>
+          <div class="doc-check">
+            <div class="doc-check-nombre">Documento de identidad
+              <span class="doc-check-glosa">del representante legal</span></div>
+            <select id="d-documento-identidad-tiene" class="doc-check-select">
+              <option value="">Sin responder</option>
+              <option value="true">Sí, lo tiene</option>
+              <option value="false">No lo tiene</option>
+            </select>
+            <input type="date" id="d-documento-identidad-fecha"
+                   class="doc-check-fecha" title="Fecha de expedición" />
+          </div>
+          <div class="doc-check">
+            <div class="doc-check-nombre">Autorización para subcontratar
+              <span class="doc-check-glosa">del contrato principal</span></div>
+            <select id="d-subcontratacion-tiene" class="doc-check-select">
+              <option value="">Sin responder</option>
+              <option value="true">Sí, lo tiene</option>
+              <option value="false">No lo tiene</option>
+            </select>
+            <input type="date" id="d-subcontratacion-fecha"
+                   class="doc-check-fecha" title="Fecha de expedición" />
+          </div>
+          <hr class="thin" />
+          <div class="doc-check">
+            <div class="doc-check-nombre">Capacidad jurídica
+              <span class="doc-check-glosa">para presentar la oferta y celebrar el contrato</span></div>
+            <select id="d-capacidad-juridica" class="doc-check-select">
+              <option value="">Sin responder</option>
+              <option value="true">Sí</option>
+              <option value="false">No</option>
+            </select>
+            <span></span>
+          </div>
+          <button class="btn btn-primary" id="btn-save-documentos" style="margin-top:16px">Guardar documentos</button>
+          <span id="documentos-save-status" style="margin-left:12px;font-size:.82rem;color:var(--muted)"></span>
+        </div>
         <div class="card">
           <div class="card-title">Subir documento del cliente</div>
           <p class="text-muted" style="font-size:.82rem;margin-bottom:14px">Los documentos se indexan con IA y se usan para cruzar con requisitos del pliego (RAG documental).</p>

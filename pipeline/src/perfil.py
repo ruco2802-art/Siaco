@@ -14,9 +14,10 @@ Convención semántica — bloque jurídico:
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 # ─── Capacidad financiera ──────────────────────────────────────────────────
@@ -89,6 +90,115 @@ class PerfilJuridico(BaseModel):
     garantia_seriedad: bool | None = None
 
 
+# ─── Documentos [D27] ──────────────────────────────────────────────────────
+#
+# El paso 3 de la cadena del servicio —qué exige el pliego · si la empresa
+# cumple · **qué le falta** · si alcanza a conseguirlo— no existía. Medido en
+# Paicol: de los requisitos habilitantes documentales sin dato, **el 100% eran
+# «no preguntado»**. Ninguno decía «le falta esto»; todos decían «no sabemos».
+# El perfil no tenía campo para ellos, así que el sistema no podía producir ni
+# un hallazgo documental, que es justamente el valor del análisis.
+#
+# DOS REGLAS QUE ESTE BLOQUE NO PUEDE ROMPER:
+#
+# 1. **Cada campo responde SOLO lo que pregunta [D32].** «Tiene el certificado
+#    de existencia» NO responde «la sociedad dura más que el plazo del contrato
+#    más un año»; «está al día en seguridad social» NO responde «no tiene
+#    obligación de aportes por no tener personal a cargo». Si un requisito
+#    necesita un dato que el campo no contiene, se queda en `no_preguntado`.
+#    Inferirlo produciría un CUMPLE falso sobre un habilitante, que es el error
+#    más caro del sistema.
+#
+# 2. **`tiene` sin `fecha_expedicion` no alcanza cuando el pliego exige
+#    vigencia.** Varios requisitos piden documentos expedidos con menos de 30
+#    días. Con `tiene=True` y sin fecha, lo honesto es decir que falta la
+#    fecha, no dar por vigente el documento [I10].
+
+
+class Documento(BaseModel):
+    """
+    Un documento del expediente de la empresa.
+
+    `tiene` es la respuesta del cliente y los tres valores significan cosas
+    distintas, ninguna sustituible por otra:
+
+        None   no se le preguntó, o no respondió  -> `dato_faltante`
+        False  responde que NO lo tiene           -> `no_cumple`: HALLAZGO
+        True   responde que SÍ lo tiene           -> `cumple`, salvo vigencia
+
+    `fecha_expedicion` en ISO (`YYYY-MM-DD`). Va vacía mientras no se pregunte:
+    un documento sin fecha no se presume vigente.
+    """
+    tiene: bool | None = None
+    fecha_expedicion: str | None = None
+
+    def dias_desde_expedicion(self, referencia: date | None = None) -> int | None:
+        """
+        Días transcurridos desde la expedición, o None si no hay fecha o no es
+        una fecha válida. **Nunca lanza**: una fecha mal escrita por el cliente
+        no puede tumbar una evaluación, y devolver None deja el requisito en
+        `dato_faltante`, que es lo correcto.
+        """
+        if not self.fecha_expedicion:
+            return None
+        try:
+            expedido = date.fromisoformat(str(self.fecha_expedicion)[:10])
+        except (TypeError, ValueError):
+            return None
+        return (( referencia or date.today()) - expedido).days
+
+
+class PerfilDocumental(BaseModel):
+    """
+    Los documentos que los dos pliegos medidos (Paicol y Ternera) exigen como
+    requisito habilitante. Son los campos BÁSICOS del perfil: aparecen en
+    ambos, así que no son complementarios de un proceso concreto.
+
+    Lo que cada uno responde, y **sólo** eso:
+
+    - `rup` — que el RUP esté vigente y en firme. NO responde qué está
+      inscrito en él (experiencia, indicadores, condición Mipyme): eso son
+      otras preguntas sobre el mismo documento.
+    - `existencia_representacion` — que tenga el certificado. **NO responde
+      cuánto dura la sociedad**, que es lo que los dos pliegos preguntan de
+      verdad; para eso hace falta un campo de duración que todavía no existe.
+    - `estados_financieros` — que tenga los estados financieros del último
+      ejercicio. NO responde el valor de ningún indicador: ésos están en
+      `PerfilFinanciero`.
+    - `seguridad_social` — que tenga la certificación de pagos al sistema. **NO
+      responde** que esté exento de cotizar, ni que no tenga personal a cargo,
+      ni el régimen pensional del representante: son declaraciones distintas.
+    - `documento_identidad` — la cédula del representante legal.
+    - `subcontratacion` — que tenga autorización del contrato principal para
+      subcontratar. NO responde la obligación de informar subcontratos durante
+      la ejecución, que es una regla del contrato y no un documento.
+    """
+    rup: Documento = Field(default_factory=Documento)
+    existencia_representacion: Documento = Field(default_factory=Documento)
+    estados_financieros: Documento = Field(default_factory=Documento)
+    seguridad_social: Documento = Field(default_factory=Documento)
+    documento_identidad: Documento = Field(default_factory=Documento)
+    subcontratacion: Documento = Field(default_factory=Documento)
+
+    # Condición, no documento: la capacidad para obligarse. El pliego la exige
+    # en dos momentos —presentar la oferta y celebrar el contrato— y una sola
+    # respuesta cubre los dos.
+    capacidad_juridica: bool | None = None
+
+    def esta_vacio(self) -> bool:
+        """True si no se respondió nada: el bloque no aporta sobre `None`."""
+        return (self.capacidad_juridica is None
+                and all(getattr(self, c).tiene is None
+                        and getattr(self, c).fecha_expedicion is None
+                        for c in _CAMPOS_DOCUMENTO))
+
+
+_CAMPOS_DOCUMENTO: tuple[str, ...] = (
+    "rup", "existencia_representacion", "estados_financieros",
+    "seguridad_social", "documento_identidad", "subcontratacion",
+)
+
+
 # ─── Capacidad técnica ─────────────────────────────────────────────────────
 
 class PerfilTecnico(BaseModel):
@@ -110,6 +220,19 @@ class PerfilSocial(BaseModel):
 
 # ─── Perfil canónico ───────────────────────────────────────────────────────
 
+# De dónde viene cada documento en los perfiles anteriores a [D27]:
+# (campo booleano del bloque jurídico, campo de fecha o None si no se pedía).
+#
+# `existencia_representacion` viene de `camara_comercio` porque el certificado
+# de Cámara de Comercio ES el medio de prueba de la existencia y representación
+# legal — el catálogo los une en el mismo objeto.
+_LEGADO_A_DOCUMENTO: dict[str, tuple[str, str | None]] = {
+    "rup": ("rup_en_firme", "rup_fecha_expedicion"),
+    "existencia_representacion": ("camara_comercio", "camara_comercio_fecha"),
+    "seguridad_social": ("paz_y_salvo_seguridad_social", None),
+}
+
+
 class PerfilEmpresa(BaseModel):
     # Identificación
     nombre: str
@@ -127,6 +250,39 @@ class PerfilEmpresa(BaseModel):
     juridico: PerfilJuridico | None = None
     tecnico: PerfilTecnico | None = None
     social: PerfilSocial | None = None
+    # [D27] Los documentos. Bloque nuevo: los perfiles guardados antes no lo
+    # traen, y `cargar_perfil()` lo rellena desde los campos sueltos del bloque
+    # jurídico para que un perfil viejo no pierda lo que ya había respondido.
+    documentos: PerfilDocumental | None = None
+
+    @model_validator(mode="after")
+    def _migrar_documentos(self):
+        """
+        [D27] Rellena el bloque documental desde los campos sueltos del bloque
+        jurídico, que es donde vivían tres de los seis documentos antes de que
+        este bloque existiera. Un perfil guardado antes NO pierde lo que
+        respondió.
+
+        Va en el modelo y no en `cargar_perfil()` a propósito: si viviera en la
+        función, cualquier otro camino de construcción —`model_validate()`, un
+        test, un router que arme el perfil a mano— se saltaría la migración y
+        el mismo perfil daría veredictos distintos según cómo se hubiera
+        cargado. Ese fue exactamente el fallo al escribirlo.
+
+        Sólo rellena lo que el bloque nuevo deja vacío: si el cliente contestó
+        el formulario nuevo, su respuesta manda sobre el campo antiguo.
+        """
+        if self.juridico is None:
+            return self
+        docs = self.documentos or PerfilDocumental()
+        for destino, (campo_tiene, campo_fecha) in _LEGADO_A_DOCUMENTO.items():
+            doc = getattr(docs, destino)
+            if doc.tiene is None:
+                doc.tiene = getattr(self.juridico, campo_tiene, None)
+            if doc.fecha_expedicion is None and campo_fecha:
+                doc.fecha_expedicion = getattr(self.juridico, campo_fecha, None)
+        self.documentos = None if docs.esta_vacio() else docs
+        return self
 
 
 def cargar_perfil(data: dict) -> PerfilEmpresa:
@@ -138,8 +294,10 @@ def cargar_perfil(data: dict) -> PerfilEmpresa:
     Los campos desconocidos del dict se ignoran (migración progresiva).
     """
     try:
-        return PerfilEmpresa(**data)
+        perfil = PerfilEmpresa(**data)
     except ValidationError as exc:
         raise ValueError(
             f"Perfil de empresa inválido — corrígelo antes de continuar:\n{exc}"
         ) from exc
+
+    return perfil

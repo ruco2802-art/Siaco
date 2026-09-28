@@ -118,10 +118,11 @@ def test_un_concepto_que_el_perfil_si_captura_es_campo_sin_respuesta():
 def test_un_concepto_que_el_perfil_no_captura_es_hueco_nuestro():
     from src.perfil import PerfilEmpresa
     p = PerfilEmpresa.model_validate({"nombre": "X"})
-    # el perfil no tiene ningún campo para la cédula del representante legal
+    # [D27] El perfil tiene el certificado de existencia, pero los dos pliegos
+    # preguntan por la DURACIÓN de la sociedad, que ningún campo contesta.
     assert concepto.origen_dato_faltante(
-        _req("Fotocopia del documento de identificación del representante legal"),
-        p) == "no_preguntado"
+        _req("Duración de la persona jurídica no inferior al plazo del contrato",
+             categoria="juridico"), p) == "no_preguntado"
 
 
 def test_el_enrutado_por_objeto_alcanza_un_campo_que_la_categoria_escondia():
@@ -214,10 +215,11 @@ def test_el_enrutado_no_aplica_fuera_del_aspecto_que_el_campo_contesta():
     from src.perfil import PerfilEmpresa
     p = PerfilEmpresa.model_validate(
         {"nombre": "X", "juridico": {"rup_en_firme": True}})
-    # aspecto `vigencia`: el campo contesta la pregunta
-    assert _valor_por_objeto(
-        _req("RUP vigente y en firme antes del cierre",
-             categoria="experiencia"), p) is True
+    # aspecto `vigencia`: el campo contesta la pregunta. Devuelve el Documento
+    # entero, no el booleano, porque la fecha decide la vigencia [D27].
+    doc = _valor_por_objeto(
+        _req("RUP vigente y en firme antes del cierre", categoria="experiencia"), p)
+    assert doc is not _SIN_MAPA and doc.tiene is True
     # otro aspecto sobre el mismo objeto: la ruta NO se aplica
     assert _valor_por_objeto(
         _req("RUP en firme (acreditación condición Mipyme)",
@@ -305,3 +307,207 @@ def test_una_cita_sin_simbolos_que_no_verifica_si_hay_que_revisarla():
     from src.verifier import causa_no_verificada
     assert causa_no_verificada(
         "Los contratos aportados deben estar clasificados") == "texto_ausente"
+
+
+# ── 6 · [D27] Documentos: el paso 3 de la cadena ───────────────────────────
+
+def _perfil_doc(**docs):
+    from src.perfil import PerfilEmpresa
+    return PerfilEmpresa.model_validate({"nombre": "X", "documentos": docs})
+
+
+def _req_doc(nombre="RUP vigente y en firme antes del cierre",
+             categoria="experiencia", **extra):
+    return Requisito.model_validate(
+        {"nombre": nombre, "categoria": categoria, "criticidad": "habilitante",
+         "exigido_literal": "x", "fuente_numeral": "1", **extra})
+
+
+def test_el_sistema_ya_puede_producir_un_hallazgo_documental():
+    """
+    EL PUNTO DE [D27]. Antes de esto, `tiene=False` no existía como respuesta
+    posible: los 34 documentales de Paicol eran «no sabemos». Un cliente que
+    dice que NO tiene el RUP tiene que producir NO CUMPLE, que es el paso 3 de
+    la cadena y el valor del servicio.
+    """
+    from src.evaluator import _evaluar_item
+    r = _evaluar_item(_req_doc(), _perfil_doc(rup={"tiene": False}))
+    assert r["estado"] == "no_cumple"
+    assert "no cuenta con este documento" in r["motivo"]
+
+
+def test_no_haber_preguntado_sigue_siendo_distinto_de_no_tenerlo():
+    from src.evaluator import _evaluar_item
+    r = _evaluar_item(_req_doc(), _perfil_doc())
+    assert r["estado"] == "dato_faltante"
+
+
+def test_tenerlo_basta_cuando_el_pliego_no_exige_vigencia():
+    from src.evaluator import _evaluar_item
+    r = _evaluar_item(_req_doc(), _perfil_doc(rup={"tiene": True}))
+    assert r["estado"] == "cumple"
+
+
+def test_tenerlo_sin_fecha_no_es_cumplir_si_el_pliego_exige_vigencia():
+    """
+    [I10] Con `tiene=True` y sin fecha, dar por vigente el documento sería
+    presumir un dato que nadie dio. Falta la fecha, y eso se dice.
+    """
+    from src.evaluator import _evaluar_item
+    req = _req_doc("RUP en firme con vigencia máxima 30 días",
+                   valor_umbral=30, operador="<=", unidad="dias")
+    r = _evaluar_item(req, _perfil_doc(rup={"tiene": True}))
+    assert r["estado"] == "dato_faltante"
+    assert "fecha de expedición" in r["documento_requerido"]
+
+
+def test_lo_tiene_pero_vencido_se_distingue_de_lo_tiene_vigente():
+    from datetime import date
+
+    from src.evaluator import _evaluar_item
+    req = _req_doc("RUP en firme con vigencia máxima 30 días",
+                   valor_umbral=30, operador="<=", unidad="dias")
+    hoy = date(2026, 9, 28)
+
+    vigente = _evaluar_item(
+        req, _perfil_doc(rup={"tiene": True, "fecha_expedicion": "2026-09-10"}),
+        fecha_referencia=hoy)
+    assert vigente["estado"] == "cumple"
+    assert vigente["valor_empresa"] == 18
+
+    vencido = _evaluar_item(
+        req, _perfil_doc(rup={"tiene": True, "fecha_expedicion": "2026-06-01"}),
+        fecha_referencia=hoy)
+    assert vencido["estado"] == "no_cumple"
+    assert "expedido hace 119 días" in vencido["motivo"]
+    assert "admite hasta 30" in vencido["motivo"]
+
+
+def test_sin_vigencia_exigida_no_se_inventa_un_plazo_de_30_dias():
+    """
+    [I10] Un pliego que no fija vigencia no la exige. Suponer 30 días
+    inventaría un incumplimiento sobre un documento que está bien.
+    """
+    from datetime import date
+
+    from src.evaluator import _evaluar_item
+    r = _evaluar_item(
+        _req_doc(),  # sin valor_umbral
+        _perfil_doc(rup={"tiene": True, "fecha_expedicion": "2019-01-01"}),
+        fecha_referencia=date(2026, 9, 28))
+    assert r["estado"] == "cumple"
+
+
+def test_una_fecha_mal_escrita_no_tumba_la_evaluacion():
+    from src.evaluator import _evaluar_item
+    req = _req_doc("RUP con vigencia 30 días", valor_umbral=30,
+                   operador="<=", unidad="dias")
+    r = _evaluar_item(
+        req, _perfil_doc(rup={"tiene": True, "fecha_expedicion": "ayer"}))
+    assert r["estado"] == "dato_faltante"
+
+
+def test_la_migracion_funciona_por_cualquier_camino_de_construccion():
+    """
+    La migración vivía en `cargar_perfil()` y cualquier otro camino la perdía:
+    el mismo perfil daba veredictos distintos según cómo se hubiera cargado.
+    Ahora es un validador del modelo.
+    """
+    from src.perfil import PerfilEmpresa, cargar_perfil
+    data = {"nombre": "X", "juridico": {"rup_en_firme": True,
+                                        "rup_fecha_expedicion": "2026-09-10"}}
+    for construir in (PerfilEmpresa.model_validate, cargar_perfil,
+                      lambda d: PerfilEmpresa(**d)):
+        p = construir(data)
+        assert p.documentos.rup.tiene is True, construir
+        assert p.documentos.rup.fecha_expedicion == "2026-09-10"
+
+
+def test_lo_que_el_cliente_responde_manda_sobre_el_campo_antiguo():
+    from src.perfil import PerfilEmpresa
+    p = PerfilEmpresa.model_validate({
+        "nombre": "X",
+        "juridico": {"rup_en_firme": False},
+        "documentos": {"rup": {"tiene": True}},
+    })
+    assert p.documentos.rup.tiene is True
+
+
+def test_seguridad_social_no_contesta_lo_que_paicol_pregunta():
+    """
+    [D32] Los tres requisitos de seguridad social de Paicol son de persona
+    natural —pensión de vejez, exención de cotización, no obligación de
+    aportes— y «está al día en seguridad social» no contesta ninguno. Tienen
+    que quedarse en `no_preguntado`, no producir un CUMPLE falso.
+    """
+    from src.evaluator import CAMPO_POR_OBJETO
+    for objeto in ("SEGURIDAD_SOCIAL", "EXISTENCIA_REPRESENTACION",
+                   "SUBCONTRATACION"):
+        assert objeto not in CAMPO_POR_OBJETO, (
+            f"{objeto} entró al mapa: comprueba que el campo contesta la "
+            "pregunta del pliego con CUALQUIER aspecto, no que suene parecido")
+
+
+def test_un_criterio_de_puntaje_clasificado_como_habilitante_no_se_evalua():
+    """
+    [D20] «Mayor puntaje CF por pasivo corriente igual a cero» está en el
+    capítulo de habilitantes, pero su literal dice «la Entidad debe otorgar el
+    mayor puntaje». Evaluarlo daba un CUMPLE falso sobre algo que el informe
+    presenta como habilitante. No se excluye en silencio: va a revisión manual,
+    que es tarea del operador y sale en el informe.
+    """
+    from src.evaluator import _evaluar_item
+    r = _evaluar_item(
+        _req_doc("Mayor puntaje CF por pasivo corriente igual a cero",
+                 categoria="financiero"),
+        _perfil_doc(estados_financieros={"tiene": True}))
+    assert r["estado"] == "revisar_manual"
+    assert "reparte puntaje" in r["motivo"]
+
+
+def test_los_pliegos_dicen_dias_calendario_no_dias():
+    """
+    Paicol y Ternera escriben «días calendario» en los cinco requisitos de
+    vigencia que tienen. Comparar contra {"dias"} dejaba la vigencia muerta.
+    """
+    from src.evaluator import _dias_de_vigencia_exigidos
+    r = _req_doc(valor_umbral=30, operador="<=", unidad="días calendario")
+    assert _dias_de_vigencia_exigidos(r) == 30
+
+
+def test_los_dias_habiles_no_se_convierten_a_calendario():
+    """
+    [I10] Convertirlos exige saber los festivos del periodo. Estimarlos
+    produciría un vencimiento inventado; sin calendario, no se evalúa.
+    """
+    from src.evaluator import _dias_de_vigencia_exigidos
+    assert _dias_de_vigencia_exigidos(
+        _req_doc(valor_umbral=5, operador="<=", unidad="días hábiles")) is None
+
+
+def test_un_plazo_en_anos_no_es_antiguedad_de_documento():
+    """«Vigencia amparo estabilidad de obra: 5 años» es cobertura de garantía."""
+    from src.evaluator import _dias_de_vigencia_exigidos
+    assert _dias_de_vigencia_exigidos(
+        _req_doc(valor_umbral=5, operador=">=", unidad="años")) is None
+
+
+def test_el_formulario_conserva_el_tri_estado_hasta_el_perfil():
+    """
+    El viaje completo: formulario -> PerfilBody -> PerfilEmpresa. Si alguna
+    capa aplasta `None` a `False`, cada casilla sin marcar se convierte en un
+    hallazgo falso contra la empresa. El puente de la API es donde más fácil
+    se pierde, porque ahí los campos vacíos ya se normalizan a None.
+    """
+    js = (Path(__file__).resolve().parents[2] / "static" / "app.js").read_text("utf-8")
+    assert "buildDocumentosBody" in js, "el formulario no envía el bloque documental"
+    assert "v === 'true' ? true : v === 'false' ? false : null" in js, (
+        "app.js dejó de distinguir «sin responder» de «no lo tiene»")
+
+    html = (Path(__file__).resolve().parents[2] / "static" / "index.html").read_text("utf-8")
+    assert '<option value="">Sin responder</option>' in html, (
+        "la opción vacía tiene que ser la PRIMERA de cada select: un formulario "
+        "cuyo valor por defecto sea «No» inventa incumplimientos")
+    for clave in ("d-rup-tiene", "d-rup-fecha", "d-capacidad-juridica",
+                  "d-documento-identidad-tiene"):
+        assert f'id="{clave}"' in html, f"falta el campo {clave} en el formulario"

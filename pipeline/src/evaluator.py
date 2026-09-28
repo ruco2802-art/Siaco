@@ -9,6 +9,7 @@ src/evaluator.py — contraste perfil ↔ requisitos, Python puro.
 from __future__ import annotations
 
 import unicodedata
+from datetime import date
 from typing import Any, Callable
 
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from .estados import motivo_unidad_discordante, unidad_discordante
 from .extractor import Requisito
 from .perfil import (  # esquema canónico — única fuente de verdad
+    Documento,
     PerfilEmpresa,
     PerfilFinanciero,
     PerfilExperiencia,
@@ -221,6 +223,11 @@ def _jur(nombre: str):
     return lambda p: getattr(p.juridico, nombre) if p.juridico else None
 
 
+def _doc(nombre: str):
+    """Devuelve el `Documento` entero, no su booleano: la fecha decide vigencia."""
+    return lambda p: getattr(p.documentos, nombre) if p.documentos else None
+
+
 # MEDIDO antes de fijar este mapa. Una primera versión cubría 30 objetos y
 # resolvía 11 de los 38 sin dato de Paicol — pero **9 de esos 11 eran falsos**:
 #
@@ -266,12 +273,39 @@ CAMPO_POR_OBJETO: dict[str, Callable[[PerfilEmpresa], Any]] = {
                                          if p.financiero else None),
     "CAPACIDAD_ORGANIZACIONAL": lambda p: (_ingresos_recientes(p.financiero)
                                            if p.financiero else None),
-    "RUP": _jur("rup_en_firme"),
+    "RUP": _doc("rup"),
+    # [D27] Los documentos. Cada uno responde SOLO lo suyo — ver el aspecto
+    # exigido abajo, que es lo que impide que «tiene el certificado» conteste
+    # «la sociedad dura lo suficiente» [D32].
+    "ESTADOS_FINANCIEROS": _doc("estados_financieros"),
+    "DOCUMENTO_IDENTIDAD": _doc("documento_identidad"),
+    "CAPACIDAD_JURIDICA": lambda p: (p.documentos.capacidad_juridica
+                                     if p.documentos else None),
 }
 
 # Objetos cuyo campo sólo contesta UN aspecto concreto. Fuera de él, el mapa no
 # se aplica: «RUP en firme (acreditación condición Mipyme)» pregunta por la
 # inscripción como Mipyme, no por que el RUP esté en firme.
+#
+# [D27] `EXISTENCIA_REPRESENTACION`, `SEGURIDAD_SOCIAL` y `SUBCONTRATACION`
+# **no están** en el mapa aunque el perfil ya tenga su campo, y no es un olvido:
+# en los dos pliegos medidos, lo que se pregunta sobre ellos NO es lo que el
+# campo contesta.
+#
+#   EXISTENCIA_REPRESENTACION  «duración de la persona jurídica no inferior al
+#                              plazo del contrato más un año» — tener el
+#                              certificado no dice cuánto dura la sociedad.
+#                              Haría falta un campo `duracion_sociedad_hasta`.
+#   SEGURIDAD_SOCIAL           «pensión de vejez o indemnización sustitutiva»,
+#                              «exención de cotización», «declaración de no
+#                              obligación de aportes por no tener personal» —
+#                              estar al día no contesta ninguna de las tres.
+#   SUBCONTRATACION            «obligación de informar subcontratos a la
+#                              Entidad» — es una regla del contrato durante la
+#                              ejecución, no un documento que se aporte.
+#
+# Se quedan en `no_preguntado`, que pide confirmar y no afirma nada. Añadirlas
+# daría un CUMPLE falso sobre un requisito habilitante [D32].
 ASPECTO_REQUERIDO: dict[str, frozenset[str]] = {
     "RUP": frozenset({"vigencia"}),
 }
@@ -383,10 +417,105 @@ def campo_del_perfil(req: Requisito) -> str | None:
     return None
 
 
+# Unidades en las que un pliego expresa la vigencia de un documento.
+#
+# Los pliegos NO escriben «días» a secas: Paicol y Ternera dicen «días
+# calendario» en los cinco requisitos de vigencia que tienen. Una comparación
+# exacta contra {"dias"} no disparaba nunca y la vigencia quedaba muerta.
+#
+# «días hábiles» queda FUERA a propósito [I10]: convertirlos a calendario
+# exige saber los festivos del periodo, y estimarlos produciría un vencimiento
+# inventado. Sin calendario laboral, el requisito se queda sin evaluar, que es
+# lo correcto.
+_UNIDADES_DIAS = {"dia", "dias", "dia calendario", "dias calendario",
+                  "dia(s) calendario", "dias calendarios"}
+_UNIDADES_MESES = {"mes", "meses", "mes calendario", "meses calendario"}
+
+
+def _dias_de_vigencia_exigidos(req: Requisito) -> int | None:
+    """
+    Días máximos de antigüedad que el pliego admite para el documento, o None
+    si no lo dice. **Sin valor por defecto** [I10]: un pliego que no fija
+    vigencia no la exige, y suponer 30 días inventaría un incumplimiento.
+
+    Devuelve None también cuando la unidad es en días HÁBILES o en años: los
+    hábiles necesitan calendario de festivos, y un plazo en años casi siempre
+    es la cobertura de una garantía, no la antigüedad de un documento.
+    """
+    if req.valor_umbral is None:
+        return None
+    unidad = _strip_accents(str(req.unidad or "").strip().lower())
+    if "habil" in unidad:
+        return None
+    if unidad in _UNIDADES_DIAS:
+        return int(req.valor_umbral)
+    if unidad in _UNIDADES_MESES:
+        return int(req.valor_umbral * 30)
+    return None
+
+
+def _evaluar_documento(
+    req: Requisito,
+    doc: "Documento",
+    fecha_referencia: date | None = None,
+) -> dict:
+    """
+    Veredicto de un documento. Las cuatro salidas y por qué cada una:
+
+        tiene is None   -> `dato_faltante`   no se le preguntó o no respondió
+        tiene is False  -> `no_cumple`       **HALLAZGO**: el análisis confirma
+                                             que le falta. Es el paso 3 de la
+                                             cadena y el valor del servicio.
+        tiene, sin vigencia exigida -> `cumple`
+        tiene, con vigencia exigida -> depende de la fecha:
+            sin fecha   -> `dato_faltante`   lo tiene, pero no se sabe si
+                                             sigue vigente. Decir `cumple` aquí
+                                             sería presumir vigencia [I10]
+            vencido     -> `no_cumple`       con los días de exceso
+            vigente     -> `cumple`
+    """
+    base = {
+        "requisito": req.nombre,
+        "categoria": req.categoria,
+        "fuente_numeral": req.fuente_numeral,
+    }
+    if doc.tiene is None:
+        return {**base, "estado": "dato_faltante",
+                "documento_requerido": req.nombre}
+    if doc.tiene is False:
+        return {**base, "estado": "no_cumple",
+                "valor_empresa": False,
+                "motivo": "la empresa indica que no cuenta con este documento"}
+
+    dias_max = _dias_de_vigencia_exigidos(req)
+    if dias_max is None:
+        return {**base, "estado": "cumple", "valor_empresa": True}
+
+    dias = doc.dias_desde_expedicion(fecha_referencia)
+    if dias is None:
+        return {
+            **base, "estado": "dato_faltante", "valor_empresa": True,
+            "documento_requerido": (
+                f"fecha de expedición de «{req.nombre}» — el pliego lo exige "
+                f"con menos de {dias_max} días"),
+        }
+    if dias > dias_max:
+        return {
+            **base, "estado": "no_cumple", "valor_empresa": dias,
+            "umbral": dias_max, "operador": "<=", "unidad": "dias",
+            "diferencia": dias_max - dias,
+            "motivo": (f"expedido hace {dias} días; el pliego admite hasta "
+                       f"{dias_max}"),
+        }
+    return {**base, "estado": "cumple", "valor_empresa": dias,
+            "umbral": dias_max, "operador": "<=", "unidad": "dias"}
+
+
 def _evaluar_item(
     req: Requisito,
     perfil: PerfilEmpresa,
     valores_pliego: dict | None = None,
+    fecha_referencia: date | None = None,
 ) -> dict:
     """
     Evalúa un requisito individual.
@@ -395,6 +524,35 @@ def _evaluar_item(
     Si es None, usa el lookup por nombre (comportamiento anterior).
     [I6] Python puro: ninguna lógica de evaluación sale del LLM.
     """
+    # [D20/D32] Un requisito cuyo propio NOMBRE anuncia que reparte puntaje no
+    # es un habilitante, por mucho que el extractor lo haya clasificado así
+    # —«Mayor puntaje CF por pasivo corriente igual a cero» está en el capítulo
+    # de habilitantes y su `evidencia_criticidad` es `capitulo_habilitantes`,
+    # pero el literal dice «la Entidad debe otorgar el mayor puntaje»—.
+    #
+    # NO se excluye en silencio: va a `revisar_manual`, que es tarea del
+    # OPERADOR y aparece en el informe. Esconderlo dejaría el defecto de
+    # clasificación invisible; evaluarlo producía un CUMPLE falso sobre lo que
+    # el informe presenta como habilitante.
+    #
+    # Medido sobre los dos pliegos: 1 de 184 habilitantes, y es el caso. Se
+    # probaron antes dos contenciones más amplias y ninguna separa — el
+    # `aspecto` del catálogo mezcla los tres requisitos de estados financieros,
+    # y buscar «la Entidad» como sujeto de la obligación acierta 2 de 4 porque
+    # «la Entidad rechazará» suele ser la CONSECUENCIA de un deber del
+    # proponente, no un deber de la entidad.
+    if (req.criticidad == "habilitante"
+            and "puntaje" in _strip_accents((req.nombre or "").lower())):
+        return {
+            "requisito": req.nombre,
+            "categoria": req.categoria,
+            "fuente_numeral": req.fuente_numeral,
+            "estado": "revisar_manual",
+            "motivo": ("el nombre del requisito anuncia que reparte puntaje, "
+                       "pero viene clasificado como habilitante: decide cuál "
+                       "de las dos cosas es antes de usarlo"),
+        }
+
     # Respeta aplica_a
     if req.aplica_a == "mipyme" and not perfil.es_mipyme:
         return {"requisito": req.nombre, "estado": "no_aplica", "categoria": req.categoria}
@@ -517,6 +675,15 @@ def _evaluar_item(
             "unidad": req.unidad,
         }
 
+    # [D27] Un documento se evalúa distinto de un número o un booleano: son dos
+    # preguntas encadenadas —¿lo tiene? y ¿sigue vigente?— y el umbral del
+    # pliego, cuando lo hay, se aplica a la ANTIGÜEDAD de la fecha, no a un
+    # valor del perfil. Va ANTES de la comparación numérica porque si no, un
+    # requisito con vigencia («RUP con máximo 30 días») intentaba `float()`
+    # sobre el documento y salía por la rama de «valor no numérico».
+    if isinstance(valor, Documento):
+        return _evaluar_documento(req, valor, fecha_referencia)
+
     # Comparación numérica
     if req.valor_umbral is not None and req.operador is not None:
         try:
@@ -601,6 +768,7 @@ def evaluar_empresa(
     perfil: PerfilEmpresa,
     requisitos: list[Requisito],
     valores_pliego: dict | None = None,
+    fecha_referencia: date | None = None,
 ) -> dict:
     """
     Contrastá el perfil con los requisitos habilitantes.
@@ -611,6 +779,13 @@ def evaluar_empresa(
     Retorna un dict con: empresa, es_mipyme, score_global, veredicto,
     desglose (por categoría), items (detalle de cada requisito).
     """
+    # [D27] La vigencia de un documento se mide contra una fecha, así que el
+    # mismo perfil y el mismo pliego pueden dar veredictos distintos en días
+    # distintos. La fecha usada viaja en el resultado para que el informe la
+    # declare: un CUMPLE por vigencia sin decir contra qué fecha se midió no es
+    # reproducible.
+    fecha_referencia = fecha_referencia or date.today()
+
     # ── Determinar rango × variante ANTES de evaluar ──────────────────────
     # Si no se puede determinar → "umbral_no_determinable" (nunca un default).
     # Un pliego contiene hasta 4 juegos: (rango_1|rango_2) × (mipyme|no_mipyme).
@@ -628,7 +803,8 @@ def evaluar_empresa(
 
     for req in requisitos:
         cat = req.categoria if req.categoria in _PESOS else "documental"
-        por_cat[cat].append(_evaluar_item(req, perfil, valores_pliego))
+        por_cat[cat].append(
+            _evaluar_item(req, perfil, valores_pliego, fecha_referencia))
 
     desglose: dict[str, dict] = {}
     score_num = 0.0
@@ -681,6 +857,9 @@ def evaluar_empresa(
         "veredicto": veredicto,
         "desglose": desglose,
         "items": todos_items,
+        # [D27] Contra qué fecha se midió la vigencia de los documentos. Sin
+        # esto, un CUMPLE por vigencia no es reproducible.
+        "fecha_referencia": fecha_referencia.isoformat(),
         "_formula": "score = Σ(score_cat × peso_cat) / Σ(peso_cat con datos)",
         "_pesos": _PESOS,
     }
