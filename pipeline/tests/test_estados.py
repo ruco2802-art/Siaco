@@ -28,6 +28,8 @@ from pipeline.src.estados import (  # noqa: E402
 )
 
 _APP_JS = _ROOT / "static" / "app.js"
+
+from pipeline.src.estados import _OPERADORES as _OPERADORES_PY  # noqa: E402
 _REPORTES = _ROOT / "routers" / "reportes.py"
 
 
@@ -526,3 +528,26 @@ def test_una_unidad_desconocida_no_se_singulariza_a_ciegas():
 def test_una_alternativa_que_no_es_dict_no_rompe():
     fila = {"estado": "revisar_manual", "umbrales_alternativos": ["texto suelto"]}
     assert texto_detalle(fila) == "alternativas: texto suelto"
+
+
+def test_app_js_replica_la_redaccion_de_alternativas():
+    """
+    Las dos copias tienen que redactar igual. `umbrales_alternativos` es una
+    lista de OBJETOS: `join(' / ')` producía «[object Object]» en pantalla y
+    `str(dict)` volcaba el diccionario entero en el PDF de producción
+    (`routers/reportes.py`). El mismo defecto en cuatro sitios a la vez.
+    """
+    js = _APP_JS.read_text("utf-8")
+    assert "function textoAlternativa(" in js, (
+        "app.js no tiene la réplica de `_texto_alternativa()`: la pantalla "
+        "volverá a mostrar [object Object]")
+    assert "v.join(' / ')" not in js, (
+        "app.js vuelve a unir los objetos sin redactarlos")
+    assert "it.alts.map(a => `<li>${_esc(textoAlternativa(a))}" in js, (
+        "el panel de revisión manual imprime la alternativa sin redactar")
+    # los dos mapas, con los mismos pares
+    for clave, valor in _OPERADORES_PY.items():
+        assert f"'{clave}': '" in js or f'"{clave}": "' in js, (
+            f"app.js no traduce el operador {clave!r}")
+    assert "contratos: 'contrato'" in js, "app.js no singulariza «contratos»"
+    assert "meses: 'mes'" in js, "app.js no singulariza «meses»"

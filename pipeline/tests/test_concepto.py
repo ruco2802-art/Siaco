@@ -118,9 +118,42 @@ def test_un_concepto_que_el_perfil_si_captura_es_campo_sin_respuesta():
 def test_un_concepto_que_el_perfil_no_captura_es_hueco_nuestro():
     from src.perfil import PerfilEmpresa
     p = PerfilEmpresa.model_validate({"nombre": "X"})
-    # el formulario no pregunta por la clasificación UNSPSC de los contratos
+    # el perfil no tiene ningún campo para la cédula del representante legal
     assert concepto.origen_dato_faltante(
-        _req("Clasificación UNSPSC de contratos"), p) == "no_preguntado"
+        _req("Fotocopia del documento de identificación del representante legal"),
+        p) == "no_preguntado"
+
+
+def test_el_enrutado_por_objeto_alcanza_un_campo_que_la_categoria_escondia():
+    """
+    [D30] «RUP vigente y en firme» viene con `categoria='experiencia'`, así que
+    el mapa por palabra clave no llegaba a `PerfilJuridico.rup_en_firme`. El
+    dato EXISTE: no es un campo que falte, es uno que desperdiciábamos.
+    """
+    from src.perfil import PerfilEmpresa
+    p = PerfilEmpresa.model_validate({"nombre": "X"})
+    origen = concepto.origen_dato_faltante(
+        _req("RUP vigente y en firme antes del cierre", categoria="experiencia"), p)
+    assert origen == "campo_sin_respuesta", (
+        "el enrutado por objeto no alcanza el RUP clasificado como experiencia")
+
+
+def test_el_enrutado_no_usa_el_objeto_que_sale_solo_del_literal():
+    """
+    [D29] `identificar_objeto()` cae al literal cuando el nombre no basta, y
+    ahí acierta por proximidad. Eso vale para AGRUPAR —un grupo mal formado se
+    revisa— pero no para un VEREDICTO, que se le presenta al cliente como un
+    hecho sobre su empresa.
+    """
+    from src.catalogo import identificar_objeto, objeto_para_evaluar
+    req = _req("Requisitos habilitantes en proponentes plurales por cada integrante",
+               categoria="juridico")
+    req.exigido_literal = (
+        "los requisitos habilitantes serán acreditados por cada uno de los "
+        "integrantes de la figura asociativa; índice de endeudamiento y "
+        "liquidez se calculan de forma ponderada")
+    assert identificar_objeto(req) == "ENDEUDAMIENTO"   # el de agrupar
+    assert objeto_para_evaluar(req) is None             # el de evaluar, no
 
 
 def test_la_frase_al_cliente_no_menciona_el_formulario():
@@ -168,3 +201,53 @@ def test_como_json_expone_los_umbrales_nulos():
     assert j["umbral_sin_concepto"] is None
     assert j["frase_cliente"] == concepto.FRASE_CLIENTE
     assert len(j["escala"]) == 4
+
+
+def test_el_enrutado_no_aplica_fuera_del_aspecto_que_el_campo_contesta():
+    """
+    `rup_en_firme` contesta «el RUP está vigente y en firme». NO contesta «el
+    RUP acredita la condición de Mipyme», que es otra pregunta sobre el mismo
+    documento. Un mapa objeto->campo sin este filtro producía 9 CUMPLE falsos
+    de 11 en Paicol — medido antes de recortarlo.
+    """
+    from src.evaluator import _SIN_MAPA, _valor_por_objeto
+    from src.perfil import PerfilEmpresa
+    p = PerfilEmpresa.model_validate(
+        {"nombre": "X", "juridico": {"rup_en_firme": True}})
+    # aspecto `vigencia`: el campo contesta la pregunta
+    assert _valor_por_objeto(
+        _req("RUP vigente y en firme antes del cierre",
+             categoria="experiencia"), p) is True
+    # otro aspecto sobre el mismo objeto: la ruta NO se aplica
+    assert _valor_por_objeto(
+        _req("RUP en firme (acreditación condición Mipyme)",
+             categoria="juridico"), p) is _SIN_MAPA
+
+
+def test_un_numero_sin_umbral_no_puede_salir_como_cumple():
+    """
+    `bool(1.85)` es True, así que «Índice de liquidez» salía CUMPLE sin haber
+    comparado 1,85 contra nada. 11 de los 47 habilitantes en CUMPLE de Paicol
+    venían de ahí. El dato de la empresa existe; falta el umbral del pliego,
+    que es lectura y por tanto tarea del OPERADOR.
+    """
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    p = PerfilEmpresa.model_validate(
+        {"nombre": "X", "financiero": {"indice_liquidez": 1.85}})
+    r = _evaluar_item(_req("Índice de liquidez", categoria="financiero"), p)
+    assert r["estado"] == "revisar_manual", (
+        f"un número sin umbral volvió a salir como {r['estado']}")
+    assert r["valor_empresa"] == 1.85
+    assert "no dejó un umbral" in r["motivo"]
+
+
+def test_un_booleano_sin_umbral_si_es_una_respuesta():
+    """El perfil afirma que lo tiene o que no: eso se puede sostener."""
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    si = PerfilEmpresa.model_validate({"nombre": "X", "juridico": {"sin_redam": True}})
+    no = PerfilEmpresa.model_validate({"nombre": "X", "juridico": {"sin_redam": False}})
+    req = _req("Certificado REDAM", categoria="juridico")
+    assert _evaluar_item(req, si)["estado"] == "cumple"
+    assert _evaluar_item(req, no)["estado"] == "no_cumple"

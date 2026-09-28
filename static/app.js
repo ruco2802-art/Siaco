@@ -128,8 +128,41 @@ function detalleEstado(fila) {
     return n < 0 ? `faltan ${Math.abs(n)}` : `excede en ${n}`;
   }
   if (campo === 'documento_requerido')   return `aporta: ${v}`;
-  if (campo === 'umbrales_alternativos') return 'alternativas: ' + (Array.isArray(v) ? v.join(' / ') : v);
+  if (campo === 'umbrales_alternativos') {
+    return 'alternativas: ' + (Array.isArray(v) ? v : [v]).map(textoAlternativa).join(' / ');
+  }
   return String(v);
+}
+
+// Los operadores tal como se leen, no como se codifican.
+const _OPERADORES = { '<=': '≤', '>=': '≥', '<': '<', '>': '>', '==': '=', '=': '=' };
+
+// Singular de las unidades que el extractor produce. Sólo las conocidas: una
+// regla general («quitar la -s final») convertiría «meses» en «mese».
+const _SINGULAR = { contratos: 'contrato', meses: 'mes', 'años': 'año',
+                    anos: 'año', veces: 'vez', 'días': 'día',
+                    dias: 'día', puntos: 'punto' };
+
+/**
+ * Redacta UNA alternativa de umbral. Réplica de `_texto_alternativa()` de
+ * `pipeline/src/estados.py`; `test_estados.py` compara las dos y falla si
+ * divergen.
+ *
+ * `umbrales_alternativos` es una lista de OBJETOS, así que un `join(' / ')`
+ * producía «[object Object] / [object Object]» en pantalla y el volcado del
+ * diccionario entero en el PDF. Defecto real, corregido el 2026-09-27.
+ */
+function textoAlternativa(alt) {
+  if (alt === null || typeof alt !== 'object') return String(alt);
+  const op = _OPERADORES[String(alt.operador || '')] ?? (alt.operador || '');
+  // En Python hay que convertir 5.0 -> 5; en JS no existe esa distinción.
+  const n = alt.valor_umbral;
+  let unidad = alt.unidad;
+  if (n === 1 && unidad) unidad = _SINGULAR[String(unidad).toLowerCase()] || unidad;
+  const cifra = [op, n, unidad].filter(x => x !== null && x !== undefined && x !== '').join(' ');
+  const nombre = alt.nombre;
+  if (nombre && cifra) return `${cifra} — ${nombre}`;
+  return cifra || String(nombre || '');
 }
 
 // ════════════ UTILIDADES BASE ════════════
@@ -1352,7 +1385,7 @@ function _panelRevisionManual(r) {
           <span class="req-numeral">${_esc(it.numeral || '—')}</span>
           <span class="req-nombre">${_esc(it.nombre)}</span>
         </div>
-        <ul class="alts">${it.alts.map(a => `<li>${_esc(a)}</li>`).join('')}</ul>
+        <ul class="alts">${it.alts.map(a => `<li>${_esc(textoAlternativa(a))}</li>`).join('')}</ul>
         ${it.motivo ? `<p class="revision-motivo">${_esc(it.motivo)}</p>` : ''}
       </li>`).join('')}
     </ul>

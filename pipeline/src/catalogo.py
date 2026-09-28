@@ -143,6 +143,37 @@ def identificar_objeto(req: Requisito, cat: Catalogo | None = None) -> str | Non
     return _buscar(normalizar(literal), cat.objetos)
 
 
+def objeto_para_evaluar(req: Requisito, cat: Catalogo | None = None) -> str | None:
+    """
+    Objeto del requisito **sólo cuando casa por NOMBRE**, para enrutar la
+    evaluación al campo del perfil. None si sólo casa por el literal.
+
+    Por qué es más estricto que `identificar_objeto()`: esa función cae al
+    literal cuando el nombre no basta, y ahí el acierto es de proximidad, no
+    de identidad. Sirve para AGRUPAR —un grupo mal formado se ve y se revisa—
+    pero no para producir un VEREDICTO, donde el error se presenta al cliente
+    como un hecho sobre su empresa.
+
+    Medido el 2026-09-27 sobre los dos errores conocidos del catálogo [D29]:
+
+        «Requisitos habilitantes en proponentes plurales por cada integrante»
+            por nombre  -> None          por literal -> ENDEUDAMIENTO
+        «Condiciones técnicas no inferiores a las del Anexo Técnico»
+            por nombre  -> None          por literal -> PERSONAL_PROFESIONAL
+
+    Los dos casos que [D30] necesita resolver casan por nombre:
+
+        «RUP vigente y en firme antes del cierre del proceso»         -> RUP
+        «RUP vigente y en firme para evaluación financiera…»          -> RUP
+
+    Así que la regla arregla D30 y a la vez impide que D29 llegue a un
+    veredicto. Ante la duda, None: un `dato_faltante` pide confirmación y no
+    afirma nada; un veredicto derivado de un objeto equivocado sí.
+    """
+    cat = cat or cargar_catalogo()
+    return _buscar(normalizar(req.nombre), cat.objetos)
+
+
 def identificar_aspecto(req: Requisito, cat: Catalogo | None = None) -> str | None:
     """Aspecto del requisito (qué se exige sobre el objeto), o None."""
     cat = cat or cargar_catalogo()

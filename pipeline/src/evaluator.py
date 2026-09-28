@@ -188,12 +188,128 @@ _MAP_TEC: list[tuple[str, Callable[[Any], Any]]] = [
 ]
 
 
+# ── [D30] Enrutado por OBJETO del catálogo ─────────────────────────────────
+#
+# El lookup por palabra clave elige el mapa según `req.categoria`, así que un
+# requisito de RUP que el extractor clasificó como `experiencia` no alcanzaba
+# `PerfilJuridico.rup_en_firme`, **que existe**. No es un campo que falte: es
+# un dato que ya tenemos y desperdiciábamos.
+#
+# La solución NO es añadir palabras clave. Se midió: buscando los 38 sin dato
+# de Paicol contra los cuatro mapas ignorando la categoría, 10 daban
+# coincidencia y 8 eran espurias (`plazo`→`antiguedad_meses`,
+# `certificacion`→`certificaciones`). Habría producido datos inventados con
+# apariencia de medidos.
+#
+# El objeto del catálogo identifica el concepto con independencia de la
+# categoría que le puso el extractor y de cómo lo redacte el pliego. Se usa
+# `objeto_para_evaluar()`, que sólo acepta la coincidencia por NOMBRE: ver
+# allí por qué el respaldo por literal no puede decidir un veredicto [D29].
+#
+# El mapa cubre SÓLO los objetos que corresponden a UN campo sin ambigüedad.
+# `EXPERIENCIA_CONTRATOS` cubre valor acumulado, individual y número de
+# contratos a la vez, así que no entra y lo sigue resolviendo el mapa por
+# palabra clave, que sí los distingue. Lo que no está aquí no se adivina.
+_SIN_MAPA = object()
+
+
+def _fin(nombre: str):
+    return lambda p: getattr(p.financiero, nombre) if p.financiero else None
+
+
+def _jur(nombre: str):
+    return lambda p: getattr(p.juridico, nombre) if p.juridico else None
+
+
+# MEDIDO antes de fijar este mapa. Una primera versión cubría 30 objetos y
+# resolvía 11 de los 38 sin dato de Paicol — pero **9 de esos 11 eran falsos**:
+#
+#   EXISTENCIA_REPRESENTACION -> camara_comercio
+#       «Duración de la persona jurídica no inferior al plazo del contrato más
+#        un año». Tener el certificado NO dice cuánto dura la sociedad.
+#   SEGURIDAD_SOCIAL -> paz_y_salvo_seguridad_social
+#       «Declaración juramentada de no obligación de aportes». Estar al día NO
+#        es lo mismo que no tener obligación.
+#   UNSPSC -> bool(codigos_unspsc)
+#       «los contratos deben estar clasificados en ALGUNO DE ESTOS códigos».
+#        Tener códigos no dice que sean ésos.
+#
+# Se probó filtrar por el `aspecto` del catálogo y NO separa: bajo
+# `acreditacion` conviven «Certificación de pagos de seguridad social» —que el
+# campo sí contesta— y la declaración juramentada —que no—. Los dos ejes del
+# catálogo sirven para AGRUPAR, donde una bolsa mal formada se revisa; no para
+# decidir un veredicto que se le presenta al cliente como un hecho.
+#
+# Así que el mapa queda en lo que se puede defender uno por uno:
+#
+#   - los INDICADORES NUMÉRICOS, donde el campo es literalmente la magnitud
+#     que el pliego compara, y donde un emparejamiento equivocado sale como
+#     número disparatado y no como un CUMPLE silencioso;
+#   - el RUP **sólo en el aspecto `vigencia`**, que es el caso que [D30]
+#     demuestra: «RUP vigente y en firme» clasificado como `experiencia` o
+#     `financiero` no alcanzaba `rup_en_firme`, que existe.
+#
+# Lo que no está aquí sigue en `dato_faltante`, que pide confirmación y no
+# afirma nada. Añadir un objeto exige comprobar que el campo contesta la
+# pregunta con cualquier aspecto, no que suene parecido.
+CAMPO_POR_OBJETO: dict[str, Callable[[PerfilEmpresa], Any]] = {
+    "LIQUIDEZ": _fin("indice_liquidez"),
+    "ENDEUDAMIENTO": _fin("indice_endeudamiento"),
+    "COBERTURA_INTERESES": _fin("cobertura_intereses"),
+    "CAPITAL_TRABAJO": _fin("capital_trabajo"),
+    "PATRIMONIO": _fin("patrimonio_neto"),
+    "RENTABILIDAD_ACTIVO": lambda p: (p.financiero.rentabilidad_activo
+                                      or p.financiero.roa) if p.financiero else None,
+    "RENTABILIDAD_PATRIMONIO": lambda p: (p.financiero.rentabilidad_patrimonio
+                                          or p.financiero.roe) if p.financiero else None,
+    "INGRESOS_OPERACIONALES": lambda p: (_ingresos_recientes(p.financiero)
+                                         if p.financiero else None),
+    "CAPACIDAD_ORGANIZACIONAL": lambda p: (_ingresos_recientes(p.financiero)
+                                           if p.financiero else None),
+    "RUP": _jur("rup_en_firme"),
+}
+
+# Objetos cuyo campo sólo contesta UN aspecto concreto. Fuera de él, el mapa no
+# se aplica: «RUP en firme (acreditación condición Mipyme)» pregunta por la
+# inscripción como Mipyme, no por que el RUP esté en firme.
+ASPECTO_REQUERIDO: dict[str, frozenset[str]] = {
+    "RUP": frozenset({"vigencia"}),
+}
+
+
+def _valor_por_objeto(req: Requisito, perfil: PerfilEmpresa) -> Any:
+    """
+    Valor del perfil por el objeto del catálogo, o `_SIN_MAPA` si no hay ruta.
+
+    `_SIN_MAPA` y `None` NO son lo mismo: sin ruta se prueba el mapa por
+    palabra clave; con ruta y valor `None` el campo existe y está vacío, y
+    caer al mapa reintroduciría la ambigüedad que este enrutado elimina.
+    """
+    try:
+        from .catalogo import identificar_aspecto, objeto_para_evaluar
+        objeto = objeto_para_evaluar(req)
+        fn = CAMPO_POR_OBJETO.get(objeto or "")
+        if fn is None:
+            return _SIN_MAPA
+        permitidos = ASPECTO_REQUERIDO.get(objeto or "")
+        if permitidos is not None and identificar_aspecto(req) not in permitidos:
+            return _SIN_MAPA
+    except Exception:
+        return _SIN_MAPA   # sin catálogo utilizable, el camino de antes
+    return fn(perfil)
+
+
 def _valor_perfil(req: Requisito, perfil: PerfilEmpresa) -> Any:
     """
     Busca el valor del perfil correspondiente al requisito.
     Retorna None cuando el dato falta — NUNCA retorna 0 como sustituto.
     (Bug real: perfiles sin bloque financiero producían "NO VIABLE — datos en cero".)
     """
+    # [D30] El objeto del catálogo primero: no depende de `categoria`.
+    por_objeto = _valor_por_objeto(req, perfil)
+    if por_objeto is not _SIN_MAPA:
+        return por_objeto
+
     nombre_l = req.nombre.lower()
     # sin tildes — permite que keywords sin acento capturen nombres con acento y viceversa
     nombre_n = _strip_accents(nombre_l)
@@ -255,6 +371,11 @@ def campo_del_perfil(req: Requisito) -> str | None:
     casos llegan al evaluador como `valor is None` y producen el mismo
     `dato_faltante`; esta función es la que los separa.
     """
+    # El MISMO filtro que usa el enrutado, o el origen se reportaría mal: un
+    # requisito que la ruta no aplica no es «campo sin responder».
+    if _valor_por_objeto(req, PerfilEmpresa(nombre="")) is not _SIN_MAPA:
+        from .catalogo import objeto_para_evaluar
+        return f"objeto:{objeto_para_evaluar(req)}"
     nombre_n = _strip_accents(req.nombre.lower())
     for kw, _fn in MAPAS_POR_CATEGORIA.get(req.categoria or "", []):
         if _strip_accents(kw) in nombre_n:
@@ -417,16 +538,32 @@ def _evaluar_item(
             "unidad": req.unidad,
         }
 
-    # Sin umbral numérico: check de presencia/booleano
+    # Sin umbral numérico.
+    #
+    # Un BOOLEANO sí es una respuesta: el perfil afirma que tiene el documento
+    # o que no lo tiene, y eso se puede sostener.
+    #
+    # Un NÚMERO, no. `bool(1.85)` es True, así que «Índice de liquidez» salía
+    # como CUMPLE sin haber comparado 1,85 contra nada: el umbral del pliego no
+    # se extrajo. Medido en Paicol el 2026-09-27: **11 de los 47 habilitantes
+    # en CUMPLE venían de aquí**, y el informe se los presentaba al cliente
+    # como requisitos satisfechos. El dato de la empresa existe; lo que falta
+    # es el umbral, que es lectura del pliego y por tanto tarea del OPERADOR.
     if isinstance(valor, bool):
-        cumple = valor
-    else:
-        cumple = bool(valor)
+        return {
+            "requisito": req.nombre,
+            "estado": "cumple" if valor else "no_cumple",
+            "categoria": req.categoria,
+            "valor_empresa": valor,
+        }
     return {
         "requisito": req.nombre,
-        "estado": "cumple" if cumple else "no_cumple",
+        "estado": "revisar_manual",
         "categoria": req.categoria,
         "valor_empresa": valor,
+        "motivo": (f"la empresa registra {valor}, pero el pliego no dejó un "
+                   "umbral numérico extraíble contra el que compararlo: hay que "
+                   "leer el numeral"),
     }
 
 
