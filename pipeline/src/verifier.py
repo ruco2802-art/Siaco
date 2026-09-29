@@ -35,12 +35,59 @@ _SYMBOL_MAP = str.maketrans({
 })
 
 
+# Lo que el markdown añade y el pliego impreso no tiene. Comparar sin quitarlo
+# hace fallar citas correctas [D36]. Medido sobre los dos pliegos: de 8 citas
+# marcadas «no verificadas», 5 fallaban por esto.
+_RX_IMAGEN = re.compile(r"!\[[^\]]*\]\([^)]*\)")          # ![](_page_46_picture_0.jpeg)
+_RX_ETIQUETA = re.compile(r"</?[a-z][a-z0-9]{0,9}\s*/?>", re.I)  # <sup>, </sub>
+_RX_ENFASIS = re.compile(r"\*+|`+|~~|_{2,}")                   # **negrita**, `code`
+# Marcador de lista AL PRINCIPIO DE LÍNEA: «- », «# », «j. », «IV. », «a) ».
+# Sólo al principio: «j.» en medio de una frase es texto, no marcador.
+# El «+» final permite marcadores ANIDADOS: el markdown produce «- j. el
+# porcentaje…» y quitar sólo el guion dejaba la «j.» dentro del texto, que es
+# justo el caso que hacía fallar una de las ocho citas.
+_RX_VINETA = re.compile(
+    r"^[ \t]*(?:(?:[-*+>#]+|\(?[a-zA-Z0-9]{1,4}[.)])[ \t]+)+", re.M)
+
+
+def _sin_markup(texto: str) -> str:
+    """
+    Quita lo que pone el markdown y no está en el pliego: marcadores de
+    imagen, etiquetas HTML, énfasis, tuberías de tabla y viñetas de lista.
+
+    No toca el contenido: un guion dentro de una palabra o un punto en mitad
+    de una frase se conservan.
+    """
+    texto = _RX_IMAGEN.sub(" ", texto)
+    texto = _RX_ETIQUETA.sub(" ", texto)
+    texto = _RX_VINETA.sub(" ", texto)
+    texto = _RX_ENFASIS.sub(" ", texto)
+    return texto.replace("|", " ")
+
+
 def _norm(texto: str) -> str:
-    """Minúsculas, sin tildes/diacríticos, símbolos matemáticos normalizados, espacios colapsados."""
-    texto = texto.translate(_SYMBOL_MAP)
+    """Minúsculas, sin tildes/diacríticos, símbolos y markup normalizados, espacios colapsados."""
+    texto = _sin_markup(texto).translate(_SYMBOL_MAP)
     nfkd = unicodedata.normalize("NFKD", texto.lower())
     sin_acc = "".join(c for c in nfkd if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", sin_acc).strip()
+
+
+def _coincide(literal: str, fuente: str) -> bool:
+    """
+    Si la cita está en el fuente, admitiendo **un solo punto final sobrante**.
+
+    El extractor cierra la frase con un punto que el pliego no siempre tiene:
+    medido, 3 de las 8 citas no verificadas coincidían en 296 de 297, 248 de
+    249 y 239 de 240 caracteres, y lo único que sobraba era ese punto.
+
+    La tolerancia es EXACTAMENTE esa y no «los últimos caracteres»: una cita
+    que difiera en la última palabra tiene que seguir fallando, porque una
+    palabra cambiada al final puede invertir el sentido de un requisito.
+    """
+    if literal in fuente:
+        return True
+    return literal.endswith(".") and literal[:-1] in fuente
 
 
 # ─── API pública ───────────────────────────────────────────────────────────
@@ -74,7 +121,7 @@ def verificar_citas(
                 req.estado_verificacion = "no_verificada"
             continue
         lit_norm = _norm(req.exigido_literal)
-        req.cita_verificada = lit_norm in md_norm
+        req.cita_verificada = _coincide(lit_norm, md_norm)
         if not req.cita_verificada:
             frag60 = lit_norm[:60]
             req.cita_verificada_parcial = len(frag60) >= 15 and frag60 in md_norm
@@ -101,10 +148,40 @@ SIMBOLOS_TRANSFORMABLES = "≥≤∗×÷−–—≠≈±·º°‰′″“”�
 _RX_SIMBOLO = re.compile(f"[{SIMBOLOS_TRANSFORMABLES}]")
 
 
-def causa_no_verificada(literal: str | None) -> str:
+# Una cita que omite un pasaje con «...» NO es literal, y el informe promete
+# en su sección 2 que lo es [The Full-Citation Rule]. Presentarla como textual
+# hace que el documento se contradiga a sí mismo.
+_RX_ELISION = re.compile(r"\.{3}|…|\[\s*\.{3}\s*\]|\[\s*…\s*\]")
+
+
+def cita_elidida(literal: str | None) -> bool:
     """
-    Separa las dos razones por las que una cita no verifica, que tienen
-    consecuencias opuestas.
+    Si la cita omite un pasaje intermedio. Medido: 1 de 8 —«cualquier
+    interesado**...** advierte que se dejó de incluir», donde el pliego dice
+    «cualquier interesado, durante el traslado del informe de evaluación, o la
+    entidad, en uso de la potestad verificadora, advierte…»—.
+
+    No es una cita falsa: es una cita abreviada presentada como literal. La
+    causa raíz es el prompt de extracción y se corrige con [D20] y [D25];
+    mientras tanto el informe tiene que decirlo en vez de callarlo.
+    """
+    return bool(_RX_ELISION.search(literal or ""))
+
+
+def causa_no_verificada(literal: str | None, parcial: bool = False) -> str:
+    """
+    Separa las CUATRO razones por las que una cita no verifica. Tienen
+    consecuencias distintas y el informe las redacta distinto [D36]:
+
+    - `cita_elidida`            SE SEÑALA junto al requisito. La cita omite un
+                                pasaje y el informe promete que es literal.
+    - `simbolo_transformado`    va a trazabilidad, sin alarma. La cita es
+                                correcta; falla la comparación.
+    - `artefacto_de_extraccion` va a trazabilidad, sin alarma. El arranque de
+                                la cita sí está en el documento: lo que falla
+                                es nuestro proceso, no el texto.
+    - `texto_ausente`           SE SEÑALA. Ni el arranque aparece: puede ser
+                                un error de extracción de verdad.
 
     - `simbolo_transformado` — el literal trae un símbolo que el PDF convirtió
       al extraerse. **La cita es correcta; lo que falla es la comparación.**
@@ -119,8 +196,11 @@ def causa_no_verificada(literal: str | None) -> str:
     largas en cuatro más) y **2 de texto ausente**, que son las que hay que
     revisar a mano.
     """
-    return ("simbolo_transformado" if _RX_SIMBOLO.search(literal or "")
-            else "texto_ausente")
+    if cita_elidida(literal):
+        return "cita_elidida"
+    if _RX_SIMBOLO.search(literal or ""):
+        return "simbolo_transformado"
+    return "artefacto_de_extraccion" if parcial else "texto_ausente"
 
 
 def tasa_verificacion(resultado: ResultadoExtraccion) -> float:

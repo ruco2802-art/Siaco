@@ -848,3 +848,70 @@ def test_el_manual_del_cce_es_doctrina_y_no_se_puede_citar(indice):
     assert manual["norma"] not in {
         d["norma"] for d in documentos_citables("obra_publica", "educacion", indice)
     }
+
+
+# ─── [D36] El verificador deja de fallar por artefactos nuestros ────────────
+
+def test_el_verificador_limpia_lo_que_pone_el_markdown():
+    """
+    De 8 citas marcadas «no verificadas», 5 fallaban por markup, marcadores de
+    imagen o viñetas que el pliego impreso no tiene. Medido: re-verificando los
+    fragmentos crudos, Paicol pasa de 23 a 18 y Ternera de 65 a 31.
+    """
+    from pipeline.src.verifier import _norm
+    fuente = _norm("texto **importante** con ![](_page_46_picture_0.jpeg) imagen\n"
+                   "- j. el porcentaje de participación en el valor ejecutado")
+    assert "jpeg" not in fuente
+    assert "**" not in fuente
+    assert fuente.startswith("texto importante con imagen")
+    assert "j. el porcentaje" not in fuente, "la viñeta anidada sigue dentro"
+
+
+def test_la_limpieza_no_se_come_contenido_legitimo():
+    """Un año, un decimal o un guion interno no son marcadores."""
+    from pipeline.src.verifier import _norm
+    assert _norm("2026 fue el año") == "2026 fue el ano"
+    assert _norm("el índice 1.85 es suficiente") == "el indice 1.85 es suficiente"
+    # el guion INTERNO de una palabra no es un marcador de lista
+    assert _norm("sub-contratación permitida") == "sub-contratacion permitida"
+
+
+def test_se_tolera_un_punto_final_sobrante_y_nada_mas():
+    """
+    3 de las 8 coincidían en 296 de 297, 248 de 249 y 239 de 240 caracteres, y
+    lo único que sobraba era el punto con el que el extractor cierra la frase.
+
+    La tolerancia es EXACTAMENTE esa: una cita que difiera en la última
+    palabra tiene que seguir fallando, porque una palabra cambiada al final
+    puede invertir el sentido de un requisito.
+    """
+    from pipeline.src.verifier import _coincide
+    fuente = "el proponente debera acreditar su capacidad juridica"
+    assert _coincide("el proponente debera acreditar su capacidad juridica.", fuente)
+    assert _coincide("el proponente debera acreditar su capacidad juridica", fuente)
+    # una palabra distinta al final NO pasa
+    assert not _coincide("el proponente debera acreditar su capacidad tecnica", fuente)
+    # dos puntos tampoco: la tolerancia no es «los últimos caracteres»
+    assert not _coincide("el proponente debera acreditar su capacidad juridica..", fuente)
+
+
+def test_una_cita_con_elipsis_se_detecta_y_no_pasa_por_literal():
+    """
+    [The Full-Citation Rule] El informe promete en su sección 2 que la cita es
+    textual. Una que omite un pasaje con «...» hace que el documento se
+    contradiga a sí mismo. Ternera tiene 9.
+    """
+    from pipeline.src.verifier import causa_no_verificada, cita_elidida
+    assert cita_elidida("cualquier interesado... advierte que se dejó")
+    assert cita_elidida("cualquier interesado… advierte")
+    assert cita_elidida("el texto [...] continúa")
+    assert not cita_elidida("el índice 1.85 y el 0.42 son suficientes")
+    # la elisión manda sobre las demás causas: es la que se le señala al cliente
+    assert causa_no_verificada("x ≥ y ... z", parcial=True) == "cita_elidida"
+
+
+def test_las_cuatro_causas_se_separan_por_a_quien_alarman():
+    from pipeline.src.verifier import causa_no_verificada
+    assert causa_no_verificada("valor ≥ 100") == "simbolo_transformado"
+    assert causa_no_verificada("texto normal", parcial=True) == "artefacto_de_extraccion"
+    assert causa_no_verificada("texto normal", parcial=False) == "texto_ausente"
