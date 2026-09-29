@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Router de perfil de cliente — SIACO v3.0"""
 import json
+import os
 import logging
 from pathlib import Path
 from typing import Optional
@@ -205,22 +206,62 @@ def _load_perfil(cid: str) -> dict:
     return {}
 
 
-def _save_perfil(cid: str, datos: dict):
+def _ruta_perfil_pipeline(cid: str) -> Path:
     """
-    Guarda el perfil:
-    1. En caché /tmp (rápido para la sesión actual).
-    2. En Supabase Storage (persiste entre deploys).
+    Donde el PIPELINE busca el perfil: `clientes/{cid}.json`.
+
+    Es el primer sitio que mira `evaluator.cargar_perfil_por_cid()`. NO es
+    `clientes/{cid}/perfil.json`, que guarda otra cosa —el perfil de la
+    sesión: cliente_id, plan, contacto— y lo lee el login.
+    """
+    return Path(f"./clientes/{cid}.json")
+
+
+def _hay_supabase() -> bool:
+    return bool(os.environ.get("SUPABASE_URL")
+                and (os.environ.get("SUPABASE_KEY")
+                     or os.environ.get("SUPABASE_SERVICE_KEY")))
+
+
+def _save_perfil(cid: str, datos: dict) -> str | None:
+    """
+    Guarda el perfil en los tres sitios que lo necesitan y devuelve un aviso
+    si algo quedó a medias.
+
+    1. Caché local — rápido para la sesión actual.
+    2. **`clientes/{cid}.json` — donde lo lee el PIPELINE.** Sin esto, editar
+       el perfil en la interfaz no cambiaba nada del análisis: la interfaz
+       escribía en un sitio y el evaluador leía otro, así que el veredicto no
+       se movía al cambiar un dato. Dos almacenes para el mismo perfil es la
+       misma divergencia de [G1-bis].
+    3. Supabase Storage — persiste entre despliegues.
+
+    **Sin Supabase configurado NO falla**: guarda en disco y devuelve un
+    aviso. Antes lanzaba HTTP 500, así que en local no se podía guardar el
+    perfil en absoluto. El aviso NO es opcional [principio 2: ningún fallo
+    silencioso]: quien opera tiene que saber que ese perfil no sobrevive a un
+    redespliegue.
     """
     cache = _cache_perfil(cid)
     cache.parent.mkdir(parents=True, exist_ok=True)
     with open(cache, "w", encoding="utf-8") as f:
         json.dump(datos, f, ensure_ascii=False, indent=2)
 
+    ruta_pipeline = _ruta_perfil_pipeline(cid)
+    ruta_pipeline.parent.mkdir(parents=True, exist_ok=True)
+    with open(ruta_pipeline, "w", encoding="utf-8") as f:
+        json.dump(datos, f, ensure_ascii=False, indent=2)
+
+    if not _hay_supabase():
+        logger.warning("[PERFIL] Supabase sin configurar: perfil de '%s' "
+                       "guardado sólo en disco local", cid)
+        return ("Guardado en este equipo. Supabase no está configurado, así "
+                "que este perfil no sobrevive a un redespliegue.")
+
     try:
         from supabase_client import sb_upload
         sb_upload(_sb_perfil_path(cid), cache.read_bytes(), "application/json")
     except RuntimeError as exc:
-        # RuntimeError = variables de entorno faltantes o bucket inexistente
         msg = str(exc)
         logger.error("[PERFIL] Supabase config error: %s", msg)
         raise HTTPException(status_code=500, detail=f"Supabase: {msg[:300]}")
@@ -231,6 +272,7 @@ def _save_perfil(cid: str, datos: dict):
             status_code=500,
             detail=f"Error al guardar en la nube: {msg[:300]}",
         )
+    return None
 
 
 # ── Endpoints ──────────────────────────────────────
@@ -283,8 +325,10 @@ def update_perfil(body: PerfilBody, authorization: str = Header(None)):
         if campo in existente:
             nuevo[campo] = existente[campo]
 
-    _save_perfil(cid, nuevo)
-    return {"ok": True, "cliente_id": cid}
+    aviso = _save_perfil(cid, nuevo)
+    # El aviso viaja a la respuesta, no sólo al log [principio 2]: quien opera
+    # tiene que enterarse de que el perfil quedó sólo en este equipo.
+    return {"ok": True, "cliente_id": cid, **({"aviso": aviso} if aviso else {})}
 
 
 @router.post("/perfil/documento")

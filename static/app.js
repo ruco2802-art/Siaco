@@ -524,10 +524,18 @@ async function savePerfil() {
 }
 async function _savePerfilImpl() {
   try {
-    await apiJson('/api/perfil', { method: 'PUT', body: JSON.stringify(buildPerfilBody()) });
-    toast('Perfil guardado correctamente', 'success');
+    const r = await apiJson('/api/perfil', { method: 'PUT', body: JSON.stringify(buildPerfilBody()) });
+    // El servidor avisa cuando el perfil quedó sólo en este equipo (sin
+    // Supabase configurado). Un aviso que se queda en el log no protege a
+    // nadie: quien guarda tiene que saber que no sobrevive a un redespliegue.
+    toast(r && r.aviso ? r.aviso : 'Perfil guardado correctamente',
+          r && r.aviso ? 'info' : 'success');
     const st = document.getElementById('perfil-save-status');
-    if (st) st.textContent = '✓ Guardado ' + new Date().toLocaleTimeString('es-CO');
+    if (st) {
+      st.textContent = (r && r.aviso ? '⚠ Guardado sólo en este equipo · '
+                                     : '✓ Guardado ') +
+                       new Date().toLocaleTimeString('es-CO');
+    }
     loadPerfil();
   } catch (err) { toast(err.message, 'error'); }
 }
