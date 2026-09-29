@@ -1354,11 +1354,16 @@ function filtrarCriticidad(crit) {
 }
 
 /** Panel de requisitos con cita: filtro, contador y lista. */
+// SHA del pliego del análisis en pantalla: lo necesita la re-evaluación sin
+// costo para saber qué artefactos reutilizar.
+let _SHA_ANALISIS = '';
+
 function _panelRequisitos(r) {
   const reqs = r.requisitos_con_cita || [];
   if (!reqs.length) return '';
   _REQS = reqs;
   _FILTRO_CRIT = 'habilitante';
+  _SHA_ANALISIS = r.pliego_sha256 || r.sha256 || '';
 
   const cuenta = _ORDEN_CRIT.reduce((acc, k) => {
     acc[k] = reqs.filter(x => (x.criticidad || 'indeterminado') === k).length;
@@ -1391,7 +1396,52 @@ function _panelRequisitos(r) {
     <div class="filtros-crit" role="group" aria-label="Filtrar por criticidad">${botones}</div>
     <ul class="req-lista" id="req-lista"></ul>
     <p class="empty-state" id="req-vacio" hidden>Ningún requisito en esta categoría.</p>
+    ${_SHA_ANALISIS ? `<div class="reeval-barra">
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-reevaluar"
+        onclick="reevaluarConPerfil()">Re-evaluar con el perfil actual</button>
+      <span class="reeval-nota" id="reeval-nota">Sin costo: reutiliza el análisis
+        guardado del pliego y sólo recalcula el contraste con tu perfil.</span>
+    </div>` : ''}
   </div>`;
+}
+
+/**
+ * Re-evalúa el perfil contra el pliego ya analizado. NO gasta API: el servidor
+ * reutiliza los artefactos guardados y sólo corre el evaluador, que es Python
+ * puro. Existe para poder cambiar un dato del perfil y ver moverse el veredicto
+ * sin pagar los agentes de redacción cada vez.
+ */
+async function reevaluarConPerfil() {
+  const btn = document.getElementById('btn-reevaluar');
+  const nota = document.getElementById('reeval-nota');
+  if (!_SHA_ANALISIS) { toast('Este análisis no trae el identificador del pliego', 'error'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Re-evaluando…'; }
+  try {
+    const d = await apiJson('/api/auditoria/reevaluar', {
+      method: 'POST',
+      body: JSON.stringify({ sha256: _SHA_ANALISIS }),
+    });
+    const porNombre = new Map((d.requisitos || []).map(x => [x.nombre, x]));
+    // Se repintan los estados sobre la misma lista: el análisis de fondo no
+    // cambió, sólo el contraste con el perfil.
+    _REQS = _REQS.map(req => {
+      const n = porNombre.get(req.nombre);
+      return n ? { ...req, estado: n.estado, _detalle_reeval: n.detalle || n.motivo } : req;
+    });
+    pintarRequisitos();
+    const c = d.conteo_estados || {};
+    const resumen = Object.entries(c)
+      .map(([k, v]) => `${v} ${presentacionEstado(k).etiqueta.toLowerCase()}`).join(' · ');
+    if (nota) {
+      nota.textContent = `${d.total_habilitantes} habilitantes — ${resumen}` +
+        (d.fecha_referencia ? ` · vigencias medidas al ${d.fecha_referencia}` : '');
+    }
+    toast('Re-evaluado sin costo', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-evaluar con el perfil actual'; }
+  }
 }
 
 /** Causales de rechazo explícitas: lo que responde "¿me pueden sacar?". */

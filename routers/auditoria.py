@@ -6,6 +6,7 @@ import threading
 import uuid
 
 import anthropic
+from pydantic import BaseModel
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Header, UploadFile, File, Form
 
 import os
@@ -522,6 +523,10 @@ def _construir_resultado(
 
         # ── Campos nuevos del pipeline (se conservan junto a los heredados) ───
         "fuente_analisis":     "pipeline",
+        # El sha identifica los artefactos guardados: sin él, la interfaz no
+        # puede pedir una re-evaluación sin costo contra este mismo pliego.
+        "pliego_sha256":       (artefactos.metadatos_parser or {}).get("sha256")
+                               or artefactos.pliego_id,
         "cobertura_pliego":    evaluacion.get("cobertura_global", 0.0),
         "veredicto_evaluador": veredicto,
         "desglose_evaluador":  evaluacion.get("desglose", {}),
@@ -886,6 +891,108 @@ async def analizar_pliego(
 
 
 # ── GET /api/auditoria/estado/{job_id} ────────────
+# ── POST /api/auditoria/reevaluar ─────────────────────────────────────────────
+
+class ReevaluarBody(BaseModel):
+    sha256: str
+
+
+@router.post("/auditoria/reevaluar")
+def reevaluar_pliego(body: ReevaluarBody, authorization: str = Header(None)):
+    """
+    Vuelve a evaluar el perfil del cliente contra un pliego YA analizado.
+
+    **NO GASTA API Y NO TARDA.** Reutiliza los artefactos guardados —parseo,
+    chunks y extracción, que son lo único caro— y corre únicamente
+    `evaluar_empresa()`, que es Python puro [I6]. Tampoco llama a los agentes
+    de redacción: no reescribe el concepto, sólo recalcula los estados.
+
+    PARA QUÉ. El análisis completo cuesta API cada vez, aunque el pliego esté
+    en caché, porque los dos agentes de redacción vuelven a correr. Eso hace
+    imposible enseñar en vivo cómo se mueve un veredicto al cambiar un dato
+    del perfil. Con esto, cambiar el capital de trabajo o marcar un documento
+    como no disponible y ver el efecto es gratis e inmediato.
+
+    Devuelve los requisitos con su estado nuevo y el conteo por estado, para
+    que la interfaz pueda repintar sin volver a pedir el análisis entero.
+    """
+    from routers.auth import require_auth
+    sesion = require_auth(authorization)
+    cid = _cliente_id(sesion)
+    if not cid:
+        raise HTTPException(status_code=401, detail="Sesión sin cliente asociado.")
+
+    from pipeline.src.artefactos import obtener_artefactos
+    artefactos = obtener_artefactos(body.sha256)
+    if artefactos is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ese pliego no está analizado todavía. Analízalo una vez y "
+                   "después podrás re-evaluarlo cuantas veces quieras sin costo.",
+        )
+
+    from pipeline.src.estados import etiqueta, texto_detalle
+    from pipeline.src.evaluator import cargar_perfil_por_cid, evaluar_empresa
+    from pipeline.src.extractor import Requisito as _Requisito
+
+    perfil_obj = cargar_perfil_por_cid(cid)
+    if perfil_obj is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay perfil guardado para '{cid}'. Complétalo en Mi Perfil.",
+        )
+
+    reqs = [_Requisito.model_validate(r) for r in artefactos.requisitos]
+    habilitantes = [r for r in reqs if r.criticidad == "habilitante"]
+    # Misma salvaguarda que el análisis completo: cero habilitantes significa
+    # que la clasificación no corrió, y evaluar sobre cero reporta "viable"
+    # sin haber verificado nada.
+    if reqs and not habilitantes:
+        raise HTTPException(
+            status_code=409,
+            detail="Los requisitos de este pliego no están clasificados; la "
+                   "re-evaluación no puede determinar habilitación.",
+        )
+
+    evaluacion = evaluar_empresa(perfil_obj, habilitantes)
+    items = {i.get("requisito"): i for i in evaluacion.get("items", [])}
+
+    filas = []
+    conteo: dict[str, int] = {}
+    for r in habilitantes:
+        it = items.get(r.nombre) or {}
+        est = it.get("estado", "dato_faltante")
+        conteo[est] = conteo.get(est, 0) + 1
+        filas.append({
+            "nombre":          r.nombre,
+            "fuente_numeral":  r.fuente_numeral,
+            "categoria":       r.categoria,
+            "estado":          est,
+            "etiqueta":        etiqueta(est),
+            "detalle":         texto_detalle({**r.model_dump(), **it}),
+            "motivo":          it.get("motivo", ""),
+            "valor_empresa":   it.get("valor_empresa"),
+            "umbral":          it.get("umbral"),
+            "operador":        it.get("operador"),
+            "unidad":          it.get("unidad", ""),
+        })
+
+    return {
+        "sha256":            body.sha256,
+        "empresa":           evaluacion.get("empresa", ""),
+        "veredicto":         evaluacion.get("veredicto", ""),
+        "score_global":      evaluacion.get("score_global"),
+        "cobertura_global":  evaluacion.get("cobertura_global", 0.0),
+        "fecha_referencia":  evaluacion.get("fecha_referencia", ""),
+        "total_habilitantes": len(habilitantes),
+        "conteo_estados":    conteo,
+        "requisitos":        filas,
+        "sin_costo":         True,
+        "nota": ("Re-evaluación sin costo: reutiliza el análisis guardado del "
+                 "pliego y sólo recalcula el contraste con el perfil."),
+    }
+
+
 @router.get("/auditoria/estado/{job_id}")
 def estado_analisis(job_id: str, authorization: str = Header(None)):
     """Polling endpoint — devuelve {estado: 'procesando'} o {estado: 'completo', datos: {...}}."""

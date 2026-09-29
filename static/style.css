@@ -1126,3 +1126,22 @@ tr.urgente  { background: rgba(248,81,73,.03); }
 @media (max-width: 720px) {
   .doc-check { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* ── Re-evaluación sin costo ─────────────────────────────────────────────── */
+/* El análisis completo cuesta API cada vez; esto no. La nota lo dice en la
+   propia barra para que no haya que recordarlo antes de pulsar. */
+.reeval-barra {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.reeval-nota {
+  font-size: .78rem;
+  color: var(--muted);
+  line-height: 1.4;
+  flex: 1 1 260px;
+}

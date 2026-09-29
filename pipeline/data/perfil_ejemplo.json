@@ -1,0 +1,99 @@
+{
+  "_meta": {
+    "proposito": "Perfil de DEMOSTRACION. Empresa ficticia, cifras realistas de PYME colombiana de obra civil.",
+    "diseno": "Resultado MIXTO deliberado: un perfil que sale viable en todo no demuestra nada, parece demo preparada. El sistema convence cuando discrimina.",
+    "que_debe_salir": {
+      "cumplen": "liquidez, endeudamiento, cobertura de intereses, patrimonio, capacidad juridica, camara de comercio, antecedentes",
+      "no_cumple_con_resta_visible": "RUP expedido hace 45 dias — el pliego admite hasta 30. El informe escribe: 'expedido hace 45 dias; el pliego admite hasta 30'",
+      "hallazgos_documentales": "documento_identidad y subcontratacion declarados como NO tenidos: el informe dice 'la empresa indica que no cuenta con este documento'",
+      "capital_trabajo": "deliberadamente bajo (180M). En Paicol y Ternera el umbral del pliego NO se extrajo, asi que sale REVISION MANUAL, no NO CUMPLE. Ver ESTADO_PIPELINE.md D31.",
+      "sin_responder": "estados financieros, seguridad social, existencia y representacion, duracion de la sociedad"
+    },
+    "fechas_relativas_a": "2026-09-29",
+    "recalibrar": "Si se usa despues de noviembre de 2026, subir las fechas de expedicion: el RUP debe quedar a mas de 30 dias del dia de la demo para que siga fallando."
+  },
+
+  "nombre": "CONSTRUCTORA EJEMPLO SAS",
+  "nit": "900.000.000-0",
+  "sector": "obras_civiles",
+  "municipio_domicilio": "Paicol",
+  "departamento_domicilio": "Huila",
+  "es_mipyme": true,
+  "tamano_empresa": "pequena",
+  "es_empresa_de_mujeres": false,
+  "es_proponente_plural": false,
+
+  "financiero": {
+    "indice_liquidez": 1.85,
+    "indice_endeudamiento": 0.42,
+    "cobertura_intereses": 3.2,
+    "capital_trabajo": 180000000.0,
+    "activo_corriente": 392000000.0,
+    "pasivo_corriente": 212000000.0,
+    "patrimonio_neto": 1240000000.0,
+    "renta_operacional": 168000000.0,
+    "ebitda": 210000000.0,
+    "rentabilidad_patrimonio": 0.11,
+    "rentabilidad_activo": 0.09,
+    "roe": 0.11,
+    "roa": 0.09,
+    "ingresos_operacionales_ultimos_5_anos": [
+      980000000.0, 1150000000.0, 1340000000.0, 1520000000.0, 1810000000.0
+    ],
+    "saldos_contratos_en_ejecucion": 640000000.0,
+    "numero_profesionales_vinculados": 9
+  },
+
+  "experiencia": {
+    "valor_acumulado": 4200000000.0,
+    "valor_individual_max": 1150000000.0,
+    "objetos_similares": [
+      "Mejoramiento de infraestructura educativa",
+      "Mantenimiento de redes electricas en edificaciones"
+    ],
+    "codigos_unspsc": ["72151500", "72141100", "72101500"],
+    "contratos_acreditados": 6,
+    "antiguedad_meses": 96
+  },
+
+  "juridico": {
+    "rup_en_firme": true,
+    "rup_fecha_expedicion": "2026-08-15",
+    "camara_comercio": true,
+    "camara_comercio_fecha": "2026-09-09",
+    "rut_vigente": true,
+    "paz_y_salvo_parafiscales": true,
+    "paz_y_salvo_seguridad_social": true,
+    "paz_y_salvo_impuestos": true,
+    "sin_inhabilidades": true,
+    "sin_antecedentes_disciplinarios": true,
+    "sin_antecedentes_penales": true,
+    "sin_antecedentes_fiscales": true,
+    "sin_redam": true,
+    "sin_medidas_correctivas": true,
+    "sin_insolvencia": true,
+    "objeto_social_compatible": true,
+    "sin_conflicto_interes": true,
+    "sin_estudios_diseno_previos": true,
+    "garantia_seriedad": true
+  },
+
+  "tecnico": {
+    "personal_disponible": 14,
+    "equipos": ["Retroexcavadora", "Volqueta doble troque", "Mezcladora"],
+    "certificaciones": ["ISO 9001"],
+    "titulo_profesional": "ingeniero",
+    "porcentaje_empleados_colombianos": 100.0
+  },
+
+  "documentos": {
+    "rup": { "tiene": true, "fecha_expedicion": "2026-08-15" },
+    "existencia_representacion": { "tiene": null, "fecha_expedicion": null },
+    "estados_financieros": { "tiene": null, "fecha_expedicion": null },
+    "seguridad_social": { "tiene": null, "fecha_expedicion": null },
+    "documento_identidad": { "tiene": false, "fecha_expedicion": null },
+    "subcontratacion": { "tiene": false, "fecha_expedicion": null },
+    "capacidad_juridica": true,
+    "duracion_sociedad_hasta": null
+  }
+}
