@@ -14,6 +14,17 @@ import unicodedata
 from .extractor import Requisito, ResultadoExtraccion
 
 
+# Versión del verificador. Sube cuando cambia lo que hace que una cita
+# verifique o deje de verificar, para que un artefacto guardado pueda decir con
+# cuál se calculó su `estado_verificacion` y no queden dos verdades sobre el
+# mismo pliego [G1-bis].
+#
+#   1  original: normalización de símbolos, tildes y espacios
+#   2  [D36] limpia markup, marcadores de imagen y viñetas anidadas; tolera un
+#      punto final sobrante; distingue cuatro causas y detecta la elisión
+VERSION_VERIFICADOR = 2
+
+
 # ─── normalización ─────────────────────────────────────────────────────────
 
 _SYMBOL_MAP = str.maketrans({

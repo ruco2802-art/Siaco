@@ -575,3 +575,84 @@ def test_t8b_tabla_a_markdown_no_trunca():
     md = _tabla_a_markdown(tabla)
     assert celda_larga in md, "La celda larga fue truncada"
     assert len(md) > 300
+
+
+# ─── [D37] Control de COMPLETITUD ──────────────────────────────────────────
+
+def test_la_celda_sonda_descarta_las_celdas_cortas():
+    """
+    «SI», «30» o una fecha aparecen en cualquier parte del documento: usarlas
+    para buscar una tabla daría presencia falsa. Sólo sirve una celda larga.
+    """
+    from pipeline.src.tablas import _celda_sonda
+    assert _celda_sonda([["SI", "NO"], ["30", "2026-01-01"]]) is None
+    assert _celda_sonda(
+        [["SI"], ["Servicios de albañilería y mampostería para edificaciones"]]
+    ) == "Servicios de albañilería y mampostería para edificaciones"
+
+
+def test_la_sonda_colapsa_espacios_y_saltos():
+    from pipeline.src.tablas import _celda_sonda
+    assert _celda_sonda([["Servicios  de\n  pintura residencial en obra"]]) == \
+        "Servicios de pintura residencial en obra"
+
+
+def test_una_tabla_deformada_no_se_cuenta_como_perdida(tmp_path, monkeypatch):
+    """
+    [D37] Son dos fallos distintos y confundirlos inventa un problema: una
+    tabla cuyas celdas el parser reordenó SÍ llegó —el detector de tablas
+    rotas la ve y este módulo la repara—; una perdida no llegó y **no la ve
+    nadie**. La de Paicol con el plazo del contrato es del primer tipo.
+    """
+    from pipeline.src import tablas
+
+    class _Page:
+        def extract_tables(self):
+            return [
+                [["El término para la ejecución del objeto contratado se estima"]],
+                [["Clasificación UNSPSC de servicios de albañilería y pintura"]],
+            ]
+
+    class _Pdf:
+        pages = [_Page()]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(tablas.pdfplumber, "open", lambda *_a, **_k: _Pdf())
+    # el markdown trae la PRIMERA descolocada (sólo el arranque) y la segunda
+    # no aparece en absoluto
+    md = "| en | El término para la ejecución | del objeto | contratado | (02) |"
+    r = tablas.auditar_completitud(md, tmp_path / "x.pdf")
+    assert r["tablas_deformadas"] == 1, "la descolocada se contó mal"
+    assert r["tablas_perdidas"] == 1, "la ausente se contó mal"
+    assert "faltan 1" in r["aviso_completitud"]
+    assert r["paginas_con_tablas_perdidas"] == [1]
+
+
+def test_sin_tablas_perdidas_no_hay_aviso(tmp_path, monkeypatch):
+    """Un aviso que sale siempre deja de leerse."""
+    from pipeline.src import tablas
+
+    class _Page:
+        def extract_tables(self):
+            return [[["Servicios de albañilería y mampostería para edificaciones"]]]
+
+    class _Pdf:
+        pages = [_Page()]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(tablas.pdfplumber, "open", lambda *_a, **_k: _Pdf())
+    r = tablas.auditar_completitud(
+        "texto | Servicios de albañilería y mampostería para edificaciones |",
+        tmp_path / "x.pdf")
+    assert r["tablas_perdidas"] == 0
+    assert r["aviso_completitud"] is None

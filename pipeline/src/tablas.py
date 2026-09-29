@@ -916,7 +916,130 @@ def reparar_markdown(
         "tipo_pdf": tipo_pdf,
     }
 
+    # [D37] Completitud: ¿llegaron TODAS las tablas del PDF? Es lo único que
+    # mira el PDF en vez del markdown, así que es lo único capaz de ver una
+    # tabla perdida. En TIPO C no aplica: pdfplumber no ve tablas nativas.
+    if tipo_pdf == "C":
+        metadata["completitud"] = {"aplicable": False,
+                                   "motivo": "PDF escaneado: sin tablas nativas que contar"}
+    else:
+        try:
+            metadata["completitud"] = auditar_completitud(md_final, pdf_path)
+        except Exception as exc:   # nunca tumbar un parseo por la auditoría
+            metadata["completitud"] = {"aplicable": False, "motivo": f"error: {exc}"}
+
     return md_final, metadata
+
+
+# ─── Control de COMPLETITUD [D37] ─────────────────────────────────────────────
+#
+# Todo lo de arriba verifica CALIDAD: que las tablas que llegaron al markdown
+# estén bien formadas, y las repara si no. **Nada verifica COMPLETITUD**: una
+# tabla que no llega al markdown es invisible para el detector, porque
+# `detectar_tablas_rotas()` y `_contar_bloques_tabla()` escanean el markdown,
+# no el PDF.
+#
+# Caso real: la tabla de códigos UNSPSC de Ternera no está en su markdown. Su
+# metadata registra 25 tablas totales y 22 rotas detectadas —que cuadran
+# exactamente con 14+1+1+6— así que **no entró en ninguna categoría**. Se
+# perdió antes de este módulo, en la conversión PDF→markdown, y ningún número
+# de la metadata delataba que faltaba.
+#
+# Esto NO intenta recuperarlas: sólo las cuenta y dice en qué página estaban,
+# para poder ir a mirarlas.
+
+_MIN_CELDA_DISTINTIVA = 18   # chars mínimos para que una celda sirva de sonda
+
+
+def _celda_sonda(tabla: list) -> str | None:
+    """
+    La celda más larga de una tabla, que es la que mejor sirve para buscarla
+    en el markdown: las cortas («SI», «30», una fecha) aparecen en cualquier
+    parte y darían falsos positivos de presencia.
+    """
+    mejor = ""
+    for fila in tabla or []:
+        for celda in fila or []:
+            t = " ".join(str(celda or "").split())
+            if len(t) > len(mejor):
+                mejor = t
+    return mejor if len(mejor) >= _MIN_CELDA_DISTINTIVA else None
+
+
+def auditar_completitud(markdown: str, pdf_path: Path) -> dict:
+    """
+    Compara las tablas del PDF con las que llegaron al markdown.
+
+    Para cada tabla que pdfplumber encuentra en el PDF se toma su celda más
+    larga y se busca en el markdown. Si no está entera, se prueba con sus
+    cinco primeras palabras, y eso separa dos casos muy distintos:
+
+      `deformada` — el contenido llegó pero el parser partió o reordenó las
+                    celdas. Es el caso que el detector de tablas rotas SÍ ve
+                    y que este módulo ya repara.
+      `perdida`   — no llegó nada. **Ésa es la invisible**: ningún número de
+                    la metadata la delataba, porque todo lo demás cuenta
+                    bloques del markdown y ahí no hay nada que contar.
+
+    Contar bloques a secas no bastaría: marker fusiona y parte tablas, así que
+    los totales no se corresponden uno a uno. La presencia de una celda
+    distintiva sí es evidencia de que el contenido llegó.
+
+    Devuelve el aviso listo para la metadata. En TIPO C (escaneado) pdfplumber
+    no ve tablas nativas, así que la auditoría **se declara no aplicable** en
+    vez de reportar que faltan todas.
+    """
+    import pdfplumber
+
+    md_norm = " ".join(markdown.lower().split())
+    encontradas = perdidas = deformadas = sin_sonda = 0
+    paginas: dict[int, int] = {}
+    muestras: list[str] = []
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for n_pag, page in enumerate(pdf.pages, start=1):
+            for tabla in page.extract_tables() or []:
+                sonda = _celda_sonda(tabla)
+                if sonda is None:
+                    sin_sonda += 1
+                    continue
+                sonda_n = " ".join(sonda.lower().split())
+                if sonda_n in md_norm:
+                    encontradas += 1
+                    continue
+                # La celda completa no está. Dos casos MUY distintos:
+                #   deformada — llegó, pero el parser le partió o reordenó las
+                #               celdas, así que ya no existe contigua. Es el
+                #               caso que el detector de tablas rotas SÍ ve.
+                #   perdida   — no llegó nada de su contenido. **Ésa es la
+                #               invisible**, la que ningún número delataba.
+                # Se prueba con las cinco primeras palabras de la celda: si ni
+                # eso aparece, el contenido no está en el documento.
+                palabras = sonda_n.split()
+                semilla = " ".join(palabras[:5])
+                if len(semilla) >= 12 and semilla in md_norm:
+                    deformadas += 1
+                    continue
+                perdidas += 1
+                paginas[n_pag] = paginas.get(n_pag, 0) + 1
+                if len(muestras) < 6:
+                    muestras.append(f"p.{n_pag}: «{sonda[:70]}»")
+
+    total = encontradas + deformadas + perdidas + sin_sonda
+    aviso = None
+    if perdidas:
+        aviso = (f"el PDF tiene {total} tablas, el markdown recibió "
+                 f"{total - perdidas}; faltan {perdidas}")
+    return {
+        "tablas_pdf": total,
+        "tablas_en_markdown": encontradas,
+        "tablas_deformadas": deformadas,
+        "tablas_perdidas": perdidas,
+        "tablas_sin_sonda": sin_sonda,
+        "paginas_con_tablas_perdidas": sorted(paginas),
+        "muestras_perdidas": muestras,
+        "aviso_completitud": aviso,
+    }
 
 
 def _contar_bloques_tabla(markdown: str) -> int:
