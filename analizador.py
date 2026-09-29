@@ -872,6 +872,39 @@ def rag_pliego_con_cache(cliente_id: str, texto: str, query: str = "", top_k_por
     return seleccion[:MAX_CHARS]
 
 
+# [D40] Dígitos que se comparan de cada código UNSPSC. 6 = CLASE.
+#   2 segmento · 4 familia · 6 clase · 8 producto
+# Con 4 no se distinguen albañilería y climatización; con 8 casi nada coincide,
+# porque el pliego rara vez usa el mismo código de producto que el RUP.
+DIGITOS_UNSPSC = 6
+
+
+def normalizar_codigos_unspsc(valor) -> list[str]:
+    """
+    Prefijos de clase de los códigos UNSPSC del perfil, venga como lista o
+    como cadena separada por comas [D39].
+
+    Devuelve lista vacía si no hay nada utilizable — nunca un prefijo basura,
+    que es lo que producía el `str(lista).split(",")` anterior.
+    """
+    if valor is None:
+        return []
+    if isinstance(valor, (list, tuple, set)):
+        crudos = [str(v) for v in valor]
+    else:
+        crudos = str(valor).replace(";", ",").split(",")
+    salida: list[str] = []
+    for c in crudos:
+        # Sólo dígitos: descarta comillas, corchetes y separadores que dejaba
+        # la conversión de una lista a texto.
+        solo = "".join(ch for ch in str(c) if ch.isdigit())
+        if len(solo) >= DIGITOS_UNSPSC:
+            pref = solo[:DIGITOS_UNSPSC]
+            if pref not in salida:
+                salida.append(pref)
+    return salida
+
+
 def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -> list:
     """
     Triple scoring para filtrar contratos relevantes para un cliente:
@@ -886,12 +919,21 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
     """
     import numpy as np
 
-    # Códigos UNSPSC del cliente (primeros 4 dígitos de cada código)
-    codigos_cliente = [
-        c.strip()[:4]
-        for c in str(perfil_cliente.get("codigos_unspsc", "")).split(",")
-        if c.strip()
-    ]
+    # [D39] El campo llega en DOS formas y las dos son legítimas: el esquema
+    # canónico (`PerfilExperiencia.codigos_unspsc`) lo declara `list[str]` y el
+    # formulario web manda una cadena separada por comas.
+    #
+    # Antes se hacía `str(...).split(",")` sin distinguir, así que una lista se
+    # convertía en `"['72151500', '72141100']"` y los códigos salían como
+    # `"['7"` y `" '72"`. Medido: con la lista pasaban **0 de 10** procesos,
+    # porque sin coincidencia de UNSPSC el total no llega al umbral. Un perfil
+    # que descarta todo en silencio es peor que no filtrar.
+    #
+    # [D40] Se comparan **6 dígitos, no 4**. En UNSPSC 4 dígitos son la
+    # FAMILIA y 6 la CLASE: `7215` cubre a la vez `72151500` (albañilería) y
+    # `72154000` (climatización), así que una constructora traía procesos de
+    # refrigeración con puntaje 1,00.
+    codigos_cliente = normalizar_codigos_unspsc(perfil_cliente.get("codigos_unspsc"))
 
     # Keywords: del perfil + de KEYWORDS_HVAC de config
     try:
@@ -951,13 +993,27 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
             except Exception:
                 pass
 
+        # [D40] El paso por UNSPSC ya NO es incondicional.
+        #
+        # Antes `score_unspsc == 1.0` pasaba solo, sin mirar keywords ni
+        # semántica: una coincidencia de FAMILIA se convertía en certeza. Con
+        # 6 dígitos el acierto es mucho más estrecho —ya es la clase— pero
+        # sigue siendo una similitud, no una prueba: dos empresas de la misma
+        # clase UNSPSC pueden hacer cosas distintas.
+        #
+        # Ahora una coincidencia de clase **pesa mucho** (sube el peso de 0,25
+        # a 0,45) pero tiene que sumar con algo más para pasar. En la práctica
+        # basta una similitud semántica corriente: 0,45 + 0,40×0,5 = 0,65.
+        # Lo que deja fuera es el caso que importa: clase coincidente y
+        # contenido claramente ajeno.
         if modelo is not None:
-            score_final = 0.25 * score_unspsc + 0.35 * score_keywords + 0.40 * score_semantico
-            pasa = score_final > 0.40 or score_unspsc == 1.0 or score_keywords > 0.60
+            score_final = 0.45 * score_unspsc + 0.20 * score_keywords + 0.35 * score_semantico
+            pasa = score_final > 0.50 or score_keywords > 0.60
         else:
-            # Sin modelo semántico: solo UNSPSC + keywords con umbral más bajo
-            score_final = 0.40 * score_unspsc + 0.60 * score_keywords
-            pasa = score_final > 0.25 or score_unspsc == 1.0 or score_keywords > 0.40
+            # Sin modelo semántico no hay tercera señal, así que la coincidencia
+            # de clase sí decide: es lo único fiable que queda.
+            score_final = 0.60 * score_unspsc + 0.40 * score_keywords
+            pasa = score_final > 0.50 or score_keywords > 0.40
 
         print(
             f"[HÍBRIDO] {titulo[:50]:<50} | "

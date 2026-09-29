@@ -270,6 +270,7 @@ def buscar_contratos(
     # ── Hybrid scoring inline (uses client profile from session) ──────────
     modo_busqueda = "keywords_only"
     contratos_relevantes = contratos_pre
+    fallo_scoring: str | None = None
 
     try:
         from routers.perfil import _load_perfil, _cliente_id_from_session
@@ -280,9 +281,13 @@ def buscar_contratos(
 
         if perfil:
             exp = perfil.get("experiencia", {}) or {}
-            codigos_unspsc = exp.get("codigos_unspsc", "").strip()
-            objeto_similar = exp.get("objeto_similar", "").strip()
-            sector = perfil.get("sector", "").strip()
+            # [D39] Puede ser lista (esquema canónico) o cadena (formulario).
+            # `normalizar_codigos_unspsc()` acepta las dos; el `.strip()` de
+            # antes lanzaba AttributeError sobre una lista y el `except` de
+            # abajo se lo tragaba.
+            codigos_unspsc = exp.get("codigos_unspsc") or ""
+            objeto_similar = str(exp.get("objeto_similar") or "").strip()
+            sector = str(perfil.get("sector") or "").strip()
             query = objeto_similar or sector
 
             if query or codigos_unspsc:
@@ -313,8 +318,14 @@ def buscar_contratos(
                         ),
                     })
                 modo_busqueda = "hibrido"
-    except Exception:
-        pass  # fallback: all contratos_pre are relevant, keywords_only mode
+    except Exception as exc:
+        # [D39] NO se calla. Un `except Exception: pass` aquí convertía
+        # cualquier fallo del scoring en «no hay filtrado por perfil» sin
+        # decirlo: el operador veía todos los procesos y no sabía que el
+        # perfil no se había aplicado. El caso real era un AttributeError por
+        # la forma del campo `codigos_unspsc`.
+        logger.error("[BUSQUEDA] El scoring por perfil falló: %s", exc, exc_info=True)
+        fallo_scoring = f"{type(exc).__name__}: {str(exc)[:200]}"
 
     return {
         "contratos_relevantes":  contratos_relevantes,
@@ -323,6 +334,12 @@ def buscar_contratos(
         "total_relevantes":      len(contratos_relevantes),
         "total_descartados":     len(descartados),
         "modo_busqueda":         modo_busqueda,
+        # [D39] Si el scoring por perfil falló, se dice. Sin esto, «no se
+        # filtró por perfil» y «el perfil no descartó nada» se ven igual.
+        **({"aviso_scoring": (
+            "No se pudo aplicar el filtrado por perfil, así que estos "
+            f"resultados NO están ordenados por relevancia ({fallo_scoring}). "
+            "Revisa el perfil del cliente.")} if fallo_scoring else {}),
         # backward compat keys for any cached frontend
         "contratos":             contratos_relevantes,
         "descartados":           [d for d in descartados if d.get("razon_descarte","").startswith("Fase") or d.get("razon_descarte","").startswith("Manifestacion") or d.get("razon_descarte","").startswith("Cierre") or d.get("razon_descarte","").startswith("Valor")][:5],
