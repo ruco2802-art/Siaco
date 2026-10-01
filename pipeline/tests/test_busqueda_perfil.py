@@ -271,3 +271,77 @@ def test_los_alias_de_sector_cubren_los_perfiles_existentes():
     for libre in ("OBRA PUBLICA", "MANTENIMIENTO LOCATIVO Y OBRAS CIVILES",
                   "HVAC", "Climatización"):
         assert keywords_de_sector(libre), f"«{libre}» se queda sin keywords"
+
+
+# ── El sector sin palabras clave se AVISA, no se calla ─────────────────────
+
+def test_un_sector_sin_lista_produce_un_aviso_con_el_texto_exacto():
+    """
+    Quedarse en cero era invisible: la búsqueda seguía funcionando, peor, y
+    nadie lo notaba. Es el mismo patrón que [I10] llevado al sitio donde el
+    usuario puede corregirlo.
+    """
+    from analizador import estado_keywords_sector
+    r = estado_keywords_sector("metalmecanica")
+    assert r["estado"] == "sin_lista"
+    assert r["n_terminos"] == 0
+    assert r["aviso"] == ("El sector «metalmecanica» no tiene palabras clave "
+                          "asociadas; el filtrado por contenido no se aplicará.")
+
+
+def test_sin_sector_el_aviso_dice_otra_cosa():
+    """No es lo mismo no declararlo que declararlo y que falte la lista."""
+    from analizador import estado_keywords_sector
+    for vacio in (None, "", "   "):
+        r = estado_keywords_sector(vacio)
+        assert r["estado"] == "sin_sector"
+        assert "no declara sector" in r["aviso"]
+
+
+def test_un_sector_con_lista_no_avisa():
+    """Un aviso que sale siempre deja de leerse."""
+    from analizador import estado_keywords_sector
+    r = estado_keywords_sector("obras_civiles")
+    assert r["estado"] == "ok" and r["aviso"] is None and r["n_terminos"] == 24
+    # y por alias también
+    assert estado_keywords_sector("OBRA PUBLICA")["estado"] == "ok"
+
+
+def test_el_aviso_viaja_al_guardar_y_al_buscar():
+    raiz = Path(__file__).resolve().parents[2]
+    perfil = (raiz / "routers" / "perfil.py").read_text("utf-8")
+    assert "estado_keywords_sector" in perfil, "guardar no avisa"
+    busqueda = (raiz / "routers" / "busqueda.py").read_text("utf-8")
+    assert "aviso_sector" in busqueda, "buscar no avisa"
+    js = (raiz / "static" / "app.js").read_text("utf-8")
+    assert "data.aviso_sector" in js, "el aviso no llega a la pantalla"
+
+
+def test_el_desplegable_y_las_listas_no_se_separan():
+    """
+    Una opción del desplegable sin lista deja al cliente sin filtrado por
+    palabras, y una lista que el desplegable no ofrece es trabajo inútil.
+    Las que no tienen lista lo DICEN en su propio texto.
+    """
+    import json
+    import re
+
+    raiz = Path(__file__).resolve().parents[2]
+    datos = json.loads((raiz / "pipeline" / "data" / "keywords_sector.json")
+                       .read_text("utf-8"))
+    listas = {k for k, v in datos.items() if isinstance(v, list)}
+
+    html = (raiz / "static" / "index.html").read_text("utf-8")
+    i = html.index('id="p-sector"')
+    # Hasta el </select>, no una ventana de N caracteres: con una ventana se
+    # colaban las opciones del desplegable siguiente (notificaciones).
+    bloque = html[i:html.index("</select>", i)]
+    opciones = dict(re.findall(r'<option value="([^"]+)">([^<]*)</option>', bloque))
+
+    assert not (listas - set(opciones)), (
+        f"listas que el desplegable no ofrece: {sorted(listas - set(opciones))}")
+    for valor, etiqueta in opciones.items():
+        if valor not in listas:
+            assert "sin palabras clave" in etiqueta.lower(), (
+                f"la opción «{valor}» no tiene lista y no lo dice: el cliente "
+                "la elegiría sin saber que pierde el filtrado por contenido")

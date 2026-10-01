@@ -151,13 +151,19 @@
               <label>Sector principal</label>
               <select id="p-sector">
                 <option value="">Seleccionar...</option>
-                <option value="hvac">HVAC y Climatización</option>
+                <!-- Los valores coinciden con las claves de
+                     pipeline/data/keywords_sector.json. Un test comprueba que
+                     no se separen: una opción sin lista deja al cliente sin
+                     filtrado por palabras, y antes no se veía. -->
                 <option value="obras_civiles">Obras Civiles</option>
-                <option value="transporte">Transporte y Logística</option>
-                <option value="tecnologia">Tecnología</option>
-                <option value="salud">Salud</option>
-                <option value="educacion">Educación</option>
+                <option value="hvac">HVAC y Climatización</option>
+                <option value="electrico">Eléctrico</option>
                 <option value="suministros">Suministros</option>
+                <option value="servicios">Servicios</option>
+                <option value="transporte">Transporte y Logística (sin palabras clave)</option>
+                <option value="tecnologia">Tecnología (sin palabras clave)</option>
+                <option value="salud">Salud (sin palabras clave)</option>
+                <option value="educacion">Educación (sin palabras clave)</option>
               </select>
             </div>
             <div class="form-group">

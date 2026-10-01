@@ -271,6 +271,7 @@ def buscar_contratos(
     modo_busqueda = "keywords_only"
     contratos_relevantes = contratos_pre
     fallo_scoring: str | None = None
+    aviso_sector: str | None = None
 
     try:
         from routers.perfil import _load_perfil, _cliente_id_from_session
@@ -318,6 +319,13 @@ def buscar_contratos(
                         ),
                     })
                 modo_busqueda = "hibrido"
+                # Mismo aviso que al guardar: si el sector no tiene lista, la
+                # búsqueda está funcionando peor y hay que decirlo aquí
+                # también, porque es donde se ven los resultados.
+                from analizador import estado_keywords_sector
+                _est = estado_keywords_sector(sector)
+                if _est["estado"] != "ok":
+                    aviso_sector = _est["aviso"]
     except Exception as exc:
         # [D39] NO se calla. Un `except Exception: pass` aquí convertía
         # cualquier fallo del scoring en «no hay filtrado por perfil» sin
@@ -334,6 +342,7 @@ def buscar_contratos(
         "total_relevantes":      len(contratos_relevantes),
         "total_descartados":     len(descartados),
         "modo_busqueda":         modo_busqueda,
+        **({"aviso_sector": aviso_sector} if aviso_sector else {}),
         # [D39] Si el scoring por perfil falló, se dice. Sin esto, «no se
         # filtró por perfil» y «el perfil no descartó nada» se ven igual.
         **({"aviso_scoring": (

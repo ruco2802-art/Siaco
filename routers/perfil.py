@@ -400,6 +400,16 @@ def update_perfil(body: PerfilBody, authorization: str = Header(None)):
             nuevo[campo] = existente[campo]
 
     aviso = _save_perfil(cid, nuevo)
+    # El sector decide qué procesos ve el cliente. Guardarlo sin lista de
+    # palabras degrada la búsqueda en silencio, así que se dice aquí, que es
+    # donde se puede corregir.
+    try:
+        from analizador import estado_keywords_sector
+        est = estado_keywords_sector(nuevo.get("sector"))
+        if est["estado"] == "sin_lista":
+            aviso = f"{aviso} {est['aviso']}" if aviso else est["aviso"]
+    except Exception:
+        pass
     # El aviso viaja a la respuesta, no sólo al log [principio 2]: quien opera
     # tiene que enterarse de que el perfil quedó sólo en este equipo.
     return {"ok": True, "cliente_id": cid, **({"aviso": aviso} if aviso else {})}

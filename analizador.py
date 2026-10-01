@@ -964,6 +964,39 @@ def keywords_de_sector(sector: str | None) -> list[str]:
     return [k.lower() for k in valor] if isinstance(valor, list) else []
 
 
+def estado_keywords_sector(sector: str | None) -> dict:
+    """
+    Si el sector de un perfil tiene palabras clave, y si no, **por qué**.
+
+    Existe porque quedarse en cero era invisible: la búsqueda seguía
+    funcionando, peor, y nadie lo notaba. Es el mismo patrón que [I10] —ante
+    la ausencia de un dato, declararla en vez de seguir como si nada— llevado
+    al sitio donde el usuario puede corregirlo.
+
+    `estado` es uno de tres:
+      `sin_sector`   el perfil no declara sector
+      `sin_lista`    lo declara y no hay lista revisada para él
+      `ok`           tiene lista
+    """
+    crudo = (sector or "").strip()
+    if not crudo:
+        return {"estado": "sin_sector", "sector": "", "clave": None,
+                "n_terminos": 0,
+                "aviso": ("El perfil no declara sector, así que el filtrado "
+                          "por palabras no se aplica.")}
+    terminos = keywords_de_sector(crudo)
+    if terminos:
+        _cache = _CACHE_KEYWORDS or {}
+        clave = (_cache.get("_alias") or {}).get(crudo.lower(), crudo.lower())
+        return {"estado": "ok", "sector": crudo, "clave": clave,
+                "n_terminos": len(terminos), "aviso": None}
+    return {
+        "estado": "sin_lista", "sector": crudo, "clave": None, "n_terminos": 0,
+        "aviso": (f"El sector «{crudo}» no tiene palabras clave asociadas; "
+                  "el filtrado por contenido no se aplicará."),
+    }
+
+
 def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -> list:
     """
     Triple scoring para filtrar contratos relevantes para un cliente:

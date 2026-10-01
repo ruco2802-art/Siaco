@@ -196,7 +196,7 @@ function toast(msg, tipo = 'info') {
   clearTimeout(el._t);
   el._t = setTimeout(() => el.classList.remove('show'), 4500);
 }
-function alertHtml(tipo, msg) { return `<div class="alert-${tipo}">${msg}</div>`; }
+function alertHtml(tipo, msg) { return `<div class="alert alert-${tipo}">${msg}</div>`; }
 function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = (v != null) ? v : ''; }
 function txt(id, v) { const el = document.getElementById(id); if (el) el.textContent = v ?? '—'; }
@@ -529,8 +529,10 @@ async function _savePerfilImpl() {
     // El servidor avisa cuando el perfil quedó sólo en este equipo (sin
     // Supabase configurado). Un aviso que se queda en el log no protege a
     // nadie: quien guarda tiene que saber que no sobrevive a un redespliegue.
+    // El aviso puede traer dos cosas a la vez: que no hay Supabase y que el
+    // sector no tiene palabras clave. Se muestra entero.
     toast(r && r.aviso ? r.aviso : 'Perfil guardado correctamente',
-          r && r.aviso ? 'info' : 'success');
+          r && r.aviso ? 'warn' : 'success');
     const st = document.getElementById('perfil-save-status');
     if (st) {
       st.textContent = (r && r.aviso ? '⚠ Guardado sólo en este equipo · '
@@ -683,6 +685,15 @@ function renderBusquedaResult(data) {
   const bannerEl  = document.getElementById('busq-banner');
   const badgeEl   = document.getElementById('badge-modo');
   if (!bannerEl) return;
+
+  // Avisos del servidor. Quedarse sin palabras clave o que el scoring falle
+  // hace que la búsqueda funcione PEOR sin que se note: el banner lo dice
+  // donde se ven los resultados, no sólo en el log.
+  const avisos = [data.aviso_sector, data.aviso_scoring].filter(Boolean);
+  const stAv = document.getElementById('busq-status');
+  if (stAv && avisos.length) {
+    stAv.innerHTML = avisos.map(a => alertHtml('warn', a)).join('');
+  }
 
   const rel   = data.total_relevantes  ?? (data.contratos_relevantes  || data.contratos  || []).length;
   const disc  = data.total_descartados ?? (data.contratos_descartados || data.descartados || []).length;
