@@ -60,6 +60,131 @@ def _fmt_descartado(lic: dict, razon: str) -> dict:
     }
 
 
+def aplicar_scoring_perfil(perfil: dict | None, contratos: list) -> dict:
+    """
+    **LA ÚNICA función de scoring por perfil** [D45]. La llaman los tres
+    endpoints de búsqueda.
+
+    Este bloque estaba copiado tres veces —`/contratos`, `/contratos/score` y
+    `/contratos/filtrar`—. Se corrigió [D39] en el primero y los otros dos
+    siguieron rotos; el que usa la interfaz es el segundo, así que la
+    corrección no se notó y el filtrado llevaba días apagado sin que nada lo
+    dijera. Es [I11] en forma de código: una lógica tiene un solo lugar de
+    verdad, y arreglar una copia no arregla las demás.
+
+    Devuelve siempre las cuatro claves, pase lo que pase:
+      `relevantes`   los que pasan, con `_score` y `_motivo`
+      `descartados`  los que no, con su razón
+      `modo`         "hibrido" | "keywords_only" | "sin_perfil"
+      `avisos`       lo que haya que decirle a quien opera
+
+    **NUNCA se traga un fallo.** Si el scoring revienta, los contratos salen
+    todos —no hay mejor opción— pero el aviso dice que NO están filtrados. Un
+    fallo que devuelve una lista de aspecto normal es peor que no filtrar:
+    parece que filtró [I10].
+    """
+    avisos: list[str] = []
+    sin_filtrar = {
+        "relevantes": contratos,
+        "descartados": [],
+        "modo": "sin_perfil",
+        "avisos": avisos,
+    }
+    if not perfil:
+        avisos.append(
+            "No hay perfil de empresa cargado, así que estos resultados NO "
+            "están filtrados por relevancia.")
+        return sin_filtrar
+
+    exp = perfil.get("experiencia") or {}
+    # [D39] `codigos_unspsc` llega como lista (esquema canónico) o como cadena
+    # (formulario). `normalizar_codigos_unspsc()` acepta las dos; el `.strip()`
+    # que había aquí lanzaba AttributeError sobre una lista.
+    codigos = exp.get("codigos_unspsc") or ""
+    objeto_similar = str(exp.get("objeto_similar") or "").strip()
+    sector = str(perfil.get("sector") or "").strip()
+    query = objeto_similar or sector
+
+    # El sector sin lista de palabras degrada la búsqueda: se dice [D44].
+    try:
+        from analizador import estado_keywords_sector
+        est = estado_keywords_sector(sector)
+        if est["estado"] != "ok":
+            avisos.append(est["aviso"])
+    except Exception:
+        pass
+
+    # Sin códigos UNSPSC el scoring pierde su señal más fiable y queda a
+    # merced de las palabras, que son mucho más ruidosas.
+    try:
+        from analizador import normalizar_codigos_unspsc
+        if not normalizar_codigos_unspsc(codigos):
+            avisos.append(
+                "Este perfil no tiene códigos UNSPSC; el filtrado se hace "
+                "sólo por palabras clave y es menos preciso.")
+    except Exception:
+        pass
+
+    if not (query or codigos):
+        avisos.append(
+            "El perfil no tiene sector, objeto similar ni códigos UNSPSC: no "
+            "hay con qué filtrar, así que estos resultados NO están "
+            "ordenados por relevancia.")
+        return {**sin_filtrar, "modo": "keywords_only"}
+
+    try:
+        from analizador import busqueda_hibrida_triple
+        relevantes = busqueda_hibrida_triple(
+            query, {"codigos_unspsc": codigos, "objeto_similar": objeto_similar,
+                    "sector": sector},
+            contratos)
+    except Exception as exc:
+        # [I10] No se calla. Devolver todo sin filtrar en silencio hace que un
+        # fallo parezca un resultado.
+        logger.error("[BUSQUEDA] El scoring por perfil falló: %s", exc,
+                     exc_info=True)
+        avisos.append(
+            "No se pudo aplicar el filtrado por perfil. Estos resultados NO "
+            f"están ordenados por relevancia ({type(exc).__name__}: "
+            f"{str(exc)[:160]}).")
+        return {**sin_filtrar, "modo": "keywords_only"}
+
+    def _clave(c: dict) -> str:
+        return c.get("id_del_proceso") or c.get("referencia_del_proceso", "")
+
+    ids_rel = {_clave(r) for r in relevantes}
+    descartados = [
+        _fmt_descartado(c, "Baja relevancia para el perfil")
+        for c in contratos if _clave(c) not in ids_rel
+    ]
+    # [I10] Si el modelo semántico no cargó, el filtrado usó dos señales en
+    # vez de tres y la lista resultante parece igual de normal.
+    if relevantes and relevantes[0].get("_semantica_ok") is False:
+        avisos.append(
+            "El modelo semántico no está disponible, así que el filtrado usó "
+            "sólo códigos UNSPSC y palabras clave. Los resultados son menos "
+            f"precisos ({relevantes[0].get('_fallo_semantico') or 'sin detalle'}).")
+    elif relevantes and relevantes[0].get("_sin_semantica"):
+        avisos.append(
+            f"A {relevantes[0]['_sin_semantica']} procesos no se les pudo "
+            "calcular la similitud semántica; su orden puede no ser el justo.")
+
+    salida = []
+    for r in relevantes:
+        sh = r.get("score_hibrido", 0)
+        salida.append({
+            **r,
+            "_score": int(round(sh * 100)),
+            "_motivo": (
+                f"UNSPSC:{int(r.get('score_unspsc', 0) * 100)} "
+                f"KW:{int(r.get('score_keywords', 0) * 100)} "
+                f"Sem:{int(r.get('score_semantico', 0) * 100)}"),
+        })
+    return {"relevantes": salida, "descartados": descartados,
+            "modo": "hibrido", "avisos": avisos}
+
+
+
 _SECOP_TIMEOUT_MSG = (
     "El SECOP II está tardando demasiado en responder. "
     "Por favor, intenta aplicar más filtros de búsqueda o inténtalo de nuevo en unos minutos."
@@ -267,73 +392,14 @@ def buscar_contratos(
             "_dias_cierre": dias_cierre,
         })
 
-    # ── Hybrid scoring inline (uses client profile from session) ──────────
-    modo_busqueda = "keywords_only"
-    contratos_relevantes = contratos_pre
-    fallo_scoring: str | None = None
-    aviso_sector: str | None = None
-
-    try:
-        from routers.perfil import _load_perfil, _cliente_id_from_session
-        from analizador import busqueda_hibrida_triple
-
-        cid = _cliente_id_from_session(sesion)
-        perfil = _load_perfil(cid) if cid else None
-
-        if perfil:
-            exp = perfil.get("experiencia", {}) or {}
-            # [D39] Puede ser lista (esquema canónico) o cadena (formulario).
-            # `normalizar_codigos_unspsc()` acepta las dos; el `.strip()` de
-            # antes lanzaba AttributeError sobre una lista y el `except` de
-            # abajo se lo tragaba.
-            codigos_unspsc = exp.get("codigos_unspsc") or ""
-            objeto_similar = str(exp.get("objeto_similar") or "").strip()
-            sector = str(perfil.get("sector") or "").strip()
-            query = objeto_similar or sector
-
-            if query or codigos_unspsc:
-                perfil_analisis = {
-                    "codigos_unspsc": codigos_unspsc,
-                    "objeto_similar": objeto_similar,
-                }
-                relevantes = busqueda_hibrida_triple(query, perfil_analisis, contratos_pre)
-                ids_rel = {
-                    r.get("id_del_proceso") or r.get("referencia_del_proceso", "")
-                    for r in relevantes
-                }
-                for c in contratos_pre:
-                    ckey = c.get("id_del_proceso") or c.get("referencia_del_proceso", "")
-                    if ckey not in ids_rel:
-                        descartados.append(_fmt_descartado(c, "Baja relevancia para el perfil"))
-
-                contratos_relevantes = []
-                for r in relevantes:
-                    sh = r.get("score_hibrido", 0)
-                    contratos_relevantes.append({
-                        **r,
-                        "_score": int(round(sh * 100)),
-                        "_motivo": (
-                            f"UNSPSC:{int(r.get('score_unspsc', 0)*100)} "
-                            f"KW:{int(r.get('score_keywords', 0)*100)} "
-                            f"Sem:{int(r.get('score_semantico', 0)*100)}"
-                        ),
-                    })
-                modo_busqueda = "hibrido"
-                # Mismo aviso que al guardar: si el sector no tiene lista, la
-                # búsqueda está funcionando peor y hay que decirlo aquí
-                # también, porque es donde se ven los resultados.
-                from analizador import estado_keywords_sector
-                _est = estado_keywords_sector(sector)
-                if _est["estado"] != "ok":
-                    aviso_sector = _est["aviso"]
-    except Exception as exc:
-        # [D39] NO se calla. Un `except Exception: pass` aquí convertía
-        # cualquier fallo del scoring en «no hay filtrado por perfil» sin
-        # decirlo: el operador veía todos los procesos y no sabía que el
-        # perfil no se había aplicado. El caso real era un AttributeError por
-        # la forma del campo `codigos_unspsc`.
-        logger.error("[BUSQUEDA] El scoring por perfil falló: %s", exc, exc_info=True)
-        fallo_scoring = f"{type(exc).__name__}: {str(exc)[:200]}"
+    # [D45] Una sola función hace el scoring; los tres endpoints la llaman.
+    from routers.perfil import _load_perfil, _cliente_id_from_session
+    cid = _cliente_id_from_session(sesion)
+    _sc = aplicar_scoring_perfil(_load_perfil(cid) if cid else None, contratos_pre)
+    contratos_relevantes = _sc["relevantes"]
+    descartados.extend(_sc["descartados"])
+    modo_busqueda = _sc["modo"]
+    avisos = _sc["avisos"]
 
     return {
         "contratos_relevantes":  contratos_relevantes,
@@ -342,13 +408,9 @@ def buscar_contratos(
         "total_relevantes":      len(contratos_relevantes),
         "total_descartados":     len(descartados),
         "modo_busqueda":         modo_busqueda,
-        **({"aviso_sector": aviso_sector} if aviso_sector else {}),
-        # [D39] Si el scoring por perfil falló, se dice. Sin esto, «no se
-        # filtró por perfil» y «el perfil no descartó nada» se ven igual.
-        **({"aviso_scoring": (
-            "No se pudo aplicar el filtrado por perfil, así que estos "
-            f"resultados NO están ordenados por relevancia ({fallo_scoring}). "
-            "Revisa el perfil del cliente.")} if fallo_scoring else {}),
+        # [D45] Los avisos viajan SIEMPRE que los haya: «no se filtró» y «el
+        # perfil no descartó nada» se ven igual en la lista.
+        **({"avisos": avisos} if avisos else {}),
         # backward compat keys for any cached frontend
         "contratos":             contratos_relevantes,
         "descartados":           [d for d in descartados if d.get("razon_descarte","").startswith("Fase") or d.get("razon_descarte","").startswith("Manifestacion") or d.get("razon_descarte","").startswith("Cierre") or d.get("razon_descarte","").startswith("Valor")][:5],
@@ -377,24 +439,16 @@ def filtrar_hibrido(body: FiltrarBody, authorization: str = Header(None)):
     if not perfil:
         return {"resultados": body.contratos, "filtrados": len(body.contratos), "modo": "sin_perfil"}
 
-    query = body.query or perfil.get("experiencia", {}).get("objeto_similar", "") or perfil.get("sector", "")
-
-    # Mapear perfil al formato que espera busqueda_hibrida_triple
-    perfil_analisis = {
-        "codigos_unspsc": perfil.get("experiencia", {}).get("codigos_unspsc", ""),
-        "objeto_similar": perfil.get("experiencia", {}).get("objeto_similar", ""),
-    }
-
-    try:
-        resultados = busqueda_hibrida_triple(query, perfil_analisis, body.contratos)
-    except Exception:
-        resultados = body.contratos
-
+    # [D45] La misma función que los otros dos. Tenía su propia copia con su
+    # propio `except Exception` que devolvía TODO sin filtrar en silencio.
+    _sc = aplicar_scoring_perfil(perfil, body.contratos)
     return {
-        "resultados": resultados,
-        "filtrados": len(resultados),
+        "resultados": _sc["relevantes"],
+        "descartados": _sc["descartados"],
+        "filtrados": len(_sc["relevantes"]),
         "total_entrada": len(body.contratos),
-        "modo": "hibrido_triple",
+        "modo": _sc["modo"],
+        **({"avisos": _sc["avisos"]} if _sc["avisos"] else {}),
     }
 
 
@@ -469,47 +523,14 @@ def score_contratos(body: ScoreBody, authorization: str = Header(None)):
             "_dias_cierre": dias_cierre,
         })
 
-    modo_busqueda = "keywords_only"
-    contratos_relevantes = contratos_pre
-
-    if perfil:
-        try:
-            exp = perfil.get("experiencia", {}) or {}
-            codigos_unspsc = exp.get("codigos_unspsc", "").strip()
-            objeto_similar = exp.get("objeto_similar", "").strip()
-            sector = perfil.get("sector", "").strip()
-            query = objeto_similar or sector
-
-            if query or codigos_unspsc:
-                perfil_analisis = {
-                    "codigos_unspsc": codigos_unspsc,
-                    "objeto_similar": objeto_similar,
-                }
-                relevantes = busqueda_hibrida_triple(query, perfil_analisis, contratos_pre)
-                ids_rel = {
-                    r.get("id_del_proceso") or r.get("referencia_del_proceso", "")
-                    for r in relevantes
-                }
-                for c in contratos_pre:
-                    ckey = c.get("id_del_proceso") or c.get("referencia_del_proceso", "")
-                    if ckey not in ids_rel:
-                        descartados.append(_fmt_descartado(c, "Baja relevancia para el perfil"))
-
-                contratos_relevantes = []
-                for r in relevantes:
-                    sh = r.get("score_hibrido", 0)
-                    contratos_relevantes.append({
-                        **r,
-                        "_score": int(round(sh * 100)),
-                        "_motivo": (
-                            f"UNSPSC:{int(r.get('score_unspsc', 0)*100)} "
-                            f"KW:{int(r.get('score_keywords', 0)*100)} "
-                            f"Sem:{int(r.get('score_semantico', 0)*100)}"
-                        ),
-                    })
-                modo_busqueda = "hibrido"
-        except Exception:
-            pass
+    # [D45] La misma función que `/contratos`. Este bloque era una copia y se
+    # quedó con el `.strip()` sobre una lista que [D39] corrigió en el otro:
+    # como es el que usa la interfaz, el filtrado llevaba días apagado.
+    _sc = aplicar_scoring_perfil(perfil, contratos_pre)
+    contratos_relevantes = _sc["relevantes"]
+    descartados.extend(_sc["descartados"])
+    modo_busqueda = _sc["modo"]
+    avisos = _sc["avisos"]
 
     return {
         "contratos_relevantes":  contratos_relevantes,
@@ -518,6 +539,7 @@ def score_contratos(body: ScoreBody, authorization: str = Header(None)):
         "total_relevantes":      len(contratos_relevantes),
         "total_descartados":     len(descartados),
         "modo_busqueda":         modo_busqueda,
+        **({"avisos": avisos} if avisos else {}),
         "contratos":             contratos_relevantes,
         "descartados":           descartados[:5],
         "total":                 len(contratos_relevantes),

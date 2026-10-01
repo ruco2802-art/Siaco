@@ -5,7 +5,8 @@
     "regla": "Sin sector declarado -> NINGUNA keyword. Un conjunto por defecto repetiria el error de HVAC.",
     "clave": "Los nombres coinciden con los valores del desplegable de sector del formulario (static/index.html #p-sector).",
     "normalizacion": "El puntaje se calcula por TOPE, no por tamano de lista: 3 coincidencias o mas = 1.0, 2 = 2/3, 1 = 1/3. Asi una lista larga que describe bien un sector no penaliza al perfil que la usa.",
-    "sin_lista": "Los sectores del desplegable sin lista aqui (transporte, tecnologia, salud, educacion) NO reciben keywords: el scoring depende de UNSPSC y semantica. Anadirlas exige revisarlas una por una, como estas."
+    "sin_lista": "Los sectores del desplegable sin lista aqui (transporte, tecnologia, salud, educacion) NO reciben keywords: el scoring depende de UNSPSC y semantica. Anadirlas exige revisarlas una por una, como estas.",
+    "revision_2026_10_01": "Quitado 'parque': captura 'parque automotor', que es transporte. Quitado 'via' suelto: captura 'via de administracion' (salud) y 'via libre'. En su lugar, formas que solo aparecen en obra: 'via terciaria', 'vias terciarias', 'malla vial'. Pendiente de revision con datos reales de SECOP: la separacion nucleo/periferia."
   },
   "obras_civiles": [
     "obra",
@@ -15,7 +16,6 @@
     "mantenimiento",
     "infraestructura",
     "pavimento",
-    "via",
     "edificacion",
     "aula",
     "sede",
@@ -30,8 +30,10 @@
     "alcantarillado",
     "acueducto",
     "polideportivo",
-    "parque",
-    "placa huella"
+    "placa huella",
+    "via terciaria",
+    "vias terciarias",
+    "malla vial"
   ],
   "hvac": [
     "aire acondicionado",

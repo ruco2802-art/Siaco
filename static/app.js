@@ -689,7 +689,10 @@ function renderBusquedaResult(data) {
   // Avisos del servidor. Quedarse sin palabras clave o que el scoring falle
   // hace que la búsqueda funcione PEOR sin que se note: el banner lo dice
   // donde se ven los resultados, no sólo en el log.
-  const avisos = [data.aviso_sector, data.aviso_scoring].filter(Boolean);
+  // [D45] El servidor manda todos los avisos en una lista: perfil sin
+  // códigos, sector sin palabras, scoring caído, modelo semántico ausente.
+  const avisos = (data.avisos || [])
+    .concat([data.aviso_sector, data.aviso_scoring]).filter(Boolean);
   const stAv = document.getElementById('busq-status');
   if (stAv && avisos.length) {
     stAv.innerHTML = avisos.map(a => alertHtml('warn', a)).join('');

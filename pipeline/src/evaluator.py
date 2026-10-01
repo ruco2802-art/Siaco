@@ -742,8 +742,14 @@ def _evaluar_item(
     try:
         from .catalogo import objeto_para_evaluar as _oe
         _objeto = _oe(req)
-    except Exception:
-        pass
+    except Exception as exc:
+        # [I10] Sin catálogo, el enrutado por objeto no se aplica y el
+        # requisito cae al mapa por palabra clave: el veredicto sale igual de
+        # normal pero peor fundado. Se registra para que no sea invisible.
+        import logging
+        logging.getLogger("siaco").warning(
+            "[EVALUADOR] No se pudo identificar el objeto de «%s»: %s",
+            (req.nombre or "")[:60], exc)
     if _objeto == "UNSPSC":
         return _evaluar_unspsc(req, perfil)
     if _objeto == "CONDICION_MIPYME" and "limitac" in _strip_accents(
@@ -874,6 +880,28 @@ def _evaluar_item(
     # sobre el documento y salía por la rama de «valor no numérico».
     if isinstance(valor, Documento):
         return _evaluar_documento(req, valor, fecha_referencia)
+
+    # [D46] Un BOOLEANO nunca entra a la comparación numérica, aunque el
+    # requisito traiga umbral. `float(True) == 1.0` NO lanza excepción, así
+    # que "Certificado de seguridad social, vigencia <= 30 días" con
+    # `paz_y_salvo_seguridad_social=True` comparaba 1.0 <= 30.0 y daba CUMPLE
+    # sin haber mirado ninguna fecha. No depende de que el catálogo falle:
+    # SEGURIDAD_SOCIAL nunca estuvo en CAMPO_POR_OBJETO, así que este
+    # requisito pasaba siempre por el mapa de palabra clave. Medido sobre
+    # Ternera: el caso real existe en el pliego.
+    #
+    # El campo booleano responde "¿lo tiene?"; el pliego pregunta "¿hace
+    # cuánto se expidió?". Son preguntas distintas y una no contesta la otra:
+    # [I10] ante la duda, no se afirma nada.
+    if isinstance(valor, bool) and req.valor_umbral is not None:
+        return {
+            "requisito": req.nombre,
+            "estado": "dato_faltante",
+            "categoria": req.categoria,
+            "nota": (f"el perfil sólo responde si lo tiene ({valor}), y el "
+                     "pliego exige un umbral que necesita una fecha u otro "
+                     "dato numérico que el perfil no tiene registrado"),
+        }
 
     # Comparación numérica
     if req.valor_umbral is not None and req.operador is not None:

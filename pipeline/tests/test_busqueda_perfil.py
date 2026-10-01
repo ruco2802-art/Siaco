@@ -98,9 +98,15 @@ def test_el_fallo_del_scoring_se_reporta_no_se_traga():
     fuente = Path(__file__).resolve().parents[2] / "routers" / "busqueda.py"
     codigo = fuente.read_text("utf-8")
     assert "pass  # fallback: all contratos_pre are relevant" not in codigo
-    assert "aviso_scoring" in codigo, (
-        "el aviso tiene que viajar en la respuesta, no sólo al log")
+    assert '"avisos": avisos' in codigo, (
+        "los avisos tienen que viajar en la respuesta, no sólo al log")
     assert 'logger.error("[BUSQUEDA] El scoring por perfil falló' in codigo
+    # [D45] Y una sola función hace el scoring: arreglar una copia dejaba las
+    # otras rotas, que es cómo el filtrado estuvo apagado sin que se notara.
+    assert codigo.count("busqueda_hibrida_triple(") == 1, (
+        "volvió a haber más de una copia del scoring")
+    assert codigo.count("aplicar_scoring_perfil(") >= 4, (
+        "los tres endpoints tienen que llamar a la función única")
 
 
 # ── [D41] Las keywords vienen del sector, no de una constante ──────────────
@@ -302,7 +308,7 @@ def test_un_sector_con_lista_no_avisa():
     """Un aviso que sale siempre deja de leerse."""
     from analizador import estado_keywords_sector
     r = estado_keywords_sector("obras_civiles")
-    assert r["estado"] == "ok" and r["aviso"] is None and r["n_terminos"] == 24
+    assert r["estado"] == "ok" and r["aviso"] is None and r["n_terminos"] >= 20
     # y por alias también
     assert estado_keywords_sector("OBRA PUBLICA")["estado"] == "ok"
 
@@ -312,9 +318,10 @@ def test_el_aviso_viaja_al_guardar_y_al_buscar():
     perfil = (raiz / "routers" / "perfil.py").read_text("utf-8")
     assert "estado_keywords_sector" in perfil, "guardar no avisa"
     busqueda = (raiz / "routers" / "busqueda.py").read_text("utf-8")
-    assert "aviso_sector" in busqueda, "buscar no avisa"
+    assert "estado_keywords_sector" in busqueda, "buscar no avisa"
     js = (raiz / "static" / "app.js").read_text("utf-8")
-    assert "data.aviso_sector" in js, "el aviso no llega a la pantalla"
+    assert "data.avisos" in js or "data.aviso_sector" in js, (
+        "el aviso no llega a la pantalla")
 
 
 def test_el_desplegable_y_las_listas_no_se_separan():

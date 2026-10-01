@@ -255,6 +255,66 @@ def test_un_booleano_sin_umbral_si_es_una_respuesta():
     assert _evaluar_item(req, no)["estado"] == "no_cumple"
 
 
+def test_un_booleano_no_responde_un_umbral_que_necesita_fecha():
+    """
+    [D46] `float(True) == 1.0` no lanza excepción, así que "Certificado de
+    seguridad social, vigencia <= 30 días" con
+    `paz_y_salvo_seguridad_social=True` comparaba 1,0 <= 30,0 y daba CUMPLE
+    sin haber mirado ninguna fecha. Caso real: Ternera trae exactamente este
+    requisito. No depende de que el catálogo falle — SEGURIDAD_SOCIAL nunca
+    estuvo en CAMPO_POR_OBJETO, así que siempre pasa por el mapa de palabra
+    clave.
+
+    El campo responde "¿lo tiene?"; el pliego pregunta "¿hace cuánto se
+    expidió?". Son preguntas distintas [I10].
+    """
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    req = _req_doc("Certificado de afiliación o pago de seguridad social",
+                   categoria="juridico", valor_umbral=30.0, operador="<=",
+                   unidad="dias calendario")
+    p = PerfilEmpresa.model_validate(
+        {"nombre": "X", "juridico": {"paz_y_salvo_seguridad_social": True}})
+    r = _evaluar_item(req, p)
+    assert r["estado"] == "dato_faltante", (
+        f"un booleano con umbral volvió a colarse como {r['estado']} "
+        "(float(bool) no lanza excepción: revisa el orden de los guardas)")
+    assert "True" in r["nota"] or "true" in r["nota"].lower()
+
+
+def test_el_fallback_de_catalogo_no_salta_la_vigencia_del_rup():
+    """
+    [D46] Si `objeto_para_evaluar()` falla, el RUP deja de enrutarse a
+    `Documento` (con su chequeo de vigencia) y cae al mapa de palabra clave,
+    que sólo tiene `rup_en_firme` — un booleano sin fecha. Antes de esta
+    corrección, un RUP vencido con `rup_en_firme=True` heredado del perfil
+    legado pasaba como CUMPLE vía `float(True) <= 30`.
+    """
+    # Se importa como `src.catalogo`, no `pipeline.src.catalogo`: es el
+    # nombre bajo el que `src.evaluator` lo resuelve en este árbol de tests
+    # (sys.path apunta a `pipeline/`), y monkeypatchear el otro no haría nada.
+    import src.catalogo as catalogo
+    from src.evaluator import _evaluar_item
+    from src.perfil import PerfilEmpresa
+    req = _req_doc("RUP vigente con vigencia máxima 30 días",
+                   categoria="juridico", valor_umbral=30.0, operador="<=",
+                   unidad="dias calendario")
+    p = PerfilEmpresa.model_validate({
+        "nombre": "X", "juridico": {"rup_en_firme": True},
+        "documentos": {"rup": {"tiene": True, "fecha_expedicion": "2026-01-01"}},
+    })
+    original = catalogo.objeto_para_evaluar
+    catalogo.objeto_para_evaluar = lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("catálogo no disponible"))
+    try:
+        r = _evaluar_item(req, p)
+    finally:
+        catalogo.objeto_para_evaluar = original
+    assert r["estado"] == "dato_faltante", (
+        f"el fallback del catálogo produjo {r['estado']} sobre un RUP "
+        "potencialmente vencido en vez de declarar que falta el dato")
+
+
 # ── 4 · La cuarta categoría: reglas del pliego ─────────────────────────────
 
 def test_una_regla_del_pliego_no_es_hueco_de_nadie():

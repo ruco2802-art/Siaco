@@ -1042,13 +1042,20 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
 
     modelo = None
     emb_query = None
+    fallo_semantico: str | None = None
     try:
         modelo = _obtener_modelo_embeddings()
         emb_query = modelo.encode([query], convert_to_numpy=True, show_progress_bar=False)[0]
-    except Exception:
-        pass  # fallback: solo UNSPSC + keywords
+    except Exception as exc:
+        # [I10] Que el modelo no cargue cambia el resultado: sin la tercera
+        # señal el filtrado queda a merced de UNSPSC y palabras, y la lista
+        # resultante parece igual de normal. Se registra y viaja al llamador.
+        fallo_semantico = f"{type(exc).__name__}: {str(exc)[:160]}"
+        print(f"[HÍBRIDO] Sin modelo semántico ({fallo_semantico}); "
+              "el filtrado usa sólo UNSPSC y palabras clave.")
 
     resultados = []
+    n_sin_semantica = 0
     for contrato in contratos:
         if not isinstance(contrato, dict):
             continue
@@ -1087,8 +1094,13 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
                 if nq > 0 and nc > 0:
                     cos = float(np.dot(emb_query, emb_c) / (nq * nc))
                     score_semantico = (cos + 1) / 2  # [-1,1] → [0,1]
-            except Exception:
-                pass
+            except Exception as exc:
+                # Falla el coseno de ESTE contrato, no del modelo. Se cuenta
+                # para poder decir «a N contratos les faltó la señal
+                # semántica» en vez de dejarlos con 0 como si fueran ajenos.
+                n_sin_semantica += 1
+                if fallo_semantico is None:
+                    fallo_semantico = f"{type(exc).__name__}: {str(exc)[:120]}"
 
         # [D40] La FAMILIA decide si se muestra; la CLASE, el orden.
         #
@@ -1178,6 +1190,13 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
     _RANGO = {"clase": 0, "familia": 1, "afinidad": 2}
     resultados.sort(key=lambda x: (_RANGO.get(x.get("nivel_coincidencia", "afinidad"), 3),
                                    -x["score_hibrido"]))
+    # El diagnóstico viaja pegado a cada resultado para no cambiar la firma de
+    # la función, que tiene tres llamadores. `aplicar_scoring_perfil()` lo lee
+    # del primero y lo convierte en aviso.
+    for r in resultados:
+        r["_semantica_ok"] = modelo is not None and fallo_semantico is None
+        r["_fallo_semantico"] = fallo_semantico
+        r["_sin_semantica"] = n_sin_semantica
     print(f"[HÍBRIDO] {len(resultados)}/{len(contratos)} contratos pasaron el filtro")
     return resultados
 

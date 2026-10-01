@@ -613,8 +613,11 @@ def _analizar_pliego_bg(
 
         try:
             guardar_analisis_historial(cid, resultado, licitacion["id_del_proceso"])
-        except Exception:
-            pass
+        except Exception as exc:
+            # El análisis está pagado: perderlo del historial en silencio hace
+            # que el operador lo vuelva a correr sin saber por qué no aparece.
+            logger.error("[AUDITORIA] No se pudo guardar en el historial de "
+                         "'%s': %s", cid, exc, exc_info=True)
 
         # [G1] El resultado completo al almacén, no sólo los scores. El
         # historial de `analizador.py` guarda dos números; reabrir el análisis
