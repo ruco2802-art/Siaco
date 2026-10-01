@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import gestor_documentos as gd
 
@@ -59,13 +59,41 @@ class PerfilBodyJuridico(BaseModel):
     garantia_seriedad: bool | None = None             # [TODO-FORM]
 
 
+def _a_lista(v) -> list[str]:
+    """
+    Normaliza a lista lo que el formulario manda como texto separado por comas.
+
+    [D39] El formulario web tiene un `<input type="text">` para los códigos
+    UNSPSC y los objetos similares, así que manda una CADENA. El modelo los
+    declaraba `list[str]`, y pydantic la rechazaba: **guardar el perfil desde
+    la interfaz devolvía HTTP 422** en cuanto se escribía algo en esos campos.
+    Es la misma discrepancia de forma que rompía el scoring, un piso más
+    arriba.
+    """
+    if v is None or v == "":
+        return []
+    if isinstance(v, (list, tuple, set)):
+        return [str(x).strip() for x in v if str(x).strip()]
+    return [t.strip() for t in str(v).replace(";", ",").split(",") if t.strip()]
+
+
 class PerfilBodyExperiencia(BaseModel):
     valor_acumulado: float | None = None
     valor_individual_max: float | None = None
-    objetos_similares: list[str] = []           # era objeto_similar (str)
-    codigos_unspsc: list[str] = []              # era codigos_unspsc (str)
+    objetos_similares: list[str] = []
+    codigos_unspsc: list[str] = []
     contratos_acreditados: int | None = None    # [TODO-FORM]
     antiguedad_meses: int | None = None         # [TODO-FORM]
+
+    # El formulario manda el singular `objeto_similar` y una cadena. Pydantic
+    # descartaba el campo por nombre desconocido **en silencio**, así que la
+    # consulta semántica del scorer llegaba vacía y caía al sector.
+    objeto_similar: str = ""
+
+    @field_validator("codigos_unspsc", "objetos_similares", mode="before")
+    @classmethod
+    def _acepta_cadena(cls, v):
+        return _a_lista(v)
 
 
 class PerfilBodySocial(BaseModel):
@@ -129,6 +157,12 @@ class PerfilBody(BaseModel):
         fin = self.financiero.model_dump()
         jur = self.juridico.model_dump()
         exp = self.experiencia.model_dump()
+        # `objeto_similar` no está en `PerfilExperiencia` pero SÍ lo usa el
+        # scorer como consulta semántica, así que viaja igual. Si está vacío y
+        # hay objetos similares, se deriva del primero en vez de dejarlo en
+        # blanco y perder la señal.
+        if not exp.get("objeto_similar") and exp.get("objetos_similares"):
+            exp["objeto_similar"] = exp["objetos_similares"][0]
         soc = self.social.model_dump()
         docs = self.documentos.model_dump()
         for clave, v in docs.items():
@@ -165,7 +199,8 @@ class PerfilBody(BaseModel):
 # ── Helpers ────────────────────────────────────────
 
 def _cliente_id_from_session(sesion: dict) -> str:
-    return sesion.get("cliente_id") or sesion.get("id") or ""
+    """[D42a] El perfil ACTIVO manda sobre el de la sesión. Ver `cliente_id_activo`."""
+    return cliente_id_activo(sesion)
 
 
 def _cache_perfil(cid: str) -> Path:
@@ -179,15 +214,52 @@ def _sb_perfil_path(cid: str) -> str:
 
 def _load_perfil(cid: str) -> dict:
     """
-    Carga el perfil del cliente.
-    1. Busca en caché /tmp (mismo contenedor).
-    2. Si no existe, descarga desde Supabase Storage.
+    **EL ÚNICO LECTOR del perfil de empresa.** [D42c]
+
+    Todo el sistema pasa por aquí: la búsqueda, el chat, las observaciones, la
+    auditoría, el generador de oferta y la verificación de RUP. Antes había
+    tres copias de esta lógica —aquí, en `gestor_documentos.py` y en
+    `routers/generador_oferta.py`— y la pregunta «¿qué perfil está usando el
+    sistema?» dependía de qué módulo la hiciera.
+
+    ORDEN DE VERDAD, y no es arbitrario [I11]:
+
+      1. `clientes/{cid}.json` — **la verdad.** Es lo que escribe
+         `_save_perfil()` y lo que lee el evaluador del pipeline.
+      2. caché local — copia derivada, para no tocar disco en cada petición.
+      3. Supabase — copia derivada, para sobrevivir a un redespliegue.
+
+    Si la verdad existe, se usa y se refresca la caché. Si sólo hay copia, se
+    usa **y se avisa**: significa que el disco perdió el archivo o que el
+    perfil viene de otro despliegue, y quien opera tiene que saberlo.
     """
+    from pipeline.src.perfil import ruta_perfil_cliente
+
+    verdad = ruta_perfil_cliente(cid)
+    if verdad.exists():
+        try:
+            perfil = json.loads(verdad.read_text("utf-8"))
+        except Exception as exc:
+            logger.error("[PERFIL] %s ilegible: %s", verdad, exc)
+        else:
+            # La caché se deriva de la verdad, nunca al revés.
+            try:
+                cache = _cache_perfil(cid)
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text(json.dumps(perfil, ensure_ascii=False, indent=2),
+                                 encoding="utf-8")
+            except Exception:
+                pass
+            return perfil
+
     cache = _cache_perfil(cid)
     if cache.exists():
         try:
-            with open(cache, "r", encoding="utf-8") as f:
-                return json.load(f)
+            perfil = json.loads(cache.read_text("utf-8"))
+            logger.warning(
+                "[PERFIL] '%s' no está en %s; se usa la caché. La copia "
+                "sobrevivió a la verdad.", cid, verdad)
+            return perfil
         except Exception:
             pass
 
@@ -196,6 +268,8 @@ def _load_perfil(cid: str) -> dict:
         data = sb_download(_sb_perfil_path(cid))
         if data:
             perfil = json.loads(data.decode("utf-8"))
+            logger.warning("[PERFIL] '%s' recuperado de Supabase: no estaba "
+                           "en disco ni en caché.", cid)
             cache.parent.mkdir(parents=True, exist_ok=True)
             with open(cache, "w", encoding="utf-8") as f:
                 json.dump(perfil, f, ensure_ascii=False, indent=2)
@@ -207,14 +281,9 @@ def _load_perfil(cid: str) -> dict:
 
 
 def _ruta_perfil_pipeline(cid: str) -> Path:
-    """
-    Donde el PIPELINE busca el perfil: `clientes/{cid}.json`.
-
-    Es el primer sitio que mira `evaluator.cargar_perfil_por_cid()`. NO es
-    `clientes/{cid}/perfil.json`, que guarda otra cosa —el perfil de la
-    sesión: cliente_id, plan, contacto— y lo lee el login.
-    """
-    return Path(f"./clientes/{cid}.json")
+    """La ruta de la verdad. Definida en `pipeline/src/perfil.py` [D42c]."""
+    from pipeline.src.perfil import ruta_perfil_cliente
+    return ruta_perfil_cliente(cid)
 
 
 def _hay_supabase() -> bool:
@@ -273,6 +342,11 @@ def _save_perfil(cid: str, datos: dict) -> str | None:
             detail=f"Error al guardar en la nube: {msg[:300]}",
         )
     return None
+
+
+# [D42a] Re-exportado desde el esquema canónico: vive allí porque es lógica
+# pura y los tests del pipeline corren en un intérprete sin FastAPI.
+from pipeline.src.perfil import cliente_id_activo  # noqa: E402,F401
 
 
 # ── Endpoints ──────────────────────────────────────
@@ -385,3 +459,60 @@ def delete_documento(filename: str, authorization: str = Header(None)):
         raise HTTPException(status_code=500, detail=f"Error al actualizar índice: {str(exc)[:200]}")
 
     return {"ok": True, "eliminados": original}
+
+
+# ── Selector de perfil [D42a] ─────────────────────────────────────────────
+
+class PerfilActivoBody(BaseModel):
+    cid: str
+
+
+@router.get("/perfiles")
+def listar_perfiles(authorization: str = Header(None)):
+    """
+    Los perfiles de empresa guardados y cuál está activo.
+
+    Existe porque el operador maneja varios: analizar con el perfil equivocado
+    produce un informe correcto sobre la empresa que no es, y eso no se ve
+    mirando el resultado.
+    """
+    from routers.auth import require_auth
+    sesion = require_auth(authorization)
+    from pipeline.src.perfil import perfiles_disponibles
+    return {
+        "perfiles": perfiles_disponibles(),
+        "activo": cliente_id_activo(sesion),
+        "cliente_sesion": sesion.get("cliente_id") or sesion.get("id") or "",
+    }
+
+
+@router.post("/perfil/activo")
+def fijar_perfil_activo(body: PerfilActivoBody, authorization: str = Header(None)):
+    """
+    Fija el perfil de empresa con el que se va a buscar y analizar.
+
+    Se guarda en la SESIÓN y no en el navegador: así la respuesta a «¿con qué
+    perfil se hizo este análisis?» no depende de la pestaña que estuviera
+    abierta [I11].
+    """
+    from routers.auth import require_auth
+    require_auth(authorization)
+    cid = (body.cid or "").strip()
+    from pipeline.src.perfil import ruta_perfil_cliente
+    if not cid or not ruta_perfil_cliente(cid).exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay perfil de empresa guardado para '{cid}'.")
+
+    import sesiones as _sesiones
+    token = (authorization or "").replace("Bearer ", "")
+    datos = _sesiones.update_session(token, {"perfil_activo": cid})
+    if datos is None:
+        raise HTTPException(status_code=401, detail="Sesión expirada.")
+    perfil = _load_perfil(cid) or {}
+    return {
+        "ok": True,
+        "activo": cid,
+        "nombre": perfil.get("nombre") or cid,
+        "sector": perfil.get("sector") or "",
+    }

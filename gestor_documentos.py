@@ -249,30 +249,17 @@ def buscar_en_documentos_cliente(query: str, cliente_id: str, top_k: int = 5) ->
 
 def verificar_vigencia_rup(cliente_id: str) -> dict:
     """
-    Verifica vigencia del RUP leyendo perfil.json.
-    Busca primero en caché /tmp (poblado por _load_perfil en routers/perfil.py),
-    luego en Supabase como fallback.
+    Verifica vigencia del RUP.
+
+    [D42c] Usa el LECTOR ÚNICO. Esta función tenía su propia copia del camino
+    caché→Supabase, así que podía ver un perfil distinto del que veía la
+    búsqueda o el evaluador para el mismo cliente.
     """
-    cache_perfil = Path(f"/tmp/siaco/{cliente_id}/perfil.json")
-    perfil = {}
-
-    if cache_perfil.exists():
-        try:
-            with open(cache_perfil, "r", encoding="utf-8") as f:
-                perfil = json.load(f)
-        except Exception:
-            pass
-
-    if not perfil:
-        try:
-            from supabase_client import sb_download
-            data = sb_download(f"clientes/{cliente_id}/perfil.json")
-            if data:
-                perfil = json.loads(data.decode("utf-8"))
-                cache_perfil.parent.mkdir(parents=True, exist_ok=True)
-                cache_perfil.write_bytes(data)
-        except Exception:
-            pass
+    try:
+        from routers.perfil import _load_perfil
+        perfil = _load_perfil(cliente_id) or {}
+    except Exception:
+        perfil = {}
 
     fecha_str = perfil.get("fecha_vencimiento_rup", "")
     if not fecha_str:

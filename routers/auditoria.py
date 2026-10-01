@@ -67,7 +67,11 @@ def _leer_job(job_id: str) -> dict | None:
 
 
 def _cliente_id(sesion: dict) -> str:
-    return sesion.get("cliente_id") or sesion.get("id") or ""
+    """[D42a] El perfil ACTIVO manda: analizar con el perfil equivocado produce
+    un informe correcto sobre la empresa que no es, y eso no se ve en el
+    resultado."""
+    from routers.perfil import cliente_id_activo
+    return cliente_id_activo(sesion)
 
 
 def _load_perfil_cliente(cid: str) -> dict:

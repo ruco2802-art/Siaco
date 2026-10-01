@@ -1145,3 +1145,44 @@ tr.urgente  { background: rgba(248,81,73,.03); }
   line-height: 1.4;
   flex: 1 1 260px;
 }
+
+
+/* ── [D42a] Perfil de empresa activo ─────────────────────────────────────── */
+/* Va en la barra lateral y no en una pantalla aparte porque tiene que estar a
+   la vista mientras se busca y se analiza, no sólo al elegirlo. */
+.perfil-activo {
+  margin: 0 0 18px;
+  padding: 11px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.perfil-activo label {
+  display: block;
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.perfil-activo select {
+  width: 100%;
+  padding: 7px 9px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: .82rem;
+}
+.perfil-activo select:focus { outline: none; border-color: var(--accent); }
+/* Sin perfil elegido no se puede buscar ni analizar: el borde lo dice antes
+   de que el usuario lo intente. */
+.perfil-activo.sin-elegir { border-color: var(--warn); }
+.perfil-activo.sin-elegir select { border-color: var(--warn); }
+.perfil-activo-sector {
+  margin-top: 6px;
+  font-size: .72rem;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+}

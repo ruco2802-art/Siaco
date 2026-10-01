@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv(override=False)  # Railway env vars tienen prioridad sobre .env local
@@ -872,17 +873,29 @@ def rag_pliego_con_cache(cliente_id: str, texto: str, query: str = "", top_k_por
     return seleccion[:MAX_CHARS]
 
 
-# [D40] Dígitos que se comparan de cada código UNSPSC. 6 = CLASE.
-#   2 segmento · 4 familia · 6 clase · 8 producto
-# Con 4 no se distinguen albañilería y climatización; con 8 casi nada coincide,
-# porque el pliego rara vez usa el mismo código de producto que el RUP.
-DIGITOS_UNSPSC = 6
+# [D40] DOS EJES, no uno. La jerarquía UNSPSC es:
+#   2 segmento · 4 FAMILIA · 6 CLASE · 8 producto
+#
+# Se usaban 4 dígitos para todo y mezclaba sectores; se pasó a 6 y entonces un
+# proceso de la misma familia pero de otra clase se descartaba. **Las dos cosas
+# estaban mal porque son DOS PREGUNTAS DISTINTAS**:
+#
+#   ¿pertenece a mi sector?  -> FAMILIA (4) -> decide si SE MUESTRA
+#   ¿encaja con mi perfil?   -> CLASE  (6) -> decide el ORDEN
+#
+# Una constructora tiene que ver TODA la obra de su zona y decidir ella qué
+# sirve —para eso está la evaluación— y además ver el sector completo dice
+# cómo se mueve el mercado, no sólo qué encaja hoy. Lo que NO tiene que ver es
+# refrigeración, y eso lo sigue cortando la familia.
+DIGITOS_FAMILIA = 4
+DIGITOS_CLASE = 6
+DIGITOS_UNSPSC = DIGITOS_CLASE   # compatibilidad con quien lo importe
 
 
-def normalizar_codigos_unspsc(valor) -> list[str]:
+def normalizar_codigos_unspsc(valor, digitos: int = DIGITOS_CLASE) -> list[str]:
     """
-    Prefijos de clase de los códigos UNSPSC del perfil, venga como lista o
-    como cadena separada por comas [D39].
+    Prefijos de los códigos UNSPSC del perfil, venga como lista o como cadena
+    separada por comas [D39]. `digitos` elige el nivel: 4 familia, 6 clase.
 
     Devuelve lista vacía si no hay nada utilizable — nunca un prefijo basura,
     que es lo que producía el `str(lista).split(",")` anterior.
@@ -898,11 +911,57 @@ def normalizar_codigos_unspsc(valor) -> list[str]:
         # Sólo dígitos: descarta comillas, corchetes y separadores que dejaba
         # la conversión de una lista a texto.
         solo = "".join(ch for ch in str(c) if ch.isdigit())
-        if len(solo) >= DIGITOS_UNSPSC:
-            pref = solo[:DIGITOS_UNSPSC]
+        if len(solo) >= digitos:
+            pref = solo[:digitos]
             if pref not in salida:
                 salida.append(pref)
     return salida
+
+
+# [D41] Coincidencias necesarias para el puntaje máximo de keywords.
+#
+# Se normaliza por TOPE y no dividiendo entre el tamaño de la lista, que era
+# lo que hacía antes: con `matches / len(lista)`, una lista de 24 términos que
+# describe bien el sector daba 0,04 por acierto y una de 5 daba 0,20. **El
+# perfil que mejor se describía salía peor puntuado.**
+KEYWORDS_PARA_TOPE = 3
+
+_RUTA_KEYWORDS = (Path(__file__).parent / "pipeline" / "data"
+                  / "keywords_sector.json")
+_CACHE_KEYWORDS: dict | None = None
+
+
+def puntaje_keywords(matches: int) -> float:
+    """3 coincidencias o más → 1,0 · 2 → 2/3 · 1 → 1/3 · 0 → 0."""
+    if matches <= 0:
+        return 0.0
+    return min(1.0, matches / KEYWORDS_PARA_TOPE)
+
+
+def keywords_de_sector(sector: str | None) -> list[str]:
+    """
+    Palabras clave del sector declarado en el perfil, o **lista vacía**.
+
+    Vacía en dos casos, y los dos son correctos: el perfil no declara sector,
+    o lo declara y no hay lista revisada para él. En ninguno se inventa un
+    conjunto: las palabras deciden qué procesos ve un cliente y ponerlas a
+    ojo es lo que produjo [D41].
+    """
+    global _CACHE_KEYWORDS
+    if not sector:
+        return []
+    if _CACHE_KEYWORDS is None:
+        try:
+            _CACHE_KEYWORDS = json.loads(_RUTA_KEYWORDS.read_text("utf-8"))
+        except Exception:
+            _CACHE_KEYWORDS = {}
+    clave = str(sector).strip().lower()
+    # Los perfiles anteriores al desplegable traen el sector en texto libre
+    # («OBRA PUBLICA»). Sin resolver el alias se quedarían sin keywords y
+    # nadie lo notaría: el filtrado seguiría funcionando, peor.
+    clave = (_CACHE_KEYWORDS.get("_alias") or {}).get(clave, clave)
+    valor = _CACHE_KEYWORDS.get(clave)
+    return [k.lower() for k in valor] if isinstance(valor, list) else []
 
 
 def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -> list:
@@ -933,17 +992,20 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
     # FAMILIA y 6 la CLASE: `7215` cubre a la vez `72151500` (albañilería) y
     # `72154000` (climatización), así que una constructora traía procesos de
     # refrigeración con puntaje 1,00.
-    codigos_cliente = normalizar_codigos_unspsc(perfil_cliente.get("codigos_unspsc"))
+    _codigos = perfil_cliente.get("codigos_unspsc")
+    clases_cliente = normalizar_codigos_unspsc(_codigos, DIGITOS_CLASE)
+    familias_cliente = normalizar_codigos_unspsc(_codigos, DIGITOS_FAMILIA)
 
-    # Keywords: del perfil + de KEYWORDS_HVAC de config
-    try:
-        from config_legacy import KEYWORDS_HVAC as _kw_hvac
-        kw_extra = [k.lower() for k in _kw_hvac]
-    except Exception:
-        kw_extra = []
+    # [D41] Las keywords salen del SECTOR que declara el perfil, no de una
+    # constante. Antes se inyectaban las 54 de `KEYWORDS_HVAC` a todos los
+    # clientes, fueran de climatización o no: herencia de cuando el producto
+    # era para un solo cliente.
+    #
+    # Sin sector declarado NO se pone ninguna. Un conjunto por defecto
+    # repetiría exactamente el error que esto corrige.
     keywords_perfil = list(_extraer_keywords(str(perfil_cliente.get("objeto_similar", ""))))
-    # Combinar sin duplicados (keywords del perfil tienen prioridad)
-    todas_keywords = keywords_perfil + [k for k in kw_extra if k not in keywords_perfil]
+    kw_sector = keywords_de_sector(perfil_cliente.get("sector"))
+    todas_keywords = keywords_perfil + [k for k in kw_sector if k not in keywords_perfil]
 
     modelo = None
     emb_query = None
@@ -971,13 +1033,15 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
             or contrato.get("unspsc_bienes_y_servicios", "")
             or contrato.get("unspsc", "")
         ).lower().replace("-", "").replace(" ", "")
-        score_unspsc = 1.0 if any(cod in unspsc_c for cod in codigos_cliente if cod) else 0.0
+        # Clase (6): encaje fino, sube el orden. Familia (4): mismo sector.
+        score_clase = 1.0 if any(c in unspsc_c for c in clases_cliente if c) else 0.0
+        score_familia = 1.0 if any(f in unspsc_c for f in familias_cliente if f) else 0.0
+        # Nombre heredado, que el resto del sistema ya muestra.
+        score_unspsc = score_clase
 
-        # Nivel 2: Keywords — buscar en título + descripción
-        score_keywords = 0.0
-        if todas_keywords:
-            matches = sum(1 for kw in todas_keywords if kw in texto_contrato)
-            score_keywords = min(1.0, matches / max(len(todas_keywords), 1))
+        # Nivel 2: Keywords — [D41] normalizado por TOPE, no por tamaño de lista.
+        matches = sum(1 for kw in todas_keywords if kw in texto_contrato)
+        score_keywords = puntaje_keywords(matches)
 
         # Nivel 3: Semántico — similitud coseno normalizada a [0,1]
         score_semantico = 0.0
@@ -993,31 +1057,71 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
             except Exception:
                 pass
 
-        # [D40] El paso por UNSPSC ya NO es incondicional.
+        # [D40] La FAMILIA decide si se muestra; la CLASE, el orden.
         #
-        # Antes `score_unspsc == 1.0` pasaba solo, sin mirar keywords ni
-        # semántica: una coincidencia de FAMILIA se convertía en certeza. Con
-        # 6 dígitos el acierto es mucho más estrecho —ya es la clase— pero
-        # sigue siendo una similitud, no una prueba: dos empresas de la misma
-        # clase UNSPSC pueden hacer cosas distintas.
+        # Coincidir de familia NO se descarta nunca por relevancia: es del
+        # sector del cliente y él decide si le sirve. Coincidir de clase suma
+        # mucho más, así que lo específico aparece primero.
         #
-        # Ahora una coincidencia de clase **pesa mucho** (sube el peso de 0,25
-        # a 0,45) pero tiene que sumar con algo más para pasar. En la práctica
-        # basta una similitud semántica corriente: 0,45 + 0,40×0,5 = 0,65.
-        # Lo que deja fuera es el caso que importa: clase coincidente y
-        # contenido claramente ajeno.
+        # Sin coincidencia de familia hay que ganárselo con keywords y
+        # semántica, y ahí sí se descarta: es el cruce entre sectores, que es
+        # justo lo que no debe pasar.
+        # [D40] La familia ABRE la puerta; el contenido la confirma.
+        #
+        # Coincidir de familia no basta por sí solo, y el motivo es concreto:
+        # la familia `7215` incluye a la vez `721515` (albañilería) y `721540`
+        # (climatización), así que abrir sólo por familia devolvía
+        # refrigeración a una constructora. Medido.
+        #
+        # Y NO se puede arbitrar con la semántica: el modelo es débil en
+        # español técnico. Medido sobre estos mismos procesos, contra la
+        # consulta de la constructora, «papelería» da coseno 0,32 y «obra
+        # civil para adecuación de aulas» da 0,25. La semántica ordena, no
+        # decide.
+        #
+        # Lo que sí separa son las KEYWORDS DEL SECTOR [D41]: «obra civil para
+        # adecuación de aulas y baterías sanitarias» encuentra cuatro términos
+        # de obra; «mantenimiento preventivo de sistemas de refrigeración»
+        # encuentra uno, y «climatización HVAC para centro de datos», ninguno.
+        #
+        # De ahí la regla: misma familia Y alguna palabra del sector.
+        # DOS palabras del sector, no una. Medido: «Mantenimiento preventivo de
+        # sistemas de refrigeración y cuartos fríos» encuentra UNA palabra de
+        # obra —«mantenimiento», que está en la lista con razón: «mantenimiento
+        # de vías» es obra— y con una sola bastaba para colarse. «Obra civil
+        # para adecuación de aulas y baterías sanitarias» encuentra CUATRO.
+        #
+        # El coste es real y conviene saberlo: un proceso del sector con
+        # título muy corto puede quedarse en una sola palabra y caer fuera.
+        # Se prefiere ese fallo al contrario —enseñar refrigeración a una
+        # constructora— porque el primero se ve al revisar los descartados,
+        # que salen con su razón, y el segundo ensucia la lista buena.
+        mismo_sector = (score_familia == 1.0
+                        and score_keywords >= 2 / KEYWORDS_PARA_TOPE)
+
         if modelo is not None:
-            score_final = 0.45 * score_unspsc + 0.20 * score_keywords + 0.35 * score_semantico
-            pasa = score_final > 0.50 or score_keywords > 0.60
+            score_final = (0.40 * score_clase + 0.10 * score_familia
+                           + 0.15 * score_keywords + 0.35 * score_semantico)
+            pasa = (score_clase == 1.0 or mismo_sector
+                    or score_final > 0.50 or score_keywords >= 1.0)
         else:
-            # Sin modelo semántico no hay tercera señal, así que la coincidencia
-            # de clase sí decide: es lo único fiable que queda.
-            score_final = 0.60 * score_unspsc + 0.40 * score_keywords
-            pasa = score_final > 0.50 or score_keywords > 0.40
+            # Sin modelo semántico no hay tercera señal: los códigos deciden.
+            score_final = (0.50 * score_clase + 0.20 * score_familia
+                           + 0.30 * score_keywords)
+            pasa = (score_clase == 1.0 or mismo_sector
+                    or score_final > 0.50 or score_keywords >= 1.0)
+
+        # Marca visible del porqué, para que el orden se pueda explicar.
+        if score_clase == 1.0:
+            nivel, etiqueta_nivel = "clase", ""
+        elif mismo_sector:
+            nivel, etiqueta_nivel = "familia", "mismo sector, otra especialidad"
+        else:
+            nivel, etiqueta_nivel = "afinidad", "afinidad por contenido"
 
         print(
             f"[HÍBRIDO] {titulo[:50]:<50} | "
-            f"UNSPSC={score_unspsc:.2f} KW={score_keywords:.2f} "
+            f"CLASE={score_clase:.2f} FAM={score_familia:.2f} KW={score_keywords:.2f} "
             f"Sem={score_semantico:.2f} Total={score_final:.2f} | "
             f"{'✓ PASA' if pasa else '✗ descarta'}"
         )
@@ -1027,11 +1131,20 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
                 **contrato,
                 "score_hibrido": round(score_final, 4),
                 "score_unspsc": score_unspsc,
+                "score_clase": score_clase,
+                "score_familia": score_familia,
+                "nivel_coincidencia": nivel,
+                "etiqueta_coincidencia": etiqueta_nivel,
                 "score_keywords": round(score_keywords, 4),
                 "score_semantico": round(score_semantico, 4),
             })
 
-    resultados.sort(key=lambda x: x["score_hibrido"], reverse=True)
+    # Orden VISIBLE: clase exacta arriba, familia después, afinidad al final;
+    # dentro de cada grupo, por puntaje. Sin esto, un proceso de la misma
+    # especialidad podía quedar por debajo de uno de otra sólo por semántica.
+    _RANGO = {"clase": 0, "familia": 1, "afinidad": 2}
+    resultados.sort(key=lambda x: (_RANGO.get(x.get("nivel_coincidencia", "afinidad"), 3),
+                                   -x["score_hibrido"]))
     print(f"[HÍBRIDO] {len(resultados)}/{len(contratos)} contratos pasaron el filtro")
     return resultados
 

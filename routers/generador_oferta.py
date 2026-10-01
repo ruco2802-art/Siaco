@@ -89,25 +89,17 @@ def _fmt_fecha() -> str:
 
 
 def _cargar_perfil(cliente_id: str) -> dict:
-    """Carga perfil del cliente: /tmp → Supabase."""
-    cache = Path(f"/tmp/siaco/{cliente_id}/perfil.json")
-    if cache.exists():
-        try:
-            return json.loads(cache.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    try:
-        from supabase_client import sb_download
-        data = sb_download(f"clientes/{cliente_id}/perfil.json")
-        if data:
-            perfil = json.loads(data.decode("utf-8"))
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_bytes(data)
-            return perfil
-    except Exception:
-        pass
-    return {}
+    """
+    [D42c] Delega en el LECTOR ÚNICO de `routers/perfil.py`.
 
+    Tenía su propia copia del camino caché→Supabase, así que el documento de
+    oferta podía generarse con un perfil distinto del que usó el análisis.
+    """
+    try:
+        from routers.perfil import _load_perfil
+        return _load_perfil(cliente_id) or {}
+    except Exception:
+        return {}
 
 def _cargar_proceso(cliente_id: str, proceso_id: str) -> dict:
     """Busca datos del proceso en expedientes (3-layer persistence)."""

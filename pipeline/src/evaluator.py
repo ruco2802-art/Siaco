@@ -1060,15 +1060,26 @@ def evaluar_empresa(
 
 def cargar_perfil_por_cid(cid: str, base_dir: str | None = None) -> PerfilEmpresa | None:
     """
-    Carga el perfil de un cliente desde disco y retorna PerfilEmpresa.
+    Carga el perfil de EMPRESA de un cliente: `clientes/{cid}.json`.
 
-    Busca en orden:
-      1. clientes/{cid}.json          (formato plano — JSON canónico)
-      2. clientes/{cid}/perfil.json   (formato directorio — sesión web)
+    Retorna None si no existe, y quien llama debe decirlo —«este cliente no
+    tiene perfil de empresa cargado»— en vez de evaluar contra un perfil
+    vacío.
 
-    Retorna None si no existe el archivo; el evaluador marcará todo como
-    dato_faltante. Lanza ValueError si el archivo existe pero el JSON es inválido.
+    **NO cae a `clientes/{cid}/perfil.json` [D42b].** Ese archivo es el perfil
+    de SESIÓN que escribe `auth.crear_cliente()`: `cliente_id`, `nombre`,
+    `plan`, `notificacion` y contacto. No tiene bloque financiero, ni
+    jurídico, ni experiencia.
 
+    El respaldo existía y era un defecto grave: `PerfilEmpresa` valida ese
+    archivo sin protestar —todos sus campos son opcionales— así que el
+    evaluador leía CREDENCIALES, obtenía `nombre="cliente_001"` y marcaba los
+    91 requisitos como `dato_faltante` **sin decir que había leído el archivo
+    equivocado**. Un perfil vacío inventado a partir de otra cosa es
+    exactamente lo que [I10] prohíbe: ante la ausencia de un dato, el código
+    producía una respuesta en vez de declarar que no sabe.
+
+    Lanza ValueError si el archivo existe pero el JSON es inválido.
     Nunca retorna 0 para campos faltantes: los campos ausentes son None.
     """
     import json
@@ -1080,12 +1091,11 @@ def cargar_perfil_por_cid(cid: str, base_dir: str | None = None) -> PerfilEmpres
     else:
         _base = Path(base_dir)
 
-    for ruta in [_base / f"{cid}.json", _base / cid / "perfil.json"]:
-        if ruta.exists():
-            try:
-                data = json.loads(ruta.read_text("utf-8"))
-            except Exception as exc:
-                raise ValueError(f"JSON inválido en {ruta}: {exc}") from exc
-            return cargar_perfil(data)
-
-    return None
+    ruta = _base / f"{cid}.json"
+    if not ruta.exists():
+        return None
+    try:
+        data = json.loads(ruta.read_text("utf-8"))
+    except Exception as exc:
+        raise ValueError(f"JSON inválido en {ruta}: {exc}") from exc
+    return cargar_perfil(data)

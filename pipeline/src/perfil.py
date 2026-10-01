@@ -15,6 +15,7 @@ Convención semántica — bloque jurídico:
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -302,6 +303,75 @@ class PerfilEmpresa(BaseModel):
                 doc.fecha_expedicion = getattr(self.juridico, campo_fecha, None)
         self.documentos = None if docs.esta_vacio() else docs
         return self
+
+
+def cliente_id_activo(sesion: dict) -> str:
+    """
+    El cliente cuyo perfil de EMPRESA rige ahora mismo [D42a].
+
+    Es el perfil que el operador eligió en el selector; si no eligió ninguno,
+    el de su propia sesión. **Un solo sitio resuelve esta pregunta** para que
+    la búsqueda, el análisis y el informe no puedan responderla distinto
+    [I11]: antes cada router la resolvía por su cuenta.
+
+    Vive aquí, con el esquema canónico, y no en el router: es lógica pura
+    sobre un dict y así la pueden usar el pipeline y los tests sin arrastrar
+    FastAPI.
+    """
+    return (sesion.get("perfil_activo")
+            or sesion.get("cliente_id")
+            or sesion.get("id")
+            or "")
+
+
+def ruta_perfil_cliente(cid: str, base_dir: str | None = None) -> Path:
+    """
+    **La ruta de la verdad** del perfil de EMPRESA de un cliente [D42c].
+
+    `clientes/{cid}.json`, y no `clientes/{cid}/perfil.json`: ese otro archivo
+    es el perfil de SESIÓN —`cliente_id`, `plan`, contacto— que escribe
+    `auth.crear_cliente()` y lee el login. Son dos cosas distintas que
+    conviven a propósito; lo que no puede pasar es confundirlas [D42b].
+
+    Está aquí, en el esquema canónico, para que **todos los módulos deriven la
+    ruta del mismo sitio** en vez de escribirla a mano cada uno.
+    """
+    base = Path(base_dir) if base_dir else Path(__file__).resolve().parents[2] / "clientes"
+    return base / f"{cid}.json"
+
+
+def perfiles_disponibles(base_dir: str | None = None) -> list[dict]:
+    """
+    Los perfiles de EMPRESA guardados, para el selector [D42a].
+
+    Lee sólo lo que el selector necesita —identificador, nombre, NIT y
+    sector— sin validar el perfil entero: un perfil a medio llenar tiene que
+    poder elegirse, y es justo lo que pasa mientras se está creando.
+
+    Ignora `clientes/{cid}/` (directorios): ahí vive el perfil de SESIÓN, que
+    es otra cosa [D42b].
+    """
+    import json as _json
+
+    base = Path(base_dir) if base_dir else Path(__file__).resolve().parents[2] / "clientes"
+    if not base.exists():
+        return []
+    salida: list[dict] = []
+    for ruta in sorted(base.glob("*.json")):
+        try:
+            d = _json.loads(ruta.read_text("utf-8"))
+        except Exception:
+            continue
+        if not isinstance(d, dict):
+            continue
+        salida.append({
+            "cid": ruta.stem,
+            "nombre": d.get("nombre") or ruta.stem,
+            "nit": d.get("nit") or "",
+            "sector": d.get("sector") or "",
+            "es_ejemplo": bool((d.get("_meta") or {}).get("proposito")),
+        })
+    return salida
 
 
 def cargar_perfil(data: dict) -> PerfilEmpresa:

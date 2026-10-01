@@ -170,6 +170,29 @@ def get_session(token: str) -> dict | None:
     return entry["data"]
 
 
+def update_session(token: str, cambios: dict) -> dict | None:
+    """
+    Fusiona `cambios` en los datos de una sesión viva y los persiste.
+
+    Existe para el PERFIL ACTIVO [D42a]: un operador entra una vez y cambia
+    entre los perfiles de empresa que tenga guardados. Guardarlo en la sesión
+    y no en el navegador evita que la respuesta a «¿con qué perfil se hizo
+    este análisis?» dependa de la pestaña que estuviera abierta.
+    """
+    _bootstrap()
+    with _lock:
+        raw = _read_file()
+        entry = raw.get(token) or _cache.get(token)
+        if not entry or _is_expired(entry):
+            return None
+        entry["data"] = {**(entry.get("data") or {}), **cambios}
+        raw[token] = entry
+        _cache[token] = entry
+        _write_file(raw)
+        _write_supabase(raw)
+    return entry["data"]
+
+
 def delete_session(token: str):
     """Elimina sesión de memoria, disco y Supabase."""
     _cache.pop(token, None)

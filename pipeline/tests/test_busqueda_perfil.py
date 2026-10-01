@@ -66,15 +66,23 @@ def test_se_comparan_seis_digitos_la_clase_no_la_familia():
         "con 4 dígitos serían el mismo: eso era el defecto")
 
 
-def test_una_coincidencia_de_clase_ya_no_pasa_sola():
+def test_la_familia_abre_la_puerta_y_el_contenido_la_confirma():
     """
-    [D40] Antes `score_unspsc == 1.0` pasaba sin mirar nada más: una
-    similitud se convertía en certeza. Ahora pesa mucho (0,45) pero necesita
-    sumar con keywords o semántica.
+    [D40 corregido] Coincidir de FAMILIA no basta por sí solo: la familia
+    `7215` incluye `721515` (albañilería) y `721540` (climatización), así que
+    abrir sólo por familia devolvía refrigeración a una constructora.
+
+    Y no se puede arbitrar con la semántica: medido sobre los procesos de
+    prueba, «papelería» da coseno 0,32 contra la consulta de la constructora y
+    «obra civil para adecuación de aulas» da 0,25. La semántica ordena, no
+    decide.
     """
     fuente = Path(__file__).resolve().parents[2] / "analizador.py"
     codigo = fuente.read_text("utf-8")
-    assert "pasa = score_final > 0.50 or score_keywords > 0.60" in codigo
+    assert "mismo_sector = (score_familia == 1.0" in codigo
+    assert "and score_keywords >= 2 / KEYWORDS_PARA_TOPE)" in codigo, (
+        "una sola palabra genérica —«mantenimiento»— volvería a colar "
+        "refrigeración en una constructora")
     assert "or score_unspsc == 1.0" not in codigo, (
         "volvió el paso incondicional por UNSPSC")
 
@@ -93,3 +101,173 @@ def test_el_fallo_del_scoring_se_reporta_no_se_traga():
     assert "aviso_scoring" in codigo, (
         "el aviso tiene que viajar en la respuesta, no sólo al log")
     assert 'logger.error("[BUSQUEDA] El scoring por perfil falló' in codigo
+
+
+# ── [D41] Las keywords vienen del sector, no de una constante ──────────────
+
+def test_sin_sector_declarado_no_hay_keywords():
+    """
+    Un conjunto por defecto repetiría exactamente el error que esto corrige:
+    las 54 palabras de climatización se inyectaban a todos los clientes.
+    """
+    from analizador import keywords_de_sector
+    assert keywords_de_sector(None) == []
+    assert keywords_de_sector("") == []
+    assert keywords_de_sector("   ") == []
+
+
+def test_un_sector_sin_lista_revisada_tampoco_recibe_keywords():
+    """Las palabras deciden qué procesos ve un cliente: no se ponen a ojo."""
+    from analizador import keywords_de_sector
+    assert keywords_de_sector("tecnologia") == []
+    assert keywords_de_sector("salud") == []
+
+
+def test_cada_sector_recibe_las_suyas_y_no_las_de_otro():
+    from analizador import keywords_de_sector
+    obra = keywords_de_sector("obras_civiles")
+    hvac = keywords_de_sector("hvac")
+    assert "placa huella" in obra and "polideportivo" in obra
+    assert "climatizacion" in hvac and "cuarto frio" in hvac
+    # el defecto original: HVAC en el perfil de una constructora
+    assert not any(k in obra for k in ("climatizacion", "hvac", "refrigeracion"))
+    # y «aire» suelto salió de la lista: aparece en demasiados contextos ajenos
+    assert "aire" not in hvac
+
+
+def test_el_puntaje_de_keywords_se_normaliza_por_tope_no_por_tamano():
+    """
+    Antes era `matches / len(lista)`: una lista de 24 términos que describe
+    bien el sector daba 0,04 por acierto y una de 5 daba 0,20. **El perfil que
+    mejor se describía salía peor puntuado.**
+    """
+    from analizador import KEYWORDS_PARA_TOPE, puntaje_keywords
+    assert KEYWORDS_PARA_TOPE == 3
+    assert puntaje_keywords(0) == 0.0
+    assert round(puntaje_keywords(1), 3) == 0.333
+    assert round(puntaje_keywords(2), 3) == 0.667
+    assert puntaje_keywords(3) == 1.0
+    assert puntaje_keywords(9) == 1.0, "más de tres no puede pasar del tope"
+
+
+def test_config_legacy_ya_no_alimenta_el_scoring():
+    fuente = Path(__file__).resolve().parents[2] / "analizador.py"
+    codigo = fuente.read_text("utf-8")
+    # El nombre puede seguir en un comentario que explica el defecto; lo que
+    # no puede volver es el IMPORT que lo alimentaba.
+    assert "from config_legacy import KEYWORDS_HVAC" not in codigo, (
+        "las keywords de un cliente concreto volvieron al scoring de todos")
+    assert "keywords_de_sector(perfil_cliente.get(\"sector\"))" in codigo, (
+        "las keywords dejaron de salir del sector declarado en el perfil")
+
+
+# ── [D42] Un solo lector, una sola ruta ────────────────────────────────────
+
+def test_el_evaluador_no_cae_al_perfil_de_sesion():
+    """
+    [D42b] `clientes/{cid}/perfil.json` es el perfil de SESIÓN —cliente_id,
+    plan, contacto—. `PerfilEmpresa` lo validaba sin protestar, así que el
+    evaluador leía CREDENCIALES y marcaba los 91 requisitos como
+    `dato_faltante` sin decir que había leído el archivo equivocado.
+    """
+    import json
+
+    from src.evaluator import cargar_perfil_por_cid
+
+    base = Path(__file__).resolve().parents[2] / "clientes"
+    # un cliente con perfil de sesión pero SIN perfil de empresa
+    sesion = base / "_test_solo_sesion" / "perfil.json"
+    sesion.parent.mkdir(parents=True, exist_ok=True)
+    sesion.write_text(json.dumps(
+        {"cliente_id": "_test_solo_sesion", "nombre": "_test_solo_sesion",
+         "plan": "socio"}), encoding="utf-8")
+    try:
+        assert cargar_perfil_por_cid("_test_solo_sesion") is None, (
+            "volvió el respaldo al perfil de sesión: el evaluador está "
+            "leyendo credenciales y llamándolas perfil de empresa")
+    finally:
+        sesion.unlink(missing_ok=True)
+        sesion.parent.rmdir()
+
+
+def test_la_ruta_de_la_verdad_esta_definida_en_un_solo_sitio():
+    """[D42c] Todos los módulos derivan la ruta del mismo sitio."""
+    from src.perfil import ruta_perfil_cliente
+    assert ruta_perfil_cliente("x").name == "x.json"
+    assert ruta_perfil_cliente("x").parent.name == "clientes"
+
+
+def test_no_quedan_copias_del_camino_de_lectura():
+    """
+    [D42c] Había tres: routers/perfil.py, gestor_documentos.py y
+    routers/generador_oferta.py. «¿Qué perfil usa el sistema?» dependía de
+    qué módulo preguntara.
+    """
+    raiz = Path(__file__).resolve().parents[2]
+    for rel in ("gestor_documentos.py", "routers/generador_oferta.py"):
+        codigo = (raiz / rel).read_text("utf-8")
+        assert "/tmp/siaco/" not in codigo or "perfil.json" not in codigo, (
+            f"{rel} vuelve a construir el camino de lectura por su cuenta")
+        assert "from routers.perfil import _load_perfil" in codigo, (
+            f"{rel} no delega en el lector único")
+
+
+# ── [D42a] El selector de perfil ───────────────────────────────────────────
+
+def test_el_selector_lista_los_perfiles_de_empresa_no_los_de_sesion():
+    """
+    `clientes/{cid}.json` son perfiles de empresa; `clientes/{cid}/` guarda el
+    de sesión. Mezclarlos ofrecería «cliente_001» como si fuera una empresa.
+    """
+    from src.perfil import perfiles_disponibles
+    perfiles = perfiles_disponibles()
+    cids = {p["cid"] for p in perfiles}
+    assert "demo_ejemplo" in cids
+    for p in perfiles:
+        assert p["nombre"], f"{p['cid']} sin nombre: el selector no se puede leer"
+
+
+def test_el_perfil_activo_manda_sobre_el_de_la_sesion():
+    """
+    [D42a] Un operador maneja varios perfiles. Si la sesión decidiera, el
+    selector no serviría para nada.
+    """
+    from src.perfil import cliente_id_activo
+    assert cliente_id_activo({"cliente_id": "op", "perfil_activo": "demo_ejemplo"}) \
+        == "demo_ejemplo"
+    assert cliente_id_activo({"cliente_id": "op"}) == "op"
+    assert cliente_id_activo({"id": "op"}) == "op"
+    assert cliente_id_activo({}) == ""
+
+
+def test_una_sola_funcion_resuelve_el_cliente_activo():
+    """[I11] Si cada router lo resolviera a su manera, podrían discrepar."""
+    raiz = Path(__file__).resolve().parents[2]
+    for rel in ("routers/perfil.py", "routers/auditoria.py"):
+        codigo = (raiz / rel).read_text("utf-8")
+        assert 'sesion.get("cliente_id") or sesion.get("id") or ""' not in codigo \
+            or "cliente_id_activo" in codigo, (
+            f"{rel} resuelve el cliente por su cuenta, sin pasar por "
+            "cliente_id_activo()")
+
+
+def test_no_se_puede_buscar_ni_analizar_sin_perfil_elegido():
+    js = (Path(__file__).resolve().parents[2] / "static" / "app.js").read_text("utf-8")
+    assert "function exigePerfilActivo(" in js
+    for fn in ("buscarContratos", "analizarConIA", "analizarPliego"):
+        i = js.index(f"async function {fn}(")
+        assert "exigePerfilActivo" in js[i:i + 400], (
+            f"{fn} no exige perfil activo: devolvería resultados que no se "
+            "pueden explicar")
+
+
+def test_los_alias_de_sector_cubren_los_perfiles_existentes():
+    """
+    Los perfiles creados antes del desplegable traen el sector en texto libre.
+    Sin alias se quedarían sin palabras clave y nadie lo notaría: el filtrado
+    seguiría funcionando, peor.
+    """
+    from analizador import keywords_de_sector
+    for libre in ("OBRA PUBLICA", "MANTENIMIENTO LOCATIVO Y OBRAS CIVILES",
+                  "HVAC", "Climatización"):
+        assert keywords_de_sector(libre), f"«{libre}» se queda sin keywords"

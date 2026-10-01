@@ -267,6 +267,7 @@ function initMainScreen() {
   else if (TIPO === 'tester')  { chip.textContent = 'Prueba';  chip.className = 'plan-chip tester'; }
   else                         { chip.textContent = 'Básico';  chip.className = 'plan-chip basico'; }
   document.getElementById('sidebar-user').textContent = NOMBRE || CLIENTE_ID;
+  cargarSelectorPerfiles();
 
   // Mostrar nav de admin solo para plan admin
   const navAdmin = document.getElementById('nav-admin');
@@ -610,6 +611,9 @@ document.getElementById('btn-buscar').addEventListener('click', buscarContratos)
 document.getElementById('btn-analizar-ia').addEventListener('click', analizarConIA);
 
 async function buscarContratos() {
+  // [D42a] El perfil decide qué procesos se muestran y cuáles se descartan:
+  // buscar sin elegirlo devuelve resultados que no se pueden explicar.
+  if (!exigePerfilActivo('buscar')) return;
   const btn  = document.getElementById('btn-buscar');
   const stEl = document.getElementById('busq-status');
   btn.disabled = true; btn.textContent = 'Buscando...';
@@ -704,6 +708,7 @@ function renderBusquedaResult(data) {
 }
 
 async function analizarConIA() {
+  if (!exigePerfilActivo('analizar')) return;
   const btn  = document.getElementById('btn-analizar-ia');
   const stEl = document.getElementById('busq-status');
   btn.disabled = true; btn.textContent = '⏳ Analizando...';
@@ -1015,6 +1020,9 @@ async function extraerPliego() {
 }
 
 async function analizarPliego() {
+  // Aquí además se gasta API: analizar con el perfil equivocado cuesta dinero
+  // y produce un informe correcto sobre la empresa que no es.
+  if (!exigePerfilActivo('analizar un pliego')) return;
   const btn  = document.getElementById('btn-analizar-pliego');
   const stEl = document.getElementById('audit-status');
   const resEl= document.getElementById('audit-results');
@@ -3054,3 +3062,70 @@ function ep_prefillarDesdeAPU() {
       .catch(() => { localStorage.removeItem('siaco_token'); TOKEN = ''; });
   }
 })();
+
+
+// ════════════ [D42a] PERFIL DE EMPRESA ACTIVO ════════════
+//
+// El operador maneja varios perfiles. Analizar con el equivocado produce un
+// informe CORRECTO sobre la empresa que NO ES, y eso no se ve mirando el
+// resultado: hay que verlo antes, en la barra lateral.
+
+let PERFIL_ACTIVO = '';
+
+async function cargarSelectorPerfiles() {
+  const sel = document.getElementById('sel-perfil-activo');
+  if (!sel) return;
+  try {
+    const d = await apiJson('/api/perfiles');
+    PERFIL_ACTIVO = d.activo || '';
+    const perfiles = d.perfiles || [];
+    sel.innerHTML = '<option value="">— elige un perfil —</option>' +
+      perfiles.map(p => {
+        const marca = p.es_ejemplo ? ' (ejemplo)' : '';
+        return `<option value="${_esc(p.cid)}"${p.cid === PERFIL_ACTIVO ? ' selected' : ''}>` +
+               `${_esc(p.nombre)}${marca}</option>`;
+      }).join('');
+    _pintarPerfilActivo(perfiles.find(p => p.cid === PERFIL_ACTIVO));
+  } catch (err) {
+    sel.innerHTML = '<option value="">— no se pudieron cargar —</option>';
+  }
+}
+
+function _pintarPerfilActivo(p) {
+  const box = document.getElementById('perfil-activo-box');
+  const info = document.getElementById('perfil-activo-sector');
+  const elegido = !!(p && p.cid);
+  if (box) box.classList.toggle('sin-elegir', !elegido);
+  if (info) {
+    // El sector se muestra porque es lo que decide qué procesos ve el cliente:
+    // un perfil sin sector no recibe palabras clave y el filtrado se degrada.
+    info.textContent = elegido
+      ? (p.sector ? `${p.nit || 'sin NIT'} · ${p.sector}`
+                  : `${p.nit || 'sin NIT'} · sin sector: el filtrado por palabras no se aplica`)
+      : 'Elige un perfil antes de buscar o analizar';
+  }
+}
+
+/** Avisa y bloquea cuando no hay perfil elegido. Devuelve true si se puede seguir. */
+function exigePerfilActivo(accion) {
+  if (PERFIL_ACTIVO) return true;
+  toast(`Elige un perfil de empresa antes de ${accion}`, 'error');
+  document.getElementById('perfil-activo-box')?.classList.add('sin-elegir');
+  document.getElementById('sel-perfil-activo')?.focus();
+  return false;
+}
+
+document.getElementById('sel-perfil-activo')?.addEventListener('change', async (ev) => {
+  const cid = ev.target.value;
+  if (!cid) { PERFIL_ACTIVO = ''; _pintarPerfilActivo(null); return; }
+  try {
+    const d = await apiJson('/api/perfil/activo', {
+      method: 'POST', body: JSON.stringify({ cid }),
+    });
+    PERFIL_ACTIVO = d.activo;
+    _pintarPerfilActivo({ cid: d.activo, nombre: d.nombre, sector: d.sector });
+    toast(`Perfil activo: ${d.nombre}`, 'success');
+    // El perfil cambió: lo que se ve en pantalla es del anterior.
+    if (typeof loadPerfil === 'function') loadPerfil();
+  } catch (err) { toast(err.message, 'error'); }
+});

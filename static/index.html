@@ -70,6 +70,17 @@
     <div id="plan-chip" class="plan-chip basico">Básico</div>
     <div class="sidebar-user" id="sidebar-user">—</div>
 
+    <!-- [D42a] Perfil de empresa ACTIVO. Siempre visible: analizar con el
+         perfil equivocado produce un informe correcto sobre la empresa que no
+         es, y eso no se ve mirando el resultado. -->
+    <div class="perfil-activo" id="perfil-activo-box">
+      <label for="sel-perfil-activo">Perfil de empresa</label>
+      <select id="sel-perfil-activo">
+        <option value="">— elige un perfil —</option>
+      </select>
+      <div class="perfil-activo-sector" id="perfil-activo-sector"></div>
+    </div>
+
     <nav id="main-nav">
       <button class="nav-item active" data-page="perfil">
         <span class="nav-icon">👤</span> Mi Perfil
