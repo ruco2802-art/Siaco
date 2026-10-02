@@ -169,6 +169,19 @@ def aplicar_scoring_perfil(perfil: dict | None, contratos: list) -> dict:
             f"A {relevantes[0]['_sin_semantica']} procesos no se les pudo "
             "calcular la similitud semántica; su orden puede no ser el justo.")
 
+    # [D48/D49] SECOP marca "UNSPECIFIED" en los procesos que aún no ha
+    # clasificado —casi siempre los publicados hace menos de 3 semanas, que
+    # son justo los que siguen con plazo abierto—. No es que esos procesos
+    # sean ajenos: es que para ellos el filtrado se apoyó sólo en palabras y
+    # semántica, nunca en el código UNSPSC. Se avisa para saber cuándo confiar
+    # menos en el orden, sin tratarlos como descartados.
+    if relevantes and relevantes[0].get("_sin_unspsc"):
+        avisos.append(
+            f"{relevantes[0]['_sin_unspsc']} de "
+            f"{relevantes[0].get('_total_analizados_unspsc', '?')} procesos "
+            "no traen clasificación UNSPSC propia (publicados hace menos de "
+            "3 semanas); se filtraron sólo por palabras y semántica.")
+
     salida = []
     for r in relevantes:
         sh = r.get("score_hibrido", 0)

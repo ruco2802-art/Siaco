@@ -238,6 +238,29 @@ class ResultadoEvaluacion:
 
 # ─── Helpers internos ──────────────────────────────────────────────────────
 
+def _a_float_no_booleano(raw: Any) -> float:
+    """
+    Como `float(raw)`, pero un booleano NUNCA pasa. [D46-bis]
+
+    `_obtener_campo()` resuelve cualquier ruta del perfil por texto —
+    "juridico.rup_en_firme", "documentos.rup.tiene"— sin saber si lo que
+    encuentra es numérico o un sí/no. `float(True) == 1.0` no lanza
+    excepción, así que un criterio mal configurado que apuntara a un campo
+    booleano se colaría en una comparación contra cualquier umbral, igual que
+    ya pasó en el mapa de palabra clave de `_evaluar_item()` [D46]: un
+    requisito de vigencia con el campo "lo tiene" sin fecha habría comparado
+    1,0 contra 30 días y dado CUMPLE sin verificar nada.
+
+    Un booleano aquí es siempre un desajuste del criterio —apunta a un campo
+    que responde "¿lo tiene?", no "¿cuánto?"— y se trata como el mismo tipo
+    de error que un valor no numérico: `_no_evaluable`, nunca un número
+    inventado.
+    """
+    if isinstance(raw, bool):
+        raise TypeError(f"el campo es booleano, no numérico: {raw!r}")
+    return float(raw)
+
+
 def _obtener_campo(ruta: str, origen: dict) -> Any:
     """Obtiene un valor del dict anidado por ruta de puntos. None si no existe."""
     cabeza, *cola = ruta.split(".", maxsplit=1)
@@ -272,7 +295,7 @@ def _eval_umbral_simple(criterio: UmbralSimple, valores_perfil: dict) -> Resulta
             f"campo '{criterio.campo_perfil}' no disponible en el perfil"
         )
     try:
-        valor = float(raw)
+        valor = _a_float_no_booleano(raw)
     except (TypeError, ValueError):
         return _no_evaluable(
             f"campo '{criterio.campo_perfil}' no es numérico: {raw!r}"
@@ -301,7 +324,7 @@ def _eval_formula(
                 f"(fuente: {var.fuente}, campo: '{var.campo}')"
             )
         try:
-            namespace[var.nombre] = float(raw)
+            namespace[var.nombre] = _a_float_no_booleano(raw)
         except (TypeError, ValueError):
             return _no_evaluable(
                 f"variable '{var.nombre}' no es numérica: {raw!r}"
@@ -331,7 +354,7 @@ def _eval_tabla_tramos(criterio: TablaTramos, valores_perfil: dict) -> Resultado
             f"campo '{criterio.campo_perfil}' no disponible en el perfil"
         )
     try:
-        valor = float(raw)
+        valor = _a_float_no_booleano(raw)
     except (TypeError, ValueError):
         return _no_evaluable(
             f"campo '{criterio.campo_perfil}' no es numérico: {raw!r}"

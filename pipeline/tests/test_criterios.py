@@ -384,3 +384,80 @@ class TestExpresionesReales:
 
     def test_ac_sobre_pc(self):
         assert evaluar_expresion("AC / PC", {"AC": 500.0, "PC": 200.0}) == pytest.approx(2.5)
+
+
+# ─── [D46-bis] Un booleano nunca se convierte a número ─────────────────────
+#
+# El mismo patrón de D46 (evaluator.py: `float(True) == 1.0` no lanza
+# excepción, así que un campo "¿lo tiene?" se compara como si fuera un
+# número) existe aquí porque `_obtener_campo()` resuelve CUALQUIER ruta del
+# perfil por texto, sin saber si lo que encuentra es numérico o booleano.
+
+class TestBooleanoNuncaEsNumero:
+    """Tercer sitio del mismo patrón: UmbralSimple, Formula y TablaTramos."""
+
+    def test_umbral_simple_contra_un_campo_booleano_no_es_evaluable(self):
+        """
+        Caso real posible: un criterio de vigencia del RUP ("≤ 30 días") mal
+        configurado para apuntar a `rup_en_firme` (booleano) en vez de a una
+        fecha. `float(True)=1.0 <= 30` daría CUMPLE sin haber verificado nada.
+        """
+        criterio = UmbralSimple(
+            tipo="umbral_simple",
+            campo_perfil="juridico.rup_en_firme",
+            operador="<=", valor=30.0,
+            fuente_numeral="1", confianza="alta",
+        )
+        perfil = {"juridico": {"rup_en_firme": True}}
+        res = evaluar_criterio(criterio, perfil, {})
+        assert not res.evaluable, (
+            "un booleano se comparó como número: float(True)=1.0 <= 30 "
+            "habría dado CUMPLE sin verificar nada")
+        assert "no es numérico" in res.motivo_no_evaluable
+        assert "True" in res.motivo_no_evaluable
+
+    def test_formula_con_una_variable_booleana_no_es_evaluable(self):
+        criterio = Formula(
+            tipo="formula",
+            variables=[
+                Variable(nombre="activo", fuente="perfil",
+                        campo="financiero.activo_corriente"),
+                Variable(nombre="rup", fuente="perfil",
+                        campo="juridico.rup_en_firme"),
+            ],
+            expresion_empresa="activo",
+            expresion_umbral="rup",
+            operador=">=",
+            fuente_numeral="1", confianza="alta",
+        )
+        perfil = {"financiero": {"activo_corriente": 500.0},
+                 "juridico": {"rup_en_firme": True}}
+        res = evaluar_criterio(criterio, perfil, {})
+        assert not res.evaluable
+        assert "no es numérica" in res.motivo_no_evaluable
+
+    def test_tabla_tramos_contra_un_campo_booleano_no_es_evaluable(self):
+        criterio = TablaTramos(
+            tipo="tabla_tramos",
+            campo_perfil="juridico.sin_inhabilidades",
+            tramos=[
+                Tramo(desde=0.0, hasta=5.0, incluye_inferior=True,
+                     incluye_superior=True, puntaje=1.0),
+                Tramo(desde=5.0, hasta=None, incluye_inferior=False,
+                     incluye_superior=False, puntaje=2.0),
+            ],
+            fuente_numeral="1", confianza="alta",
+        )
+        perfil = {"juridico": {"sin_inhabilidades": True}}
+        res = evaluar_criterio(criterio, perfil, {})
+        assert not res.evaluable
+        assert "no es numérico" in res.motivo_no_evaluable
+
+    def test_un_numero_real_sigue_funcionando_igual(self):
+        """El guardia no debe afectar al caso normal: un float sigue pasando."""
+        criterio = UmbralSimple(
+            tipo="umbral_simple", campo_perfil="financiero.indice_liquidez",
+            operador=">=", valor=1.21, fuente_numeral="1", confianza="alta",
+        )
+        res = evaluar_criterio(criterio, _perfil_completo(), {})
+        assert res.evaluable and res.cumple is True

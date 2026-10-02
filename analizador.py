@@ -234,6 +234,23 @@ def verificar_embeddings() -> dict:
         return {"disponible": False, "error": str(exc)}
 
 
+def _sin_acentos(s: str) -> str:
+    """
+    [D49] Pliega acentos para que el matching de keywords no dependa de que la
+    lista del sector y el texto de SECOP usen la misma ortografía.
+
+    Encontrado al medir: `keywords_sector.json` tiene "construccion" sin
+    tilde, pero los títulos reales de SECOP dicen "Construcción" con tilde —
+    `"construccion" in "construcción…"` es `False` porque la 'ó' no es una
+    'o'. Sin plegar acentos, media lista de obra no matcheaba nunca contra
+    texto real, silenciosamente: el proceso se descartaba por "cero
+    palabras" cuando en realidad tenía una, mal comparada.
+    """
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", s)
+                  if unicodedata.category(c) != "Mn")
+
+
 def _extraer_keywords(texto):
     """Extrae palabras clave simples (>3 caracteres) de un texto en español."""
     import re as _re
@@ -1056,23 +1073,34 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
 
     resultados = []
     n_sin_semantica = 0
+    n_sin_unspsc = 0          # [D49] procesos que SECOP marca sin clasificar
+    total_analizados = 0
     for contrato in contratos:
         if not isinstance(contrato, dict):
             continue
+        total_analizados += 1
         titulo = str(contrato.get("nombre_del_procedimiento", ""))
         # SECOP II puede usar descripci_n_del_procedimiento o descripcion_del_procedimiento
         objeto = str(
             contrato.get("descripci_n_del_procedimiento", "")
             or contrato.get("descripcion_del_procedimiento", "")
         )
-        texto_contrato = (titulo + " " + objeto).lower()
+        texto_contrato = _sin_acentos((titulo + " " + objeto).lower())
 
-        # Nivel 1: UNSPSC — comparar primeros 4 dígitos contra campo SECOP II
-        unspsc_c = str(
+        # [D48] SECOP marca "UNSPECIFIED" —no vacío— en los procesos que aún no
+        # ha clasificado, típicamente publicados hace menos de 3 semanas.
+        # Medido: 0-12 días → 99-100% "UNSPECIFIED"; 20+ días → 0%. Se cuenta
+        # aparte para avisar, no se trata igual que "no coincide con mi perfil".
+        _unspsc_crudo = str(
             contrato.get("codigo_principal_de_categoria", "")
             or contrato.get("unspsc_bienes_y_servicios", "")
             or contrato.get("unspsc", "")
-        ).lower().replace("-", "").replace(" ", "")
+        ).strip()
+        if not _unspsc_crudo or _unspsc_crudo.upper() == "UNSPECIFIED":
+            n_sin_unspsc += 1
+
+        # Nivel 1: UNSPSC — comparar primeros 4 dígitos contra campo SECOP II
+        unspsc_c = _unspsc_crudo.lower().replace("-", "").replace(" ", "")
         # Clase (6): encaje fino, sube el orden. Familia (4): mismo sector.
         score_clase = 1.0 if any(c in unspsc_c for c in clases_cliente if c) else 0.0
         score_familia = 1.0 if any(f in unspsc_c for f in familias_cliente if f) else 0.0
@@ -1080,7 +1108,12 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
         score_unspsc = score_clase
 
         # Nivel 2: Keywords — [D41] normalizado por TOPE, no por tamaño de lista.
-        matches = sum(1 for kw in todas_keywords if kw in texto_contrato)
+        # [D49] Se compara plegado contra plegado; se guarda el texto
+        # ORIGINAL de la keyword (con su tilde, si la lista la trae) para
+        # mostrarlo en la etiqueta de afinidad baja.
+        keywords_coincidentes = [kw for kw in todas_keywords
+                                 if _sin_acentos(kw) in texto_contrato]
+        matches = len(keywords_coincidentes)
         score_keywords = puntaje_keywords(matches)
 
         # Nivel 3: Semántico — similitud coseno normalizada a [0,1]
@@ -1102,67 +1135,55 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
                 if fallo_semantico is None:
                     fallo_semantico = f"{type(exc).__name__}: {str(exc)[:120]}"
 
-        # [D40] La FAMILIA decide si se muestra; la CLASE, el orden.
+        # [D49] ENTRADA y ORDEN se decidieron con el MISMO umbral y resultó mal:
+        # exigir familia UNSPSC + 2 palabras para entrar descartaba obra
+        # legítima con título corto, y la condición de familia casi nunca se
+        # cumplía porque [D48] el UNSPSC viene "UNSPECIFIED" en el 99-100% de
+        # los procesos publicados hace menos de 3 semanas —justo los que más
+        # importan, porque siguen con plazo abierto—. "mismo_sector" fue
+        # propuesta real y medida: no se activaba nunca en la práctica.
         #
-        # Coincidir de familia NO se descarta nunca por relevancia: es del
-        # sector del cliente y él decide si le sirve. Coincidir de clase suma
-        # mucho más, así que lo específico aparece primero.
+        # Ahora son dos decisiones separadas:
         #
-        # Sin coincidencia de familia hay que ganárselo con keywords y
-        # semántica, y ahí sí se descarta: es el cruce entre sectores, que es
-        # justo lo que no debe pasar.
-        # [D40] La familia ABRE la puerta; el contenido la confirma.
+        #   ENTRADA — baja a UNA palabra del núcleo del sector, o clase UNSPSC
+        #   exacta cuando está disponible. "Prefiero ver de más y decidir yo":
+        #   un proceso dudoso se muestra marcado, el descarte es sólo para lo
+        #   que NO comparte ni una palabra ni el código.
         #
-        # Coincidir de familia no basta por sí solo, y el motivo es concreto:
-        # la familia `7215` incluye a la vez `721515` (albañilería) y `721540`
-        # (climatización), así que abrir sólo por familia devolvía
-        # refrigeración a una constructora. Medido.
+        #   La semántica NUNCA decide la entrada por sí sola: medido, «obra
+        #   civil para adecuación de aulas» da coseno 0,25 contra la consulta
+        #   de una constructora y «papelería y útiles de oficina» da 0,32 —
+        #   MÁS ALTO siendo ajeno. Dejar que la semántica sola abriera la
+        #   puerta colaría el festival y la litografía de vuelta.
         #
-        # Y NO se puede arbitrar con la semántica: el modelo es débil en
-        # español técnico. Medido sobre estos mismos procesos, contra la
-        # consulta de la constructora, «papelería» da coseno 0,32 y «obra
-        # civil para adecuación de aulas» da 0,25. La semántica ordena, no
-        # decide.
-        #
-        # Lo que sí separa son las KEYWORDS DEL SECTOR [D41]: «obra civil para
-        # adecuación de aulas y baterías sanitarias» encuentra cuatro términos
-        # de obra; «mantenimiento preventivo de sistemas de refrigeración»
-        # encuentra uno, y «climatización HVAC para centro de datos», ninguno.
-        #
-        # De ahí la regla: misma familia Y alguna palabra del sector.
-        # DOS palabras del sector, no una. Medido: «Mantenimiento preventivo de
-        # sistemas de refrigeración y cuartos fríos» encuentra UNA palabra de
-        # obra —«mantenimiento», que está en la lista con razón: «mantenimiento
-        # de vías» es obra— y con una sola bastaba para colarse. «Obra civil
-        # para adecuación de aulas y baterías sanitarias» encuentra CUATRO.
-        #
-        # El coste es real y conviene saberlo: un proceso del sector con
-        # título muy corto puede quedarse en una sola palabra y caer fuera.
-        # Se prefiere ese fallo al contrario —enseñar refrigeración a una
-        # constructora— porque el primero se ve al revisar los descartados,
-        # que salen con su razón, y el segundo ensucia la lista buena.
-        mismo_sector = (score_familia == 1.0
-                        and score_keywords >= 2 / KEYWORDS_PARA_TOPE)
+        #   ORDEN — clase exacta arriba; más palabras + semántica, más arriba;
+        #   una sola palabra, abajo y marcado como afinidad baja, con la
+        #   palabra que coincidió, para poder revisarlo de un vistazo.
+        pasa = score_clase == 1.0 or matches > 0
 
         if modelo is not None:
-            score_final = (0.40 * score_clase + 0.10 * score_familia
-                           + 0.15 * score_keywords + 0.35 * score_semantico)
-            pasa = (score_clase == 1.0 or mismo_sector
-                    or score_final > 0.50 or score_keywords >= 1.0)
+            score_final = (0.35 * score_clase + 0.10 * score_familia
+                           + 0.30 * score_keywords + 0.25 * score_semantico)
         else:
-            # Sin modelo semántico no hay tercera señal: los códigos deciden.
-            score_final = (0.50 * score_clase + 0.20 * score_familia
-                           + 0.30 * score_keywords)
-            pasa = (score_clase == 1.0 or mismo_sector
-                    or score_final > 0.50 or score_keywords >= 1.0)
+            # Sin modelo semántico no hay tercera señal: los códigos y las
+            # palabras deciden el orden entre sí.
+            score_final = (0.45 * score_clase + 0.15 * score_familia
+                           + 0.40 * score_keywords)
 
-        # Marca visible del porqué, para que el orden se pueda explicar.
+        # Marca visible del porqué, para que el orden se pueda explicar y el
+        # operador sepa cuándo confiar menos en una entrada.
         if score_clase == 1.0:
             nivel, etiqueta_nivel = "clase", ""
-        elif mismo_sector:
-            nivel, etiqueta_nivel = "familia", "mismo sector, otra especialidad"
+        elif matches >= 2:
+            nivel, etiqueta_nivel = ("contenido",
+                "mismo sector, otra especialidad" if score_familia == 1.0 else "")
+        elif matches == 1:
+            nivel, etiqueta_nivel = ("afinidad_baja",
+                f"afinidad baja: sólo coincide «{keywords_coincidentes[0]}»")
         else:
-            nivel, etiqueta_nivel = "afinidad", "afinidad por contenido"
+            # No debería alcanzarse si `pasa` es True por otra vía que no sea
+            # clase o matches, pero no se asume: se declara en vez de fallar.
+            nivel, etiqueta_nivel = "afinidad_baja", "afinidad baja"
 
         print(
             f"[HÍBRIDO] {titulo[:50]:<50} | "
@@ -1184,11 +1205,11 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
                 "score_semantico": round(score_semantico, 4),
             })
 
-    # Orden VISIBLE: clase exacta arriba, familia después, afinidad al final;
-    # dentro de cada grupo, por puntaje. Sin esto, un proceso de la misma
-    # especialidad podía quedar por debajo de uno de otra sólo por semántica.
-    _RANGO = {"clase": 0, "familia": 1, "afinidad": 2}
-    resultados.sort(key=lambda x: (_RANGO.get(x.get("nivel_coincidencia", "afinidad"), 3),
+    # [D49] Orden VISIBLE: clase exacta arriba, contenido (2+ palabras) en
+    # medio, afinidad baja (1 palabra) al final; dentro de cada grupo, por
+    # puntaje. Así "entra de más" sin que lo dudoso se confunda con lo sólido.
+    _RANGO = {"clase": 0, "contenido": 1, "afinidad_baja": 2}
+    resultados.sort(key=lambda x: (_RANGO.get(x.get("nivel_coincidencia", "afinidad_baja"), 3),
                                    -x["score_hibrido"]))
     # El diagnóstico viaja pegado a cada resultado para no cambiar la firma de
     # la función, que tiene tres llamadores. `aplicar_scoring_perfil()` lo lee
@@ -1197,6 +1218,11 @@ def busqueda_hibrida_triple(query: str, perfil_cliente: dict, contratos: list) -
         r["_semantica_ok"] = modelo is not None and fallo_semantico is None
         r["_fallo_semantico"] = fallo_semantico
         r["_sin_semantica"] = n_sin_semantica
+        # [D48/D49] Cuántos del lote analizado vinieron sin clasificación
+        # UNSPSC propia (SECOP los marca "UNSPECIFIED"): dice cuándo confiar
+        # menos en el orden, sin tratarlos como si fueran de otro sector.
+        r["_sin_unspsc"] = n_sin_unspsc
+        r["_total_analizados_unspsc"] = total_analizados
     print(f"[HÍBRIDO] {len(resultados)}/{len(contratos)} contratos pasaron el filtro")
     return resultados
 

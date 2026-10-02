@@ -66,25 +66,82 @@ def test_se_comparan_seis_digitos_la_clase_no_la_familia():
         "con 4 dígitos serían el mismo: eso era el defecto")
 
 
-def test_la_familia_abre_la_puerta_y_el_contenido_la_confirma():
+def test_una_palabra_del_nucleo_basta_para_entrar():
     """
-    [D40 corregido] Coincidir de FAMILIA no basta por sí solo: la familia
-    `7215` incluye `721515` (albañilería) y `721540` (climatización), así que
-    abrir sólo por familia devolvía refrigeración a una constructora.
+    [D49, tras D48] El umbral de D40 (familia UNSPSC + 2 palabras) casi nunca
+    se activaba: el eje UNSPSC viene "UNSPECIFIED" en el 99-100% de los
+    procesos publicados hace menos de 3 semanas, que son justo los que
+    importan porque siguen con plazo abierto. El fundador prefiere ver de más
+    y decidir él: una sola palabra del núcleo del sector basta para entrar,
+    marcada como afinidad baja.
+    """
+    from analizador import busqueda_hibrida_triple
+    perfil = {"codigos_unspsc": [], "objeto_similar": "",
+             "sector": "obras_civiles"}
+    # una sola palabra del sector ("construcción"), sin UNSPSC, sin más contexto
+    contratos = [{"id_del_proceso": "X1",
+                 "nombre_del_procedimiento": "Construcción del salón comunal "
+                                             "de la vereda Cerro Verde"}]
+    r = busqueda_hibrida_triple("obras civiles", perfil, contratos)
+    assert len(r) == 1, "una sola palabra del núcleo debe bastar para entrar"
+    assert r[0]["nivel_coincidencia"] == "afinidad_baja"
+    assert "construcción" in r[0]["etiqueta_coincidencia"].lower() or            "construccion" in r[0]["etiqueta_coincidencia"].lower()
 
-    Y no se puede arbitrar con la semántica: medido sobre los procesos de
-    prueba, «papelería» da coseno 0,32 contra la consulta de la constructora y
-    «obra civil para adecuación de aulas» da 0,25. La semántica ordena, no
-    decide.
+
+def test_la_semantica_sola_no_abre_la_puerta():
     """
-    fuente = Path(__file__).resolve().parents[2] / "analizador.py"
-    codigo = fuente.read_text("utf-8")
-    assert "mismo_sector = (score_familia == 1.0" in codigo
-    assert "and score_keywords >= 2 / KEYWORDS_PARA_TOPE)" in codigo, (
-        "una sola palabra genérica —«mantenimiento»— volvería a colar "
-        "refrigeración en una constructora")
-    assert "or score_unspsc == 1.0" not in codigo, (
-        "volvió el paso incondicional por UNSPSC")
+    [D49] "Prestación de servicios de apoyo logístico y producción para el
+    festival gastronómico" y "Servicio de diseño, litografía e impresión"
+    tienen CERO palabras del núcleo de obra. Medido: la semántica sola les da
+    coseno más alto que a procesos de obra legítimos (0,32 "papelería" vs 0,25
+    "obra civil para adecuación de aulas") — dejarla decidir volvería a colar
+    el festival y la litografía.
+    """
+    from analizador import busqueda_hibrida_triple
+    perfil = {"codigos_unspsc": [], "objeto_similar": "",
+             "sector": "obras_civiles"}
+    contratos = [
+        {"id_del_proceso": "FEST",
+         "nombre_del_procedimiento": "Prestación de servicios de apoyo "
+                                     "logístico y producción para el "
+                                     "festival gastronómico"},
+        {"id_del_proceso": "LITO",
+         "nombre_del_procedimiento": "Servicio de diseño, litografía e "
+                                     "impresión de material institucional"},
+    ]
+    r = busqueda_hibrida_triple("obras civiles", perfil, contratos)
+    assert r == [], (
+        "la semántica sola dejó pasar un proceso sin ninguna palabra del "
+        "núcleo del sector y sin clase UNSPSC — exactamente el caso que "
+        "D49 tiene que impedir")
+
+
+def test_el_orden_pone_la_clase_exacta_primero_y_la_afinidad_baja_al_final():
+    """
+    [D49] Entrada baja a una palabra; el ORDEN sigue distinguiendo. Dos
+    palabras o más se muestra como "contenido", por encima de "afinidad_baja"
+    (una sola palabra), que es la más fácil de equivocarse.
+    """
+    from analizador import busqueda_hibrida_triple
+    perfil = {"codigos_unspsc": [], "objeto_similar": "",
+             "sector": "obras_civiles"}
+    contratos = [
+        {"id_del_proceso": "UNA",
+         # una sola palabra de obras_civiles ("mantenimiento"); "vehiculos" y
+         # "flota" no están en esa lista
+         "nombre_del_procedimiento": "Mantenimiento de vehículos de la "
+                                     "flota administrativa"},
+        {"id_del_proceso": "VARIAS",
+         "nombre_del_procedimiento": "Construcción de aula escolar y "
+                                     "batería sanitaria en sede educativa"},
+    ]
+    r = busqueda_hibrida_triple("obras civiles", perfil, contratos)
+    ids = [x["id_del_proceso"] for x in r]
+    assert ids.index("VARIAS") < ids.index("UNA"), (
+        "una entrada con varias palabras del núcleo debe ordenarse por "
+        "encima de una con afinidad baja")
+    assert r[ids.index("VARIAS")]["nivel_coincidencia"] == "contenido"
+    assert r[ids.index("UNA")]["nivel_coincidencia"] == "afinidad_baja"
 
 
 # ── [D39] El fallo del scoring no se calla ─────────────────────────────────
