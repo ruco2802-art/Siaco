@@ -267,6 +267,33 @@ def test_no_se_puede_buscar_ni_analizar_sin_perfil_elegido():
             "pueden explicar")
 
 
+def test_transporte_tiene_lista_propia_y_sin_atajos_genericos():
+    """
+    [D44 seguimiento] "transporte" dejó de estar marcado "(sin palabras
+    clave)". La lista evita palabras sueltas demasiado genéricas (un
+    "servicio" o "mantenimiento" a secas aparecería en cualquier sector).
+    """
+    from analizador import keywords_de_sector
+    k = keywords_de_sector("transporte")
+    assert len(k) >= 10
+    assert "parque automotor" in k, (
+        "parque automotor es la señal más específica de transporte: se "
+        "quitó de obras_civiles precisamente porque pertenece aquí")
+    # ninguna palabra de una sola pieza ultra genérica
+    for generica in ("servicio", "mantenimiento", "transporte"):
+        assert generica not in k, (
+            f"«{generica}» sola es demasiado genérica para una lista de sector")
+
+
+def test_el_desplegable_ya_no_marca_transporte_sin_lista():
+    html = (Path(__file__).resolve().parents[2] / "static" / "index.html").read_text("utf-8")
+    i = html.index('id="p-sector"')
+    bloque = html[i:html.index("</select>", i)]
+    assert '<option value="transporte">Transporte y Logística</option>' in bloque, (
+        "el desplegable sigue marcando transporte como sin palabras clave, "
+        "o cambió de forma inesperada")
+
+
 def test_los_alias_de_sector_cubren_los_perfiles_existentes():
     """
     Los perfiles creados antes del desplegable traen el sector en texto libre.

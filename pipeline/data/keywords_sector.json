@@ -108,6 +108,37 @@
     "redes electricas": "electrico",
     "suministro": "suministros",
     "dotacion": "suministros",
-    "servicio": "servicios"
-  }
+    "servicio": "servicios",
+    "infraestructura": "obras_civiles",
+    "edificaciones": "obras_civiles",
+    "edificacion": "obras_civiles",
+    "vias": "obras_civiles",
+    "vías": "obras_civiles",
+    "acueducto y alcantarillado": "obras_civiles",
+    "ingenieria civil": "obras_civiles",
+    "ingeniería civil": "obras_civiles",
+    "interventoria": "servicios",
+    "interventoría": "servicios",
+    "consultoria": "servicios",
+    "consultoría": "servicios",
+    "redes electricas y telecomunicaciones": "electrico",
+    "redes eléctricas y telecomunicaciones": "electrico",
+    "montajes": "electrico",
+    "_nota_2026_10_01": "Añadidos: infraestructura, edificaciones, vias, acueducto y alcantarillado, ingenieria civil -> obras_civiles; interventoria, consultoria -> servicios; redes electricas y telecomunicaciones -> electrico. 'montajes' es ambiguo (obra vs. electrico/industrial) y se asignó a electrico por ser el uso más común en SECOP; revisar si no encaja."
+  },
+  "transporte": [
+    "transporte terrestre",
+    "transporte de pasajeros",
+    "transporte escolar",
+    "transporte de carga",
+    "transporte especial",
+    "transporte intermunicipal",
+    "parque automotor",
+    "flota vehicular",
+    "logistica",
+    "ruta escolar",
+    "operador de transporte",
+    "vehiculo automotor",
+    "fletamento"
+  ]
 }
